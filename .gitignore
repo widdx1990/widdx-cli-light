@@ -1,24 +1,37 @@
+```gitignore
 # Python
 __pycache__/
-*.py[cod]
-*.egg-info/
-*.egg
+*.pyc
+*.pyo
+*.pyd
+
+# Testing
 .pytest_cache/
+.coverage
+coverage/
 
-# Node
-node_modules/
-package-lock.json
-
-# IDE
-.vscode/
-.idea/
+# Logs
+*.log
 
 # Environment
 .env
 .env.local
+*.env.*
 
-# Test workdir
-.test_workdir/
+# Dependencies
+.venv/
+venv/
+.envrc
 
-# WIDDX local data
-.widdx/
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Build/dist
+build/
+dist/
+*.egg-info/
+```

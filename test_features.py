@@ -1,11 +1,9 @@
 """Integration test for all 6 new features."""
-import sys, json, shutil, subprocess, time
+import sys, json, shutil, subprocess, time, tempfile
 from pathlib import Path
 
-sys.path.insert(0, "e:/deepseek/chat-tool")
-
-test_dir = Path("e:/deepseek/chat-tool/.test_workdir")
-test_dir.mkdir(exist_ok=True)
+# Use platform-independent temporary directory
+test_dir = Path(tempfile.mkdtemp(prefix=".widdx_test_"))
 
 try:
     # Test 1: Git auto-commit + undo
@@ -18,8 +16,9 @@ try:
     assert is_git_repo(test_dir), "Should be a git repo"
     assert not has_changes(test_dir), "Should have no changes yet"
 
-    # Create first commit
+    # Create first commit (need to add file first since it's untracked)
     (test_dir / "test.txt").write_text("hello")
+    subprocess.run(["git", "add", "."], cwd=str(test_dir), capture_output=True, check=True)
     committed = auto_commit(test_dir, "test commit 1")
     assert committed, "First auto-commit should succeed"
     assert not has_changes(test_dir), "No changes after first commit"
