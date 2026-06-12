@@ -277,42 +277,70 @@ def build_project_context(project_dir: str | Path | None = None) -> str | None:
     return "\n".join(parts)
 
 
-# ── conversation summarizer ──────────────────────────────────────────────
+# ── conversation summarizer — sliding window ────────────────────────────
 
-SUMMARY_THRESHOLD = 40  # max messages before summarizing
+SUMMARY_THRESHOLD = 40   # messages — summarize if above this
+KEEP_LAST = 10           # full messages to keep at the end
+HEAD_CHARS = 500         # chars to keep from the start of each old message
+TAIL_CHARS = 200         # chars to keep from the end of each old message
+
+
+def _summarize_message(content: str) -> str:
+    """Compress a single message: keep head + tail, preserve structure.
+
+    'head tail' is better than truncate because code often has the
+    important part at the end (result, error, summary).
+    """
+    if len(content) < HEAD_CHARS + TAIL_CHARS + 50:
+        return content[:HEAD_CHARS + TAIL_CHARS + 50].replace("\n", " ").strip()
+
+    head = content[:HEAD_CHARS]
+    tail = content[-TAIL_CHARS:]
+    # Count newlines in head portion to include structure hint
+    n_lines = content[:HEAD_CHARS].count("\n")
+    return f"{head}\n[... {n_lines} lines ... {len(content)} chars ...]\n{tail}"
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars per token for English)."""
+    return max(1, len(text) // 4)
 
 
 def summarize_conversation(messages: list, keep_last: int = 10) -> list:
-    """Compress old messages into a single summary to save tokens.
+    """Compress old messages with a sliding window.
 
-    Preserves ALL system messages (skill prompts, project context, instructions)
-    + the last `keep_last` messages + a summary of everything in between.
-    Returns the new message list.
+    Strategy:
+      - Keep the last `keep_last` user/assistant/tool messages FULL.
+      - Compress older messages by keeping head + tail of each.
+      - Preserve ALL system messages (skill prompts, config, instructions).
+      - Return the new list only if compression actually saved messages.
+
+    This preserves far more context than the old 150-char truncation.
     """
     if len(messages) <= SUMMARY_THRESHOLD:
         return messages
 
-    # Collect ALL system messages (including _skill_prompt, _summary flags)
     system_msgs = [m for m in messages if m.get("role") == "system"]
     non_system_msgs = [m for m in messages if m.get("role") != "system"]
 
-    # Keep last N non-system messages
     tail = non_system_msgs[-keep_last:] if non_system_msgs else []
-
-    # Messages between system and tail get summarized
     end_idx = -keep_last if keep_last < len(non_system_msgs) else len(non_system_msgs)
     middle = non_system_msgs[:end_idx] if end_idx != 0 else []
 
     if not middle:
         return messages
 
-    # Build a compact summary
-    summary_lines = ["Previous conversation summary:"]
+    # Build a smart summary: keep head+tail of each old message
+    summary_lines = ["Previous conversation (compressed):"]
     for m in middle:
         role = m.get("role", "?").upper()
         content = m.get("content", "")
-        if isinstance(content, str) and content:
-            summary_lines.append(f"  [{role}] {content[:150].replace(chr(10), ' ').strip()}")
+        if not isinstance(content, str) or not content:
+            continue
+        compressed = _summarize_message(content)
+        tok = _estimate_tokens(content)
+        summary_lines.append(f"  [{role}] ({tok} tokens) {compressed}")
+
     summary_text = "\n".join(summary_lines)
 
     new_msgs = list(system_msgs)
