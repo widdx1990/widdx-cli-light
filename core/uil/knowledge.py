@@ -1,12 +1,12 @@
-"""Knowledge — Execution Record Keeper.
+"""Knowledge — Execution Record Keeper with persistence.
 
-In-memory store for execution outcomes.
-Phase 2 foundation — pure Python stdlib, no LLM, no MCP, no external deps.
+Phase 2.3: Persistent KnowledgeBase that saves/loads from .widdx/knowledge.json.
+Provides historical execution stats for knowledge-informed routing.
 """
 
-import time
-import statistics
-from dataclasses import dataclass
+import json, time, statistics
+from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Any, Optional
 
 from .contract import ExecutionMode
@@ -27,6 +27,15 @@ class ExecutionRecord:
     success: bool
     timestamp: float
     steps_failed: int = 0
+    tools_used: list[str] | None = None
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ExecutionRecord":
+        return cls(**d)
 
 
 # -------------------------------------------------------------------
@@ -34,15 +43,52 @@ class ExecutionRecord:
 # -------------------------------------------------------------------
 
 class KnowledgeBase:
-    """In-memory execution knowledge store.
+    """Persistent execution knowledge store.
 
     Indexes records by task_type.value for O(1) lookup.
-    Pure dict-based — no database, no LLM, no external storage.
-    Phase 2 will add persistent storage and semantic indexing.
+    Persists to .widdx/knowledge.json in the project directory.
     """
 
-    def __init__(self):
+    def __init__(self, project_dir: str | Path | None = None):
         self._records: dict[str, list[ExecutionRecord]] = {}
+        self._dirty: bool = False
+        self._project_dir = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
+        self._load()
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def _get_path(self) -> Path:
+        """Path to the knowledge store file."""
+        return self._project_dir / ".widdx" / "knowledge.json"
+
+    def _load(self):
+        """Load records from disk."""
+        path = self._get_path()
+        if not path.exists():
+            return
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            for task_type, records_raw in raw.items():
+                self._records[task_type] = [
+                    ExecutionRecord.from_dict(r) for r in records_raw
+                ]
+        except Exception:
+            self._records = {}
+
+    def _save(self):
+        """Persist records to disk."""
+        path = self._get_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            raw = {}
+            for task_type, records in self._records.items():
+                raw[task_type] = [r.to_dict() for r in records]
+            path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+            self._dirty = False
+        except Exception:
+            pass  # non-critical
 
     # ------------------------------------------------------------------
     # Write
@@ -50,31 +96,27 @@ class KnowledgeBase:
 
     def record(self, classification: Any, result: Any,
                decision: Any) -> None:
-        """Store an execution outcome.
-
-        Extracts structured data from ClassificationResult, ExecutionResult,
-        and RoutingDecision without touching internal contracts.
-
-        Args:
-            classification: ClassificationResult with task_type, domain.
-            result: ExecutionResult with mode, steps, success, time.
-            decision: RoutingDecision with plan.mode.
-        """
+        """Store an execution outcome and persist to disk."""
         record = ExecutionRecord(
-            task_type=classification.task_type.value,
-            execution_mode=result.mode.value if result.mode else "",
-            steps_planned=result.steps_planned,
-            steps_completed=result.steps_completed,
-            steps_failed=result.steps_failed,
-            execution_time=result.execution_time,
-            success=result.success,
+            task_type=classification.task_type.value if hasattr(classification, 'task_type') else str(classification),
+            execution_mode=result.mode.value if hasattr(result, 'mode') and result.mode else "",
+            steps_planned=result.steps_planned if hasattr(result, 'steps_planned') else 0,
+            steps_completed=result.steps_completed if hasattr(result, 'steps_completed') else 0,
+            steps_failed=result.steps_failed if hasattr(result, 'steps_failed') else 0,
+            execution_time=result.execution_time if hasattr(result, 'execution_time') else 0.0,
+            success=result.success if hasattr(result, 'success') else False,
             timestamp=time.time(),
+            tools_used=list(result.tools_used) if hasattr(result, 'tools_used') and result.tools_used else None,
         )
 
         key = record.task_type
         if key not in self._records:
             self._records[key] = []
         self._records[key].append(record)
+        self._dirty = True
+
+        # Auto-save every 3 records or always (simple approach: save every time)
+        self._save()
 
     # ------------------------------------------------------------------
     # Read — Similar Records
@@ -151,20 +193,19 @@ class KnowledgeBase:
 
         Returns:
             ExecutionMode override or None if:
-              - fewer than 3 records (insufficient data)
+              - fewer than 2 records (insufficient data)
               - historical success rate is acceptable
               - no performance degradation detected
         """
         stats = self.get_stats(task_type)
-        if stats["count"] < 3:
+        if stats["count"] < 2:  # lowered from 3 to 2 for practical use
             return None
 
         # Condition 1: Low success rate → escalate to ExpertTeam
-        if stats["success_rate"] < 0.5:
+        if stats["success_rate"] is not None and stats["success_rate"] < 0.5:
             return ExecutionMode.EXPERT_TEAM
 
-        # Condition 2: Slow + incomplete → downgrade to more
-        # autonomous (single-agent, cheaper retry)
+        # Condition 2: Slow + incomplete → more autonomous
         avg_time = stats["avg_execution_time"]
         avg_planned = stats["avg_steps_planned"]
         avg_completed = stats["avg_steps_completed"]
@@ -191,5 +232,11 @@ class KnowledgeBase:
         return list(self._records.keys())
 
     def clear(self) -> None:
-        """Reset all records (for testing)."""
+        """Reset all records and delete the persisted file."""
         self._records.clear()
+        path = self._get_path()
+        if path.exists():
+            try:
+                path.unlink()
+            except Exception:
+                pass

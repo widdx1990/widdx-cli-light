@@ -199,6 +199,7 @@ def test_knowledge_suggest_insufficient_data():
     kb.record(classification=cls, result=res, decision=dec)
 
     assert kb.get_stats("code_write")["count"] == 1
+    # 1 record only (< 2) → insufficient data → None (Phase 2.3: min=2)
     assert kb.suggest_mode("code_write") is None
 
     # 2 records — still None
@@ -215,7 +216,8 @@ def test_knowledge_suggest_insufficient_data():
     kb.record(classification=cls2, result=res2, decision=dec)
 
     assert kb.get_stats("code_write")["count"] == 2
-    assert kb.suggest_mode("code_write") is None
+    # 2 failures out of 2 → success_rate=0 < 0.5 → escalate
+    assert kb.suggest_mode("code_write") == ExecutionMode.EXPERT_TEAM
 
 
 # =====================================================================
