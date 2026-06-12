@@ -1,9 +1,12 @@
-import json, time
+import json, time, uuid
 import httpx
 from typing import Optional
 
 from ..proxy import proxy_manager, ZEN_BASE
 from ..config.keychain import get_key
+
+# ── Constants ─────────────────────────────────────────────
+_DEFAULT_MAX_TOKENS = 32768
 
 # ---------------------------------------------------------------------------
 # ToolCall
@@ -61,6 +64,65 @@ class Provider:
         content, tool_calls = self.chat(messages, tool_defs, temperature)
         yield {"type": "done", "data": (content, tool_calls)}
 
+    # ── Shared streaming helpers (used by subclasses) ──────────────
+
+    @staticmethod
+    def _accumulate_tool_call(current_tool_calls: dict, t: dict):
+        """Accumulate a single streaming tool_call delta into current_tool_calls.
+
+        Called for each chunk in the SSE stream that carries tool_calls.
+        Modifies current_tool_calls in place.
+        """
+        idx = t.get("index", 0)
+        if idx not in current_tool_calls:
+            current_tool_calls[idx] = {
+                "id": t.get("id", ""),
+                "function": {"name": "", "arguments": ""},
+            }
+        func = t.get("function", {})
+        if func.get("name"):
+            current_tool_calls[idx]["function"]["name"] += func["name"]
+        if func.get("arguments"):
+            current_tool_calls[idx]["function"]["arguments"] += func["arguments"]
+        if t.get("id"):
+            current_tool_calls[idx]["id"] = t["id"]
+
+    @staticmethod
+    def _finalize_stream(content_chunks: list[str],
+                         reasoning_chunks: list[str],
+                         current_tool_calls: dict) -> tuple[str, list]:
+        """Build the final content string and ToolCall list from streamed chunks.
+
+        Args:
+            content_chunks: Accumulated content delta strings.
+            reasoning_chunks: Accumulated reasoning delta strings.
+            current_tool_calls: Accumulated tool_call deltas (index → dict).
+
+        Returns:
+            (content, list_of_ToolCall).
+        """
+        content = "".join(content_chunks)
+        full_reasoning = "".join(reasoning_chunks)
+        if full_reasoning:
+            content = f"[thinking]\n{full_reasoning}\n[/thinking]\n\n" + (content or "")
+        calls = []
+        for idx in sorted(current_tool_calls):
+            tc = current_tool_calls[idx]
+            raw = tc["function"]["arguments"]
+            try:
+                args = json.loads(raw) if raw.strip() else {}
+            except json.JSONDecodeError:
+                args = {}
+            # ── Ensure every tool call has a valid ID ────────────────
+            # DeepSeek (& other strict providers) reject empty tool_call_id.
+            # Streaming APIs may send the id in a separate chunk, or not at
+            # all — generate a UUID fallback so the tool response is valid.
+            call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+            calls.append(ToolCall(
+                name=tc["function"]["name"], args=args, id=call_id,
+            ))
+        return content, calls
+
 
 # ---------------------------------------------------------------------------
 # Ollama Provider
@@ -70,7 +132,7 @@ class OllamaProvider(Provider):
     def chat(self, messages: list, tool_defs: list, temperature: float = 0.7):
         url = f"{self.base_url}/v1/chat/completions"
         schema = self.build_tools_schema(tool_defs)
-        body = {"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": 32768}
+        body = {"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": _DEFAULT_MAX_TOKENS}
         if schema:
             body["tools"] = schema
         try:
@@ -90,7 +152,8 @@ class OllamaProvider(Provider):
             raw = func.get("arguments", "{}")
             if isinstance(raw, str):
                 raw = json.loads(raw) if raw.strip() else {}
-            calls.append(ToolCall(name=func.get("name", ""), args=raw, id=tc.get("id", "")))
+            call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+            calls.append(ToolCall(name=func.get("name", ""), args=raw, id=call_id))
         return content, calls
 
 
@@ -105,7 +168,7 @@ class OpenAICompatibleProvider(Provider):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        body = {"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": 32768}
+        body = {"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": _DEFAULT_MAX_TOKENS}
         if schema:
             body["tools"] = schema
         try:
@@ -126,7 +189,8 @@ class OpenAICompatibleProvider(Provider):
             raw = func.get("arguments", "{}")
             if isinstance(raw, str):
                 raw = json.loads(raw) if raw.strip() else {}
-            calls.append(ToolCall(name=func.get("name", ""), args=raw, id=tc.get("id", "")))
+            call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+            calls.append(ToolCall(name=func.get("name", ""), args=raw, id=call_id))
         return content, calls
 
 
@@ -180,7 +244,7 @@ class OpenCodeZenProvider(OpenAICompatibleProvider):
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 32768,
+            "max_tokens": _DEFAULT_MAX_TOKENS,
             "stream": True,
         }
         if schema:
@@ -254,34 +318,12 @@ class OpenCodeZenProvider(OpenAICompatibleProvider):
                             tc = delta.get("tool_calls")
                             if tc:
                                 for t in tc:
-                                    idx = t.get("index", 0)
-                                    if idx not in current_tool_calls:
-                                        current_tool_calls[idx] = {
-                                            "id": t.get("id", ""),
-                                            "function": {"name": "", "arguments": ""},
-                                        }
-                                    func = t.get("function", {})
-                                    if func.get("name"):
-                                        current_tool_calls[idx]["function"]["name"] += func["name"]
-                                    if func.get("arguments"):
-                                        current_tool_calls[idx]["function"]["arguments"] += func["arguments"]
-                                    if t.get("id"):
-                                        current_tool_calls[idx]["id"] = t["id"]
+                                    self._accumulate_tool_call(current_tool_calls, t)
 
                 # --- Success ---
-                content = "".join(content_chunks)
-                full_reasoning = "".join(reasoning_chunks)
-                if full_reasoning:
-                    content = f"[\u601d\u8003\u4e2d]\n{full_reasoning}\n[/\u601d\u8003\u4e2d]\n\n" + (content or "")
-                calls = []
-                for idx in sorted(current_tool_calls):
-                    tc = current_tool_calls[idx]
-                    raw = tc["function"]["arguments"]
-                    try:
-                        args = json.loads(raw) if raw.strip() else {}
-                    except json.JSONDecodeError:
-                        args = {}
-                    calls.append(ToolCall(name=tc["function"]["name"], args=args, id=tc["id"]))
+                content, calls = self._finalize_stream(
+                    content_chunks, reasoning_chunks, current_tool_calls,
+                )
                 yield {"type": "done", "data": (content, calls)}
                 return
 
@@ -342,7 +384,7 @@ class DeepSeekProvider(OpenAICompatibleProvider):
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 32768,
+            "max_tokens": _DEFAULT_MAX_TOKENS,
             "stream": True,
         }
         if self._thinking_enabled:
@@ -389,35 +431,12 @@ class DeepSeekProvider(OpenAICompatibleProvider):
                         tc = delta.get("tool_calls")
                         if tc:
                             for t in tc:
-                                idx = t.get("index", 0)
-                                if idx not in current_tool_calls:
-                                    current_tool_calls[idx] = {
-                                        "id": t.get("id", ""),
-                                        "function": {"name": "", "arguments": ""},
-                                    }
-                                func = t.get("function", {})
-                                if func.get("name"):
-                                    current_tool_calls[idx]["function"]["name"] += func["name"]
-                                if func.get("arguments"):
-                                    current_tool_calls[idx]["function"]["arguments"] += func["arguments"]
-                                if t.get("id"):
-                                    current_tool_calls[idx]["id"] = t["id"]
+                                self._accumulate_tool_call(current_tool_calls, t)
 
                     # --- Build final result ---
-                    content = "".join(content_chunks)
-                    full_reasoning = "".join(reasoning_chunks)
-                    if full_reasoning:
-                        content = f"[\u601d\u8003\u4e2d]\n{full_reasoning}\n[/\u601d\u8003\u4e2d]\n\n" + (content or "")
-                    calls = []
-                    for idx in sorted(current_tool_calls):
-                        tc = current_tool_calls[idx]
-                        raw = tc["function"]["arguments"]
-                        try:
-                            args = json.loads(raw) if raw.strip() else {}
-                        except json.JSONDecodeError:
-                            args = {}
-                        calls.append(ToolCall(name=tc["function"]["name"],
-                                              args=args, id=tc["id"]))
+                    content, calls = self._finalize_stream(
+                        content_chunks, reasoning_chunks, current_tool_calls,
+                    )
                     yield {"type": "done", "data": (content, calls)}
 
         except httpx.ConnectError:
@@ -482,6 +501,52 @@ def fetch_free_models(force_refresh: bool = False) -> list[str]:
         return FREE_MODELS_CACHE["models"] or [fallback]
     except Exception:
         return FREE_MODELS_CACHE["models"] or [fallback]
+
+
+# ── Ollama local model discovery ─────────────────────────────
+
+_OLLAMA_MODELS_CACHE: dict = {"models": [], "timestamp": 0}
+OLLAMA_DEFAULT_URL = "http://localhost:11434"
+
+
+def fetch_ollama_models(base_url: str | None = None,
+                        force_refresh: bool = False) -> list[dict]:
+    """Discover installed models from a local Ollama instance.
+
+    Queries ``GET /api/tags`` on the Ollama server.  Returns a list of
+    dicts with keys ``name``, ``size``, ``modified_at`` so callers can
+    display rich information.
+
+    Results are cached for 300 seconds (5 min) — models don't change
+    often on a local machine.  Pass *force_refresh=True* to bypass.
+    """
+    url_base = (base_url or OLLAMA_DEFAULT_URL).rstrip("/")
+
+    now = time.time()
+    if (not force_refresh
+            and _OLLAMA_MODELS_CACHE["models"]
+            and (now - _OLLAMA_MODELS_CACHE["timestamp"]) < 300):
+        return _OLLAMA_MODELS_CACHE["models"]
+
+    try:
+        r = httpx.get(f"{url_base}/api/tags", timeout=5)
+        if r.status_code != 200:
+            return _OLLAMA_MODELS_CACHE["models"]
+        data = r.json()
+        models = data.get("models", [])
+        # Normalise: keep only the fields we care about
+        result = [{
+            "name": m.get("name", m.get("model", "unknown")),
+            "size": m.get("size", 0),           # bytes
+            "modified_at": m.get("modified_at", ""),
+        } for m in models]
+        # Sort by name
+        result.sort(key=lambda m: m["name"])
+        _OLLAMA_MODELS_CACHE["models"] = result
+        _OLLAMA_MODELS_CACHE["timestamp"] = now
+        return result
+    except Exception:
+        return _OLLAMA_MODELS_CACHE["models"]
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,12 @@
 """Skills system for WIDDX — hybrid prompt templates + optional Python tool extensions."""
 
-import re, sys, importlib.util
+import re, sys, importlib.util, logging
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("widdx.skills")
+
+from .utils import parse_frontmatter
 
 SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
@@ -37,23 +41,6 @@ class Skill:
         return f"Skill(name={self.name!r}, desc={self.description[:30]!r})"
 
 
-def _parse_frontmatter(text: str) -> tuple:
-    """Parse YAML-like frontmatter from markdown text.
-    Returns (metadata_dict, body_text)."""
-    meta = {}
-    body = text
-    m = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', text, re.DOTALL)
-    if m:
-        front = m.group(1)
-        body = m.group(2)
-        for line in front.strip().split("\n"):
-            line = line.strip()
-            if ":" in line:
-                key, _, val = line.partition(":")
-                meta[key.strip()] = val.strip()
-    return meta, body.strip()
-
-
 def _load_skill_tools(skill_dir: Path) -> dict:
     """Load custom tools from tools.py in a skill directory, if present."""
     tools_py = skill_dir / "tools.py"
@@ -76,7 +63,8 @@ def _load_skill_tools(skill_dir: Path) -> dict:
             if callable(obj):
                 tools[name] = obj
         return tools
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to load skill tools from %s: %s", skill_dir, e)
         return {}
 
 
@@ -108,7 +96,7 @@ class SkillManager:
         if not md.exists():
             return None
         text = md.read_text(encoding="utf-8")
-        meta, prompt = _parse_frontmatter(text)
+        meta, prompt = parse_frontmatter(text, nested_metadata=False)
         name = meta.get("name") or skill_dir.name
         desc = meta.get("description", "No description")
         icon = meta.get("icon", "")

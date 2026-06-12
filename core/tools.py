@@ -4,16 +4,60 @@ Every tool is registered here via a dict with:
   name, description, parameters (OpenAI function-calling schema), handler.
 """
 import glob as glob_module
-import os, subprocess, platform, re, json, time
+import os, subprocess, platform, re, json, time, logging
 from pathlib import Path
 import tempfile
 from typing import Any
+
+logger = logging.getLogger("widdx.tools")
+
+# ── Constants ─────────────────────────────────────────────
+MAX_TOKENS_DEFAULT = 32768
+BASH_TIMEOUT = 120  # seconds
+MAX_STDOUT_CHARS = 5000
+MAX_STDERR_CHARS = 2000
 
 TOOL_DEFINITIONS: list[dict] = []
 _TOOL_MAP: dict[str, callable] = {}
 _EXTRA_FILE_TOOLS: list[dict] = []
 # Dynamic tool registrations (workflow, etc.) — survives module reloads
 _DYNAMIC_TOOLS: list[dict] = []
+
+# ── Dangerous command patterns (security) ─────────────────
+_DANGEROUS_PATTERNS: list[tuple[str, str]] = [
+    # (regex pattern, description of risk)
+    (r'\brm\s+-rf\b', "recursive force delete (rm -rf)"),
+    (r'\bRemove-Item\s+-Recurse\s+-Force\b', "recursive force delete"),
+    (r'\bFormat-\w+\b', "disk format"),
+    (r'\bdel\s+/[fq]\s', "force delete system files"),
+    (r'>\s*/dev/sd[a-z]', "raw disk write"),
+    (r'\bdd\s+if=', "raw disk copy (dd)"),
+    (r'\bgit\s+push\s+--force\b', "force push to remote"),
+    (r'\bgit\s+reset\s+--hard\b', "hard git reset"),
+    (r'\bchmod\s+777\b', "world-writable permissions"),
+    (r'\bicacls\s+.*\/grant\s+Everyone', "grant Everyone permissions"),
+    (r'\bRestart-Computer\b', "system restart"),
+    (r'\bStop-Computer\b', "system shutdown"),
+    (r'\bStop-Process\s+-Name\s+(winlogon|lsass|csrss|smss|services)', "critical process kill"),
+    (r'\bsc\s+stop\b', "stop Windows service"),
+    (r'\bSet-ExecutionPolicy\b', "change execution policy"),
+    (r'\bRemove-Item\s+.*\\Windows\\', "delete Windows system files"),
+    (r'\bwget\b.*\|\s*(sh|bash|pwsh)', "pipe download to shell"),
+    (r'\bcurl\b.*\|\s*(sh|bash|pwsh)', "pipe download to shell"),
+    (r'\bInvoke-Expression\b.*(wget|curl|iwr)', "eval remote content"),
+]
+
+
+def _scan_dangerous(command: str) -> list[str]:
+    """Scan a command for dangerous patterns.
+
+    Returns a list of risk descriptions found.
+    """
+    found = []
+    for pattern, risk_desc in _DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            found.append(risk_desc)
+    return found
 
 
 def register_dynamic(tool_defs: list[dict], tool_map: dict[str, callable]):
@@ -61,6 +105,9 @@ def _read(file_path: str, offset: int = 0, limit: int = 0) -> str:
         limit: Max lines to show (0 = all).
     """
     p = Path(file_path).resolve()
+    # Sandbox check (consistent with write/edit)
+    if _SAFE_DIR and not str(p).startswith(_SAFE_DIR):
+        return f"Sandbox: read of {file_path} denied — not inside {_SAFE_DIR}"
     if not p.exists():
         return f"File not found: {file_path}"
     if p.stat().st_size > 1024 * 1024:
@@ -207,7 +254,8 @@ def _grep(pattern: str, path: str | None = None, include: str | None = None):
                     if re.search(pattern, line, re.I):
                         rel = str(f.relative_to(p))
                         results.append(f"{rel}:{i}: {line.strip()[:120]}")
-            except Exception:
+            except Exception as e:
+                logger.debug("grep: skip %s: %s", f.name, e)
                 pass
     if not results:
         return f"No results for '{pattern}'"
@@ -216,6 +264,18 @@ def _grep(pattern: str, path: str | None = None, include: str | None = None):
 
 def _bash(command: str, description: str | None = None) -> str:
     desc = description or command[:50]
+
+    # \u2500\u2500 Security: scan for dangerous patterns \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    risks = _scan_dangerous(command)
+    if risks:
+        risk_list = "\n".join(f"  \u2022 {r}" for r in risks)
+        return (
+            f"\ud83d\udeab BLOCKED \u2014 Dangerous command detected:\n\n"
+            f"Command: {command[:200]}\n\n"
+            f"Risks found:\n{risk_list}\n\n"
+            f"Tip: Use safer alternatives or confirm with the user first."
+        )
+
     try:
         if platform.system() == "Windows":
             shell_cmd = ["powershell", "-NoProfile", "-Command", command]
@@ -228,9 +288,9 @@ def _bash(command: str, description: str | None = None) -> str:
             text=True,
         )
         try:
-            stdout, stderr = proc.communicate(timeout=120)
-            out = stdout[:5000]
-            err = stderr[:2000]
+            stdout, stderr = proc.communicate(timeout=BASH_TIMEOUT)
+            out = stdout[:MAX_STDOUT_CHARS]
+            err = stderr[:MAX_STDERR_CHARS]
             ret = f"\U0001f4b2 {desc}\n"
             if out:
                 ret += f"\U0001f4e4 stdout:\n{out}\n"
@@ -254,6 +314,7 @@ def _bash(command: str, description: str | None = None) -> str:
             ret += "\u26a0\ufe0f Timeout (120s) -- process killed"
             return ret
     except Exception as e:
+        logger.warning("bash tool error: %s | command: %s", e, command[:100])
         return f"\u26a0\ufe0f Failed: {e}"
 
 
@@ -596,10 +657,11 @@ def execute(name: str, args: dict[str, Any]) -> str:
 def execute_with_skills(name: str, args: dict) -> str:
     """Execute a tool, routing through skill_manager if a skill is active.
 
-    Handles three cases:
+    Handles four cases:
       1. `use_skill` → skill_manager.activate() / deactivate()
-      2. Skill tool → skill_manager.execute_tool()
-      3. Built-in / MCP → tools.execute()
+      2. Permission check → deny if not allowed
+      3. Skill tool → skill_manager.execute_tool()
+      4. Built-in / MCP → tools.execute()
 
     This is the single source of truth for tool dispatch, shared by
     chat.py (process_tool_calls) and agents/agent.py (_execute_tool).
@@ -615,11 +677,18 @@ def execute_with_skills(name: str, args: dict) -> str:
         skill_manager.deactivate()
         return "Skill deactivated."
 
-    # ── Case 2: Route to active skill's custom tool ─────────────────
+    # ── Case 2: Permission check ────────────────────────────────────
+    from core.permissions import get_permission_manager
+    from core.ui.ui import console as _console
+    pm = get_permission_manager()
+    if not pm.check(name, console=_console):
+        return f"⛔ Permission denied: {name}"
+
+    # ── Case 3: Route to active skill's custom tool ─────────────────
     if skill_manager.active and name in skill_manager.active.tools:
         return skill_manager.execute_tool(name, args)
 
-    # ── Case 3: Built-in tool (or falls through to MCP) ─────────────
+    # ── Case 4: Built-in tool (or falls through to MCP) ─────────────
     return execute(name, args)
 
 

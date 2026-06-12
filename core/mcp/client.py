@@ -400,6 +400,11 @@ class MCPClientManager:
 
     def add_server(self, name: str, command: str, args: list[str] | None = None):
         """Add and immediately connect a new MCP server."""
+        # Resolve {CWD}, {PROJECT_ROOT}, {USER_HOME} in command and args
+        cwd_str = Path.cwd().as_posix()
+        command = _resolve_placeholders(command, cwd_str)
+        if args:
+            args = [_resolve_placeholders(a, cwd_str) if isinstance(a, str) else a for a in args]
         conn = MCPServerConnection(name, command, args)
         self._servers[name] = conn
         ok = conn.connect()
@@ -434,12 +439,22 @@ class MCPClientManager:
         conn = self._servers.get(server_name)
         if not conn:
             return f"MCP server '{server_name}' not found"
-        if not conn.is_connected:
-            # Reconnect on demand
-            conn.connect()
-            if not conn.is_connected:
-                return f"MCP server '{server_name}' not connected: {conn.error or 'unknown'}"
-        return conn.call_tool(tool_name, arguments)
+
+        # Try up to 2 times: once + one reconnect attempt
+        for attempt in range(2):
+            if conn.is_connected:
+                result = conn.call_tool(tool_name, arguments)
+                # Check if result indicates a disconnected server
+                if "MCP error" not in result or attempt == 1:
+                    return result
+            # Attempt reconnection
+            if attempt == 0:
+                conn.disconnect()
+                ok = conn.connect(retry=True)
+                if not ok:
+                    return f"MCP server '{server_name}' reconnection failed: {conn.error or 'unknown'}"
+
+        return f"MCP server '{server_name}' error after reconnect: {conn.error or 'unknown'}"
 
     def remove_server(self, name: str):
         """Remove and disconnect a server by name."""

@@ -1,6 +1,8 @@
-import time, threading
+import time, threading, logging
 import httpx
 from typing import Optional
+
+logger = logging.getLogger("widdx.proxy")
 
 # ---------------------------------------------------------------------------
 # Proxy Manager -- fetches free proxies, tests them, and rotates automatically
@@ -153,7 +155,8 @@ class ProxyManager:
                         line = line.strip()
                         if line and ":" in line:
                             proxies.add(line)
-            except Exception:
+            except Exception as e:
+                logger.debug("proxy fetch failed for %s: %s", url, e)
                 pass
         return list(proxies)
 
@@ -182,8 +185,8 @@ class ProxyManager:
                 elif r.status_code == 429:
                     # Proxy works but this IP is also blocked -- skip
                     pass
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("proxy test failed for %s: %s", proxy_addr, e)
         return working
 
     def force_refresh(self):

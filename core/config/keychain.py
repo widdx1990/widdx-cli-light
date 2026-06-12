@@ -22,16 +22,13 @@ def _load_providers_from_config():
     if _KEY_PROVIDERS:
         return
     try:
-        from pathlib import Path
-        import json
-        cfg_path = Path(__file__).parent.parent.parent / "config.json"
-        if cfg_path.exists():
-            cfg = json.loads(cfg_path.read_text())
-            p = cfg.get("provider", {})
-            name = p.get("name", "")
-            if name:
-                _KEY_PROVIDERS[name] = name.upper().replace("-", "_")
-                _KEY_PROVIDERS[name.replace("-zen", "")] = name.upper().replace("-", "_")
+        from .settings import load as _load_cfg
+        cfg = _load_cfg()
+        p = cfg.get("provider", {})
+        name = p.get("name", "")
+        if name:
+            _KEY_PROVIDERS[name] = name.upper().replace("-", "_")
+            _KEY_PROVIDERS[name.replace("-zen", "")] = name.upper().replace("-", "_")
     except Exception:
         pass
     # Fallback defaults

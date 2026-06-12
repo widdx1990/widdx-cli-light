@@ -1,11 +1,10 @@
 """UI subpackage — terminal rendering.
 
-Supports standard UI (ui.py) and enhanced UI (ui_enhanced.py).
-Switch with /theme command or WIDDX_THEME=enhanced env var.
+Two modes:
+- standard (ui.py) — Rich-based console rendering
+- enhanced (ui_enhanced.py) — Rich-based with premium styling
 
-Usage:
-    from core.ui import console, print_header, use_enhanced_ui
-    use_enhanced_ui(True)   # switch to enhanced at runtime
+Switch with /theme command.
 """
 
 import os as _os
@@ -27,7 +26,7 @@ def use_enhanced_ui(enabled: bool):
     """Switch between standard (False) and enhanced (True) UI at runtime."""
     global _USE_ENHANCED, _CACHE
     _USE_ENHANCED = enabled
-    _CACHE.clear()  # force re-import on next access
+    _CACHE.clear()
 
 
 def is_enhanced() -> bool:

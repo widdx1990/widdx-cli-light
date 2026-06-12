@@ -6,19 +6,67 @@ from datetime import datetime
 from rich.prompt import Prompt as RPrompt
 
 from core.ui.ui import print_system_msg, console
-from core.providers.providers import create_provider, fetch_free_models
+from rich.text import Text
+from core.providers.providers import create_provider, fetch_free_models, fetch_ollama_models
 from core.config.keychain import prompt_key, forget_key
 from core import config
 
 
 def handle_model(provider, state):
     """Handle /model command — change AI model."""
+    # ── Ollama: auto-discover local models ──────────────────────
+    if provider.name == "ollama":
+        return _handle_ollama_model(provider, state)
+
     free_list = fetch_free_models()
     print_system_msg(f"Available free models: {', '.join(free_list)}")
     new = RPrompt.ask("Model name", default=provider.model)
     provider.model = new
     state["model"] = f"{provider.name}/{new}"
     print_system_msg(f"Model changed to {new}")
+    return provider, state
+
+
+def _handle_ollama_model(provider, state):
+    """Let the user pick from locally-installed Ollama models."""
+    from rich.table import Table
+
+    models = fetch_ollama_models(base_url=provider.base_url, force_refresh=True)
+    if not models:
+        print_system_msg("⚠️  No Ollama models found — is 'ollama serve' running?")
+        new = RPrompt.ask("Model name (manual)", default=provider.model)
+        provider.model = new
+        state["model"] = f"ollama/{new}"
+        print_system_msg(f"Model changed to {new}")
+        return provider, state
+
+    # Display model table
+    table = Table(title=f"Installed Ollama Models ({len(models)})",
+                  border_style="dim", header_style="bold #00c896")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Model", style="bold white")
+    table.add_column("Size", style="#f5a623")
+    for i, m in enumerate(models, 1):
+        size_str = f"{m['size'] / 1e9:.1f} GB" if m["size"] > 1e9 else f"{m['size'] / 1e6:.0f} MB"
+        table.add_row(str(i), m["name"], size_str)
+    console.print(table)
+
+    # Let user pick by number or name
+    choice = RPrompt.ask(
+        "Pick model (# or name)",
+        default=provider.model or models[0]["name"],
+    )
+    # If user typed a number, map to model name
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(models):
+            choice = models[idx]["name"]
+    except ValueError:
+        pass  # user typed a name directly
+
+    provider.model = choice
+    state["model"] = f"ollama/{choice}"
+    print_system_msg(f"Model changed to {choice}")
     return provider, state
 
 
@@ -51,7 +99,31 @@ def handle_provider(provider, state, cfg):
             })
         elif new_p == "ollama":
             url = RPrompt.ask("Ollama URL", default="http://localhost:11434")
-            model = RPrompt.ask("Model", default="llama3")
+            # Auto-discover installed models
+            models = fetch_ollama_models(base_url=url, force_refresh=True)
+            if models:
+                from rich.table import Table
+                table = Table(title=f"Installed Ollama Models ({len(models)})",
+                              border_style="dim", header_style="bold #00c896")
+                table.add_column("#", style="dim", width=4)
+                table.add_column("Model", style="bold white")
+                table.add_column("Size", style="#f5a623")
+                for i, m in enumerate(models, 1):
+                    size_str = f"{m['size'] / 1e9:.1f} GB" if m["size"] > 1e9 else f"{m['size'] / 1e6:.0f} MB"
+                    table.add_row(str(i), m["name"], size_str)
+                console.print(table)
+                choice = RPrompt.ask("Pick model (# or name)", default=models[0]["name"])
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(models):
+                        choice = models[idx]["name"]
+                except ValueError:
+                    pass
+                model = choice
+                print_system_msg(f"Using model: {model}")
+            else:
+                print_system_msg("⚠️  No Ollama models found — is 'ollama serve' running?")
+                model = RPrompt.ask("Model name (manual)", default="llama3")
             provider = create_provider({
                 "provider": {"name": "ollama", "model": model, "base_url": url}
             })
@@ -311,11 +383,29 @@ def handle_export(messages):
 def handle_version():
     """Show version information."""
     from rich.table import Table
+
+    # Read version from pyproject.toml
     try:
-        from pyproject.toml import _ as _pyproject
-        ver = "2.0.0"
+        import tomllib  # Python 3.11+
+        p = Path(__file__).parent.parent.parent / "pyproject.toml"
+        if p.exists():
+            with open(p, "rb") as f:
+                ver = tomllib.load(f).get("project", {}).get("version", "3.0.0")
+        else:
+            ver = "3.0.0"
+    except ImportError:
+        try:
+            import tomli as tomllib
+            p = Path(__file__).parent.parent.parent / "pyproject.toml"
+            if p.exists():
+                with open(p, "rb") as f:
+                    ver = tomllib.load(f).get("project", {}).get("version", "3.0.0")
+            else:
+                ver = "3.0.0"
+        except Exception:
+            ver = "3.0.0"
     except Exception:
-        ver = "2.0.0"
+        ver = "3.0.0"
 
     table = Table(title="WIDDX", border_style="dim", header_style="bold #f5a623")
     table.add_column("Field", style="bold #00c896")
@@ -324,5 +414,52 @@ def handle_version():
     table.add_row("Python", f"{sys.version_info.major}.{sys.version_info.minor}")
     table.add_row("Platform", sys.platform)
     table.add_row("CWD", os.getcwd())
-    table.add_row("Config", str(Path(__file__).parent.parent.parent / "config.json"))
+    from core.config.settings import get_config_path
+    table.add_row("Config", str(get_config_path()))
     console.print(table)
+
+
+def handle_permissions(cmd: str = ""):
+    """Handle /permissions command — view/change permission level."""
+    from core.permissions import get_permission_manager, PermissionLevel
+    from rich.table import Table
+
+    pm = get_permission_manager()
+    parts = cmd.strip().split(None, 1) if cmd else []
+
+    if not parts:
+        # Show current status
+        table = Table(title="Permissions", border_style="dim", header_style="bold #f5a623")
+        table.add_column("Field", style="bold #00c896")
+        table.add_column("Value", style="white")
+        table.add_row("Level", pm.level.value)
+        table.add_row("Status", pm.status())
+        remembered = pm._remembered
+        if remembered:
+            allowed = [k for k, v in remembered.items() if v]
+            denied = [k for k, v in remembered.items() if not v]
+            if allowed:
+                table.add_row("Allowed", ", ".join(allowed))
+            if denied:
+                table.add_row("Denied", ", ".join(denied))
+        console.print(table)
+        console.print(Text(
+            "  Usage: /permissions level <name>  |  /permissions forget [tool]",
+            style="dim",
+        ))
+        return
+
+    action = parts[0]
+    if action == "level" and len(parts) > 1:
+        try:
+            pm.level = PermissionLevel(parts[1])
+            print_system_msg(f"Permission level set to {parts[1]}")
+        except ValueError:
+            valid = [lvl.value for lvl in PermissionLevel]
+            print_system_msg(f"Invalid level. Choose: {', '.join(valid)}")
+    elif action == "forget":
+        tool = parts[1] if len(parts) > 1 else None
+        pm.forget(tool)
+        print_system_msg(f"Forgot permissions{' for ' + tool if tool else ' (all)'}")
+    else:
+        print_system_msg(f"Unknown: /permissions {action}")

@@ -21,10 +21,12 @@ Usage:
     relevant = store.search("CLI")
 """
 
-import re, os, json
+import os, json
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
+
+from .utils import parse_frontmatter, strip_frontmatter, to_slug
 
 
 MEMORY_DIR_NAME = "memory"
@@ -47,7 +49,7 @@ class MemoryStore:
 
     def save(self, name: str, content: str, metadata: dict | None = None) -> Path:
         """Save a memory. Updates MEMORY.md index."""
-        slug = self._to_slug(name)
+        slug = to_slug(name)
         filepath = self.memory_dir / f"{slug}.md"
 
         meta = metadata or {}
@@ -75,18 +77,18 @@ class MemoryStore:
 
     def get(self, name: str) -> str | None:
         """Read a memory by name/slug. Returns None if not found."""
-        slug = self._to_slug(name)
+        slug = to_slug(name)
         filepath = self.memory_dir / f"{slug}.md"
         if not filepath.exists():
             return None
         text = filepath.read_text(encoding="utf-8")
         # Strip frontmatter
-        body = self._strip_frontmatter(text)
+        body = strip_frontmatter(text)
         return body
 
     def delete(self, name: str) -> bool:
         """Delete a memory. Returns True if deleted."""
-        slug = self._to_slug(name)
+        slug = to_slug(name)
         filepath = self.memory_dir / f"{slug}.md"
         if not filepath.exists():
             return False
@@ -98,7 +100,7 @@ class MemoryStore:
         """Return all memories as [{name, description, type, path}, ...]."""
         memories = []
         for f in sorted(self.memory_dir.glob("*.md")):
-            meta = self._parse_frontmatter(f.read_text(encoding="utf-8"))
+            meta, _ = parse_frontmatter(f.read_text(encoding="utf-8"), nested_metadata=True)
             memories.append({
                 "name": meta.get("name", f.stem),
                 "description": meta.get("description", ""),
@@ -114,8 +116,8 @@ class MemoryStore:
         for f in self.memory_dir.glob("*.md"):
             text = f.read_text(encoding="utf-8")
             if query_lower in text.lower():
-                meta = self._parse_frontmatter(text)
-                body = self._strip_frontmatter(text)
+                meta, _ = parse_frontmatter(text, nested_metadata=True)
+                body = strip_frontmatter(text)
                 results.append({
                     "name": meta.get("name", f.stem),
                     "description": meta.get("description", "")[:80],
@@ -151,49 +153,8 @@ class MemoryStore:
         """Regenerate MEMORY.md from all memory files."""
         lines = []
         for f in sorted(self.memory_dir.glob("*.md")):
-            meta = self._parse_frontmatter(f.read_text(encoding="utf-8"))
+            meta, _ = parse_frontmatter(f.read_text(encoding="utf-8"), nested_metadata=True)
             desc = meta.get("description", "")
             lines.append(f"- [{meta.get('name', f.stem)}]({MEMORY_DIR_NAME}/{f.name}) — {desc}")
         self.index_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    # ── Frontmatter helpers ───────────────────────────────────────────
-
-    @staticmethod
-    def _parse_frontmatter(text: str) -> dict:
-        """Parse YAML-like frontmatter from markdown."""
-        meta = {}
-        m = re.match(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
-        if not m:
-            return {"name": "", "description": "", "metadata": {}}
-        front = m.group(1)
-        current_key = None
-        meta["metadata"] = {}
-        for line in front.splitlines():
-            if line.startswith("metadata:"):
-                current_key = "metadata"
-            elif current_key == "metadata":
-                mm = re.match(r"\s+(\w+):\s*(.*)", line)
-                if mm:
-                    meta["metadata"][mm.group(1)] = mm.group(2).strip()
-            else:
-                mm = re.match(r"(\w+):\s*(.*)", line)
-                if mm:
-                    key, val = mm.group(1), mm.group(2).strip()
-                    if key not in ("metadata",):
-                        meta[key] = val
-        return meta
-
-    @staticmethod
-    def _strip_frontmatter(text: str) -> str:
-        """Remove frontmatter, return the body."""
-        m = re.match(r"^---\s*\n.*?\n---\s*\n(.*)", text, re.DOTALL)
-        return m.group(1).strip() if m else text.strip()
-
-    @staticmethod
-    def _to_slug(name: str) -> str:
-        """Convert a name to a kebab-case slug."""
-        slug = name.lower().strip()
-        slug = re.sub(r"[^a-z0-9\s-]", "", slug)
-        slug = re.sub(r"\s+", "-", slug)
-        slug = re.sub(r"-+", "-", slug)
-        return slug[:80]
