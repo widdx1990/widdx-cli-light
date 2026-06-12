@@ -488,6 +488,58 @@ def fetch_free_models(force_refresh: bool = False) -> list[str]:
 # Factory
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Cost tracking — map model names to per-token pricing
+# ---------------------------------------------------------------------------
+
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # (input_per_1M, output_per_1M) in USD
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "claude-sonnet-4": (3.00, 15.00),
+    "claude-haiku-3.5": (0.80, 4.00),
+    "deepseek-chat": (0.27, 1.10),
+    "deepseek-reasoner": (0.55, 2.19),
+    "deepseek-v4-flash": (0.35, 1.40),
+    "deepseek-v4-pro": (1.50, 6.00),
+}
+
+# Fallback pricing for unknown models
+_DEFAULT_INPUT_PRICE = 1.0  # $1/M tokens
+_DEFAULT_OUTPUT_PRICE = 4.0  # $4/M tokens
+
+
+def get_model_pricing(model: str) -> tuple[float, float]:
+    """Return (input_price_per_1M, output_price_per_1M) for a model.
+
+    Falls back to sensible defaults for unknown models.
+    Returns (0, 0) for free models (opencode-zen, etc.).
+    """
+    if not model or "free" in model.lower() or "opencode" in model.lower():
+        return (0.0, 0.0)
+    model_lower = model.lower()
+    if model_lower in _MODEL_PRICING:
+        return _MODEL_PRICING[model_lower]
+    # Check partial match
+    for key, pricing in _MODEL_PRICING.items():
+        if key in model_lower:
+            return pricing
+    return (_DEFAULT_INPUT_PRICE, _DEFAULT_OUTPUT_PRICE)
+
+
+def estimate_turn_cost(model: str, input_tokens: int = 500,
+                       output_tokens: int = 1000) -> float:
+    """Estimate cost of a single LLM turn.
+
+    Uses model pricing lookup. Returns 0 for free models.
+    """
+    inp_price, out_price = get_model_pricing(model)
+    if inp_price == 0 and out_price == 0:
+        return 0.0
+    return (input_tokens / 1_000_000 * inp_price +
+            output_tokens / 1_000_000 * out_price)
+
+
 def create_provider(cfg: dict) -> Provider:
     p = cfg.get("provider", {})
     # Load from config with dynamic fallbacks

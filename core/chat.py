@@ -8,6 +8,7 @@ from core.ui import (
     print_tool_msg, print_tool_call, print_system_msg, print_ai_msg, print_reasoning,
     print_ai_stream,
 )
+from core.providers.providers import estimate_turn_cost
 
 
 def _inject_skill_prompt(messages):
@@ -20,6 +21,12 @@ def _inject_skill_prompt(messages):
     messages.insert(0, msg)
 
 
+def _get_model(state: dict) -> str:
+    """Extract the model name from state (format: 'provider/model')."""
+    full = state.get("model", "")
+    return full.split("/")[-1] if "/" in full else full
+
+
 def process_tool_calls(tool_calls, messages, state):
     """Execute each tool call and append results to messages.
 
@@ -28,6 +35,7 @@ def process_tool_calls(tool_calls, messages, state):
     """
     if "tools_used" not in state:
         state["tools_used"] = []
+    model = _get_model(state)
 
     for tc in tool_calls:
         state["turns"] += 1
@@ -38,13 +46,12 @@ def process_tool_calls(tool_calls, messages, state):
 
         # ── Special: use_skill tool (AI activates skills autonomously) ──
         if tc.name == "use_skill":
-            # Insert skill prompt into message history before execution
             result = tools.execute_with_skills(tc.name, tc.args)
             if "activated" in result and skill_manager.active:
                 _inject_skill_prompt(messages)
             elif "deactivated" in result:
                 messages[:] = [m for m in messages if not m.get("_skill_prompt")]
-            state["cost"] += 0.001
+            state["cost"] += estimate_turn_cost(model, 200, 50)
             print_system_msg(result.replace("'", ""))
             messages.append({"role": "tool", "tool_call_id": tc.id,
                              "name": tc.name, "content": result})
@@ -54,7 +61,8 @@ def process_tool_calls(tool_calls, messages, state):
         result = tools.execute_with_skills(tc.name, tc.args)
         messages.append({"role": "tool", "tool_call_id": tc.id,
                          "name": tc.name, "content": result})
-        state["cost"] += 0.001
+        # Tool call: ~200 input tokens for context, ~100 output tokens for result
+        state["cost"] += estimate_turn_cost(model, 200, 100)
     return messages
 
 
@@ -70,7 +78,7 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
         except Exception as e:
             print_system_msg(f"Error: {e}")
             break
-        state["cost"] += 0.002
+        state["cost"] += estimate_turn_cost(_get_model(state), 500, 1000)
         if content and content.startswith("[思考中]"):
             end_idx = content.find("[/思考中]")
             if end_idx > 0:
@@ -140,7 +148,7 @@ def run_stream_turn(provider, messages, state, tool_defs, cfg):
             print_system_msg(f"Error: {err_msg}")
             break
 
-        state["cost"] += 0.002
+        state["cost"] += estimate_turn_cost(_get_model(state), 500, 1000)
         content = "".join(content_chunks)
         full_reasoning = "".join(reasoning_chunks)
         if full_reasoning:

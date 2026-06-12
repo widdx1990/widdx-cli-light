@@ -24,7 +24,8 @@ from core.uil import (
 
 def _make_classification(task_type: TaskType,
                          confidence: float = 0.85,
-                         complexity: float = 0.7) -> ClassificationResult:
+                         complexity: float = 0.7,
+                         features: dict | None = None) -> ClassificationResult:
     domain_map = {
         TaskType.COMPLEX: Domain.CODE,
         TaskType.CODE_WRITE: Domain.CODE,
@@ -47,7 +48,7 @@ def _make_classification(task_type: TaskType,
         complexity=complexity,
         reasoning=f"test: {task_type.value}",
         keywords=[],
-        detected_features={},
+        detected_features=features or {},
         decision_path=[DecisionStep("test", "input", task_type.value, 1.0, "")],
         is_fallback=False,
     )
@@ -80,20 +81,24 @@ def test_planner_complex():
 
 
 def test_planner_code_write():
-    """CODE_WRITE produces 3 steps."""
+    """CODE_WRITE produces 2 steps (+ testing if test keyword detected)."""
     planner = TaskPlanner()
+    # Without testing feature → 2 steps
     result = planner.plan(
         _make_classification(TaskType.CODE_WRITE),
         "create a new Python script for data processing",
     )
-    assert len(result.steps) == 3, f"Expected 3 steps, got {len(result.steps)}"
+    assert len(result.steps) == 2, f"Expected 2 steps without test, got {len(result.steps)}"
     assert not result.is_minimal
-    # Step order: create → implement → test
     assert "create" in result.steps[0].description.lower()
     assert "implement" in result.steps[1].description.lower()
-    # Dependencies chain: step-1 → step-2 → step-3
     assert result.steps[1].dependencies == ["step-1"]
-    assert result.steps[2].dependencies == ["step-2"]
+
+    # With detected testing feature → 3 steps
+    cls = _make_classification(TaskType.CODE_WRITE, features={"testing": True})
+    result2 = planner.plan(cls, "create a tool with tests")
+    assert len(result2.steps) == 3, f"Expected 3 steps with test feature, got {len(result2.steps)}"
+    assert result2.steps[2].dependencies == ["step-2"]
 
 
 def test_planner_code_modify():

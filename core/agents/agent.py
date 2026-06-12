@@ -12,6 +12,7 @@ from ..ui import (
     console, print_system_msg, print_tool_call, print_tool_msg,
     print_reasoning, print_ai_stream, print_agent_done,
 )
+from ..providers.providers import estimate_turn_cost
 from datetime import datetime
 
 
@@ -112,7 +113,8 @@ class AutonomousAgent:
                 print_system_msg(f"Agent error: {e}")
                 break
 
-            self.state["cost"] += 0.002
+            model = self.state.get("model", "").split("/")[-1] or "unknown"
+            self.state["cost"] += estimate_turn_cost(model, 500, 1000)
 
             # ── Process tool calls if AI decided to use tools ──
             if tool_calls:
@@ -141,7 +143,8 @@ class AutonomousAgent:
                         "name": tc.name,
                         "content": result,
                     })
-                    self.state["cost"] += 0.001
+                    model = self.state.get("model", "").split("/")[-1] or "unknown"
+                    self.state["cost"] += estimate_turn_cost(model, 200, 100)
                     self.state["turns"] += 1
             else:
                 # AI responded without tool calls — task is complete

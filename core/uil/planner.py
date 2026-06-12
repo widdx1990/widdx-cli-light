@@ -131,73 +131,48 @@ def _complex_steps(classification: ClassificationResult) -> list[TaskStep]:
     return steps
 
 
-def _code_write_steps(user_input: str) -> list[TaskStep]:
-    """Decompose a code-write request into ordered steps."""
-    return [
-        TaskStep(
-            id="step-1",
-            description="create new file(s) with skeleton structure",
-            dependencies=[],
-            tool_hints=["write"],
-            estimated_difficulty=0.2,
-        ),
-        TaskStep(
-            id="step-2",
-            description="implement the full logic and functionality",
-            dependencies=["step-1"],
-            tool_hints=["write"],
-            estimated_difficulty=0.7,
-        ),
-        TaskStep(
-            id="step-3",
-            description="write tests and verify correctness",
-            dependencies=["step-2"],
-            tool_hints=["bash", "write"],
-            estimated_difficulty=0.4,
-        ),
+def _code_write_steps(classification: ClassificationResult) -> list[TaskStep]:
+    """Decompose a code-write request into ordered steps.
+
+    Receives ClassificationResult with detected_features from the analyzer,
+    allowing feature-aware step generation (future use).
+    """
+    features = classification.detected_features
+    has_tests = features.get("testing", False)
+    steps = [
+        TaskStep(id="step-1", description="create new file(s) with skeleton structure",
+                 dependencies=[], tool_hints=["write"], estimated_difficulty=0.2),
+        TaskStep(id="step-2", description="implement the full logic and functionality",
+                 dependencies=["step-1"], tool_hints=["write"], estimated_difficulty=0.7),
     ]
+    if has_tests:
+        steps.append(TaskStep(id="step-3", description="write tests and verify correctness",
+                              dependencies=["step-2"], tool_hints=["bash", "write"],
+                              estimated_difficulty=0.4))
+    return steps
 
 
-def _code_modify_steps(user_input: str) -> list[TaskStep]:
+def _code_modify_steps(classification: ClassificationResult) -> list[TaskStep]:
     """Decompose a code-modify request into ordered steps."""
     return [
-        TaskStep(
-            id="step-1",
-            description="read and understand the existing code",
-            dependencies=[],
-            tool_hints=["read"],
-            estimated_difficulty=0.3,
-        ),
-        TaskStep(
-            id="step-2",
-            description="analyze the issue and plan the change",
-            dependencies=["step-1"],
-            tool_hints=[],
-            estimated_difficulty=0.4,
-        ),
-        TaskStep(
-            id="step-3",
-            description="implement the modification",
-            dependencies=["step-1", "step-2"],
-            tool_hints=["write"],
-            estimated_difficulty=0.5,
-        ),
-        TaskStep(
-            id="step-4",
-            description="verify the change works correctly",
-            dependencies=["step-3"],
-            tool_hints=["bash"],
-            estimated_difficulty=0.3,
-        ),
+        TaskStep(id="step-1", description="read and understand the existing code",
+                 dependencies=[], tool_hints=["read"], estimated_difficulty=0.3),
+        TaskStep(id="step-2", description="analyze the issue and plan the change",
+                 dependencies=["step-1"], tool_hints=[], estimated_difficulty=0.4),
+        TaskStep(id="step-3", description="implement the modification",
+                 dependencies=["step-1", "step-2"], tool_hints=["write"],
+                 estimated_difficulty=0.5),
+        TaskStep(id="step-4", description="verify the change works correctly",
+                 dependencies=["step-3"], tool_hints=["bash"], estimated_difficulty=0.3),
     ]
 
 
 # Map TaskType → decomposition factory
-# Each factory accepts ClassificationResult (not raw user_input)
+# All factories accept ClassificationResult (populated by analyzer)
 _DECOMPOSERS = {
     TaskType.COMPLEX: _complex_steps,
-    TaskType.CODE_WRITE: lambda c: _code_write_steps(""),
-    TaskType.CODE_MODIFY: lambda c: _code_modify_steps(""),
+    TaskType.CODE_WRITE: _code_write_steps,
+    TaskType.CODE_MODIFY: _code_modify_steps,
 }
 
 
