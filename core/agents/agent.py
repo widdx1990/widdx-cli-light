@@ -1,0 +1,280 @@
+"""Real autonomous agent — AI-driven tool-calling loop with full control."""
+
+import json
+from typing import Any, Optional
+
+from rich.panel import Panel
+from rich.text import Text
+
+from .. import tools as core_tools
+from ..skills import skill_manager as _skill_manager
+from ..ui import (
+    console, print_system_msg, print_tool_call, print_tool_msg,
+    print_reasoning, print_ai_stream, print_agent_done,
+)
+from datetime import datetime
+
+
+# ---------------------------------------------------------------------------
+# Agent System Prompt
+# ---------------------------------------------------------------------------
+
+AGENT_PROMPT = """You are an autonomous agent with full control over tools.
+
+AVAILABLE TOOLS:
+{tool_descriptions}
+
+YOUR WORKFLOW:
+1. You receive a task from the user
+2. Think step by step about what needs to be done
+3. Call ONE tool at a time, analyze the result, then decide next step
+4. If a tool fails, analyze the error and try a different approach
+5. If you need clarification, ask the user directly in your response
+6. When the task is COMPLETE, respond with a clear summary of what was done
+
+RULES:
+- Call one tool at a time (you can call many in sequence)
+- After each tool result, analyze and decide what to do next
+- On failure: explain what happened, then try a different approach
+- NEVER say you're done until the task is actually complete
+- Your final response MUST be a summary of what was accomplished"""
+
+
+# ---------------------------------------------------------------------------
+# Agent Step Tracking
+# ---------------------------------------------------------------------------
+
+class AgentStep:
+    """A single dynamically-recorded step during agent execution."""
+
+    def __init__(self, step_num: int, tool_name: str, args: dict, result: str):
+        self.step_num = step_num
+        self.tool_name = tool_name
+        self.args = args
+        self.result = result
+        self.status = "done" if result and not result.startswith("\u26a0\ufe0f") else "failed"
+
+    def to_dict(self) -> dict:
+        return {
+            "step": self.step_num,
+            "tool": self.tool_name,
+            "args": self.args,
+            "result": self.result[:500],
+            "status": self.status,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Autonomous Agent
+# ---------------------------------------------------------------------------
+
+class AutonomousAgent:
+    """Real autonomous agent with real-time tool-calling loop.
+    The AI is in full control — it decides which tools to call,
+    when to retry, when to ask the user, and when to finish.
+    """
+
+    def __init__(self, provider, tool_defs: list, cfg: dict, state: dict,
+                 custom_prompt: Optional[str] = None):
+        self.provider = provider
+        self.tool_defs = tool_defs
+        self.cfg = cfg
+        self.state = state
+        self.custom_prompt = custom_prompt
+        self.steps: list[AgentStep] = []
+        self.cost = 0.0
+
+    def run(self, user_input: str) -> tuple[list[AgentStep], str]:
+        """Execute the agentic loop. Returns (steps, summary_text)."""
+        messages = [
+            {"role": "system", "content": self._build_prompt()},
+            {"role": "user", "content": user_input},
+        ]
+
+        max_iter = self.cfg.get("agent_max_iterations", 25)
+        temperature = self.cfg.get("temperature", 0.7)
+        self.steps = []
+
+        print_system_msg("Starting autonomous execution...")
+
+        for iteration in range(max_iter):
+            iter_num = iteration + 1
+
+            # Call provider (streaming preferred, fallback to chat)
+            try:
+                if self._supports_streaming():
+                    content, tool_calls = self._streaming_call(messages, temperature)
+                else:
+                    content, tool_calls = self.provider.chat(
+                        messages, self.tool_defs, temperature
+                    )
+            except Exception as e:
+                print_system_msg(f"Agent error: {e}")
+                break
+
+            self.state["cost"] += 0.002
+
+            # ── Process tool calls if AI decided to use tools ──
+            if tool_calls:
+                # CRITICAL: Append assistant message with tool_calls FIRST
+                # (API requires tool results to follow a tool_calls message)
+                tc_list = [
+                    {"id": tc.id, "type": "function",
+                     "function": {"name": tc.name,
+                                  "arguments": json.dumps(tc.args, ensure_ascii=False)}}
+                    for tc in tool_calls
+                ]
+                messages.append({
+                    "role": "assistant",
+                    "content": content or None,
+                    "tool_calls": tc_list,
+                })
+
+                for tc in tool_calls:
+                    result = self._execute_tool(tc)
+                    step = AgentStep(len(self.steps) + 1, tc.name, tc.args, result)
+                    self.steps.append(step)
+                    # Append tool result to messages for context
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": tc.name,
+                        "content": result,
+                    })
+                    self.state["cost"] += 0.001
+                    self.state["turns"] += 1
+            else:
+                # AI responded without tool calls — task is complete
+                # (or AI is asking a question)
+                summary = content or "Task completed."
+                self._show_final_result(content)
+
+                # Print step summary panel
+                print_agent_done(self.steps, summary)
+                return self.steps, summary
+
+        # Hit max iterations
+        summary = f"Reached maximum iterations ({max_iter})."
+        print_system_msg(summary)
+        print_agent_done(self.steps, summary)
+        return self.steps, summary
+
+    # ── internal helpers ──────────────────────────────────────────────
+
+    def _supports_streaming(self) -> bool:
+        return hasattr(self.provider, "stream")
+
+    def _streaming_call(self, messages: list, temperature: float) -> tuple:
+        """Call provider with streaming display. Returns (content, tool_calls)."""
+        live, update, done = print_ai_stream()
+        content_chunks = []
+        reasoning_chunks = []
+        tool_calls = None
+        err_msg = None
+
+        with live:
+            for event in self.provider.stream(messages, self.tool_defs, temperature):
+                if event["type"] == "content":
+                    update(event["data"])
+                    content_chunks.append(event["data"])
+                elif event["type"] == "reasoning":
+                    reasoning_chunks.append(event["data"])
+                elif event["type"] == "error":
+                    err_msg = event["data"]
+                    break
+                elif event["type"] == "done":
+                    _, tool_calls = event["data"]
+                    break
+
+        if err_msg:
+            print_system_msg(f"Error: {err_msg}")
+            return "", []
+
+        content = "".join(content_chunks)
+        full_reasoning = "".join(reasoning_chunks)
+        if full_reasoning:
+            self.state["_last_reasoning"] = full_reasoning
+            print_reasoning(full_reasoning)
+        return content, tool_calls
+
+    def _execute_tool(self, tc) -> str:
+        """Execute a single tool call and display it.
+
+        Uses tools.execute_with_skills() as the single source of truth
+        for tool dispatch (shared with chat.py).  Tracks tool names
+        in self.state for ExecutionResult telemetry (Phase 2.2).
+        """
+        # Track tool usage
+        if "tools_used" not in self.state:
+            self.state["tools_used"] = []
+        if tc.name != "use_skill" and tc.name not in self.state["tools_used"]:
+            self.state["tools_used"].append(tc.name)
+
+        print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
+        result = core_tools.execute_with_skills(tc.name, tc.args)
+        print_tool_msg(tc.name, result[:1000])
+        return result
+
+    def _build_prompt(self) -> str:
+        """Build the agent system prompt with all available tools.
+        If custom_prompt is set, use it instead of the default AGENT_PROMPT."""
+        lines = []
+        mcp_lines = []
+        for td in self.tool_defs:
+            line = f"  {td['name']}: {td.get('description', '')}"
+            if td["name"].startswith("mcp__"):
+                mcp_lines.append(line)
+            else:
+                lines.append(line)
+
+        tool_text = "\n".join(lines) if lines else "  (none)"
+        mcp_text = "\n".join(mcp_lines) if mcp_lines else "  (none)"
+        skill_names = [s.name for s in _skill_manager.list_all()]
+        skill_text = "\n".join(f"  {s}" for s in skill_names) if skill_names else "  (none)"
+
+        prompt_template = self.custom_prompt or AGENT_PROMPT
+        return prompt_template.format(
+            tool_descriptions=(
+                f"Built-in tools:\n{tool_text}\n\n"
+                f"MCP tools:\n{mcp_text}\n\n"
+                f"Skills:\n{skill_text}"
+            )
+        )
+
+    def _show_final_result(self, content: Optional[str]):
+        """Show the AI's final response panel if there's content."""
+        if not content:
+            return
+        console.print()
+        console.print(Panel(
+            Text(content, style="bold #00c896"),
+            border_style="#00c896",
+            title="[bold #00c896]Agent Result[/]",
+            title_align="left",
+        ))
+
+    def get_status(self) -> str:
+        """Return a short summary of current agent progress."""
+        if not self.steps:
+            return "No steps executed yet."
+        done = sum(1 for s in self.steps if s.status == "done")
+        failed = sum(1 for s in self.steps if s.status == "failed")
+        return f"{len(self.steps)} steps ({done} done, {failed} failed)"
+
+    def __repr__(self):
+        return f"AutonomousAgent({len(self.steps)} steps, cost={self.cost:.4f})"
+
+
+# ---------------------------------------------------------------------------
+# Helper: run agent with a custom system prompt
+# ---------------------------------------------------------------------------
+
+def run_agent_with_prompt(provider, tool_defs, cfg, state, system_prompt, user_input):
+    """Run AutonomousAgent with a custom system prompt.
+    Returns (steps, summary_text).
+    
+    This is used by ExpertTeam to give each expert a specialized prompt.
+    """
+    agent = AutonomousAgent(provider, tool_defs, cfg, state,
+                            custom_prompt=system_prompt)
+    return agent.run(user_input)

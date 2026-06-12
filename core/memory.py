@@ -1,0 +1,199 @@
+"""Persistent Memory System for WIDDX.
+
+Inspired by Claude Code's memory architecture.
+
+Each memory is a markdown file in CWD/.widdx/memory/ with frontmatter:
+  ---
+  name: <short-kebab-case>
+  description: <one-line summary>
+  metadata:
+    type: user | feedback | project | reference
+  ---
+  <the fact>
+
+MEMORY.md in CWD/.widdx/ serves as the index with one-line pointers.
+
+Usage:
+    from core.memory import MemoryStore
+    store = MemoryStore()
+    store.save("project-goals", "Build a CLI tool", {"type": "project"})
+    all_memories = store.list_all()
+    relevant = store.search("CLI")
+"""
+
+import re, os, json
+from pathlib import Path
+from typing import Optional
+from datetime import datetime
+
+
+MEMORY_DIR_NAME = "memory"
+INDEX_FILE = "MEMORY.md"
+
+
+class MemoryStore:
+    """Persistent memory store backed by markdown files with frontmatter."""
+
+    def __init__(self, project_dir: str | Path | None = None):
+        if project_dir is None:
+            project_dir = Path.cwd()
+        self.root = Path(project_dir).resolve()
+        self.widdx_dir = self.root / ".widdx"
+        self.memory_dir = self.widdx_dir / MEMORY_DIR_NAME
+        self.index_path = self.widdx_dir / INDEX_FILE
+        self.memory_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── CRUD ───────────────────────────────────────────────────────────
+
+    def save(self, name: str, content: str, metadata: dict | None = None) -> Path:
+        """Save a memory. Updates MEMORY.md index."""
+        slug = self._to_slug(name)
+        filepath = self.memory_dir / f"{slug}.md"
+
+        meta = metadata or {}
+        meta_str = ""
+        if meta:
+            meta_lines = ["metadata:"]
+            for k, v in meta.items():
+                meta_lines.append(f"  {k}: {v}")
+            meta_str = "\n" + "\n".join(meta_lines)
+
+        frontmatter = (
+            f"---\n"
+            f"name: {slug}\n"
+            f"description: {content[:80].strip()}\n"
+            f"{meta_str}\n"
+            f"---\n"
+        )
+        full = frontmatter + "\n" + content
+        filepath.write_text(full, encoding="utf-8")
+
+        # Update index
+        self._update_index(slug, content[:60])
+
+        return filepath
+
+    def get(self, name: str) -> str | None:
+        """Read a memory by name/slug. Returns None if not found."""
+        slug = self._to_slug(name)
+        filepath = self.memory_dir / f"{slug}.md"
+        if not filepath.exists():
+            return None
+        text = filepath.read_text(encoding="utf-8")
+        # Strip frontmatter
+        body = self._strip_frontmatter(text)
+        return body
+
+    def delete(self, name: str) -> bool:
+        """Delete a memory. Returns True if deleted."""
+        slug = self._to_slug(name)
+        filepath = self.memory_dir / f"{slug}.md"
+        if not filepath.exists():
+            return False
+        filepath.unlink()
+        self._rebuild_index()
+        return True
+
+    def list_all(self) -> list[dict]:
+        """Return all memories as [{name, description, type, path}, ...]."""
+        memories = []
+        for f in sorted(self.memory_dir.glob("*.md")):
+            meta = self._parse_frontmatter(f.read_text(encoding="utf-8"))
+            memories.append({
+                "name": meta.get("name", f.stem),
+                "description": meta.get("description", ""),
+                "type": meta.get("metadata", {}).get("type", "unknown"),
+                "path": str(f.relative_to(self.root)),
+            })
+        return memories
+
+    def search(self, query: str) -> list[dict]:
+        """Search memory contents by keyword."""
+        query_lower = query.lower()
+        results = []
+        for f in self.memory_dir.glob("*.md"):
+            text = f.read_text(encoding="utf-8")
+            if query_lower in text.lower():
+                meta = self._parse_frontmatter(text)
+                body = self._strip_frontmatter(text)
+                results.append({
+                    "name": meta.get("name", f.stem),
+                    "description": meta.get("description", "")[:80],
+                    "snippet": body[:200],
+                })
+        return results
+
+    def total(self) -> int:
+        """Number of stored memories."""
+        return len(list(self.memory_dir.glob("*.md")))
+
+    # ── Index management ──────────────────────────────────────────────
+
+    def _update_index(self, slug: str, description: str):
+        """Append or update one line in MEMORY.md."""
+        line = f"- [{slug}]({MEMORY_DIR_NAME}/{slug}.md) — {description.strip()}"
+        if self.index_path.exists():
+            text = self.index_path.read_text(encoding="utf-8")
+            # Replace existing line for this slug
+            for i, existing in enumerate(text.splitlines()):
+                if existing.strip().startswith(f"- [{slug}]"):
+                    lines = text.splitlines()
+                    lines[i] = line
+                    self.index_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                    return
+            # Append
+            with self.index_path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        else:
+            self.index_path.write_text(line + "\n", encoding="utf-8")
+
+    def _rebuild_index(self):
+        """Regenerate MEMORY.md from all memory files."""
+        lines = []
+        for f in sorted(self.memory_dir.glob("*.md")):
+            meta = self._parse_frontmatter(f.read_text(encoding="utf-8"))
+            desc = meta.get("description", "")
+            lines.append(f"- [{meta.get('name', f.stem)}]({MEMORY_DIR_NAME}/{f.name}) — {desc}")
+        self.index_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # ── Frontmatter helpers ───────────────────────────────────────────
+
+    @staticmethod
+    def _parse_frontmatter(text: str) -> dict:
+        """Parse YAML-like frontmatter from markdown."""
+        meta = {}
+        m = re.match(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+        if not m:
+            return {"name": "", "description": "", "metadata": {}}
+        front = m.group(1)
+        current_key = None
+        meta["metadata"] = {}
+        for line in front.splitlines():
+            if line.startswith("metadata:"):
+                current_key = "metadata"
+            elif current_key == "metadata":
+                mm = re.match(r"\s+(\w+):\s*(.*)", line)
+                if mm:
+                    meta["metadata"][mm.group(1)] = mm.group(2).strip()
+            else:
+                mm = re.match(r"(\w+):\s*(.*)", line)
+                if mm:
+                    key, val = mm.group(1), mm.group(2).strip()
+                    if key not in ("metadata",):
+                        meta[key] = val
+        return meta
+
+    @staticmethod
+    def _strip_frontmatter(text: str) -> str:
+        """Remove frontmatter, return the body."""
+        m = re.match(r"^---\s*\n.*?\n---\s*\n(.*)", text, re.DOTALL)
+        return m.group(1).strip() if m else text.strip()
+
+    @staticmethod
+    def _to_slug(name: str) -> str:
+        """Convert a name to a kebab-case slug."""
+        slug = name.lower().strip()
+        slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+        slug = re.sub(r"\s+", "-", slug)
+        slug = re.sub(r"-+", "-", slug)
+        return slug[:80]

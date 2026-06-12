@@ -1,0 +1,284 @@
+"""Task Planner — Execution Decomposition Layer.
+
+Decomposes classified tasks into structured, ordered,
+dependency-aware execution plans.
+
+Pure logic. Zero LLM. Zero MCP. Zero external dependencies.
+Rule-based decomposition only (Phase 1).
+
+Usage:
+    planner = TaskPlanner()
+    plan = planner.plan(classification, user_input)
+    if plan.is_minimal:
+        # Simple 1-step task
+    else:
+        # Full decomposition with dependency graph
+"""
+
+from .contract import (
+    TaskType, TaskStep, Plan, DecisionStep,
+    ClassificationResult,
+)
+
+
+# -------------------------------------------------------------------
+# Step Factories — each produces a list of TaskStep for a specific TaskType
+# -------------------------------------------------------------------
+
+def _complex_steps(classification: ClassificationResult) -> list[TaskStep]:
+    """Decompose a complex project request into ordered steps.
+
+    Uses classification.detected_features (populated by analyzer)
+    instead of re-scanning the raw input text.
+    """
+    features = classification.detected_features
+    has_web = features.get("web", False)
+    has_api = features.get("api", False)
+    has_db = features.get("database", False)
+    has_cli = features.get("cli", False)
+
+    steps: list[TaskStep] = []
+
+    # Step 1: always project setup
+    steps.append(TaskStep(
+        id="step-1",
+        description="create project structure and initialize dependencies",
+        dependencies=[],
+        tool_hints=["bash", "write"],
+        estimated_difficulty=0.3,
+    ))
+
+    # Step 2: backend / core logic
+    if has_api:
+        steps.append(TaskStep(
+            id="step-2",
+            description="implement backend API and core logic",
+            dependencies=["step-1"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.7,
+        ))
+    elif has_cli:
+        steps.append(TaskStep(
+            id="step-2",
+            description="implement core CLI logic and argument parsing",
+            dependencies=["step-1"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.6,
+        ))
+    else:
+        steps.append(TaskStep(
+            id="step-2",
+            description="implement core application logic",
+            dependencies=["step-1"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.6,
+        ))
+
+    # Step 3: database (if applicable)
+    if has_db:
+        steps.append(TaskStep(
+            id="step-3",
+            description="create database schema and data layer",
+            dependencies=["step-1"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.5,
+        ))
+        db_step_id = "step-3"
+        next_step = 4
+    else:
+        db_step_id = None
+        next_step = 3
+
+    # Step 4 (or 3): frontend (if applicable)
+    if has_web:
+        steps.append(TaskStep(
+            id=f"step-{next_step}",
+            description="build frontend UI components",
+            dependencies=["step-1"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.6,
+        ))
+        frontend_dep = f"step-{next_step}"
+        next_step += 1
+    else:
+        frontend_dep = None
+
+    # Integration step
+    integration_deps = ["step-2"]
+    if db_step_id:
+        integration_deps.append(db_step_id)
+    if frontend_dep:
+        integration_deps.append(frontend_dep)
+
+    steps.append(TaskStep(
+        id=f"step-{next_step}",
+        description="connect components and verify integration",
+        dependencies=integration_deps,
+        tool_hints=["bash", "write"],
+        estimated_difficulty=0.5,
+    ))
+    next_step += 1
+
+    # Testing step
+    steps.append(TaskStep(
+        id=f"step-{next_step}",
+        description="test the full application and fix issues",
+        dependencies=[f"step-{next_step - 1}"],
+        tool_hints=["bash"],
+        estimated_difficulty=0.4,
+    ))
+
+    return steps
+
+
+def _code_write_steps(user_input: str) -> list[TaskStep]:
+    """Decompose a code-write request into ordered steps."""
+    return [
+        TaskStep(
+            id="step-1",
+            description="create new file(s) with skeleton structure",
+            dependencies=[],
+            tool_hints=["write"],
+            estimated_difficulty=0.2,
+        ),
+        TaskStep(
+            id="step-2",
+            description="implement the full logic and functionality",
+            dependencies=["step-1"],
+            tool_hints=["write"],
+            estimated_difficulty=0.7,
+        ),
+        TaskStep(
+            id="step-3",
+            description="write tests and verify correctness",
+            dependencies=["step-2"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.4,
+        ),
+    ]
+
+
+def _code_modify_steps(user_input: str) -> list[TaskStep]:
+    """Decompose a code-modify request into ordered steps."""
+    return [
+        TaskStep(
+            id="step-1",
+            description="read and understand the existing code",
+            dependencies=[],
+            tool_hints=["read"],
+            estimated_difficulty=0.3,
+        ),
+        TaskStep(
+            id="step-2",
+            description="analyze the issue and plan the change",
+            dependencies=["step-1"],
+            tool_hints=[],
+            estimated_difficulty=0.4,
+        ),
+        TaskStep(
+            id="step-3",
+            description="implement the modification",
+            dependencies=["step-1", "step-2"],
+            tool_hints=["write"],
+            estimated_difficulty=0.5,
+        ),
+        TaskStep(
+            id="step-4",
+            description="verify the change works correctly",
+            dependencies=["step-3"],
+            tool_hints=["bash"],
+            estimated_difficulty=0.3,
+        ),
+    ]
+
+
+# Map TaskType → decomposition factory
+# Each factory accepts ClassificationResult (not raw user_input)
+_DECOMPOSERS = {
+    TaskType.COMPLEX: _complex_steps,
+    TaskType.CODE_WRITE: lambda c: _code_write_steps(""),
+    TaskType.CODE_MODIFY: lambda c: _code_modify_steps(""),
+}
+
+
+def _minimal_steps(classification: ClassificationResult) -> list[TaskStep]:
+    """Generate a single-step minimal plan for simple tasks."""
+    desc = f"handle {classification.task_type.value} request"
+    return [
+        TaskStep(
+            id="step-1",
+            description=desc,
+            dependencies=[],
+            tool_hints=None,
+            estimated_difficulty=classification.complexity,
+        ),
+    ]
+
+
+# -------------------------------------------------------------------
+# TaskPlanner
+# -------------------------------------------------------------------
+
+class TaskPlanner:
+    """Rule-based execution planner.
+
+    Decomposes classified tasks into structured step plans.
+    Full decomposition for COMPLEX / CODE_WRITE / CODE_MODIFY.
+    Minimal 1-step plan for all other task types.
+
+    Pure logic. No LLM. No MCP. No I/O.
+    """
+
+    def plan(self, classification: ClassificationResult,
+             user_input: str,
+             context: dict | None = None) -> Plan:
+        """Generate an execution plan from a classification result.
+
+        Args:
+            classification: Result of TaskAnalyzer.analyze().
+            user_input: Raw user input text.
+            context: Optional context (reserved for future use).
+
+        Returns:
+            Plan with steps, dependencies, and decision trace.
+        """
+        task_type = classification.task_type
+        steps: list[TaskStep]
+        is_minimal: bool
+        decision_steps: list[DecisionStep] = []
+
+        if task_type in _DECOMPOSERS:
+            decomposer = _DECOMPOSERS[task_type]
+            steps = decomposer(classification)
+            is_minimal = False
+            decision_steps.append(DecisionStep(
+                component="TaskPlanner",
+                input_summary=f"type={task_type.value}",
+                output=f"decomposed: {len(steps)} step(s)",
+                score=1.0,
+                detail=f"Full decomposition into {len(steps)} steps "
+                       f"with dependency graph",
+            ))
+        else:
+            steps = _minimal_steps(classification)
+            is_minimal = True
+            decision_steps.append(DecisionStep(
+                component="TaskPlanner",
+                input_summary=f"type={task_type.value}",
+                output=f"minimal: 1 step",
+                score=1.0,
+                detail=f"Minimal plan (simple task type: {task_type.value})",
+            ))
+
+        # Estimate overall complexity
+        if steps:
+            avg_diff = sum(s.estimated_difficulty for s in steps) / len(steps)
+        else:
+            avg_diff = 0.0
+
+        return Plan(
+            steps=steps,
+            estimated_complexity=round(avg_diff, 2),
+            is_minimal=is_minimal,
+            decision_path=decision_steps,
+        )
