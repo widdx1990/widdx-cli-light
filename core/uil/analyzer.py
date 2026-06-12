@@ -376,7 +376,7 @@ class LLMClassifier:
             if not raw:
                 return None
 
-            # Strip any [思考中] thinking tags that the provider may inject
+            # Strip any [thinking] thinking tags that the provider may inject
             content = raw
             th_start = content.find("[")
             th_end = content.find("[/")

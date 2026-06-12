@@ -1,0 +1,260 @@
+/* =============================================================
+   WIDDX TUI — Unified Design System Stylesheet
+   ============================================================= */
+
+/* ── Design Tokens ──────────────────────── */
+$bg:        #0b0f19;
+$sidebar:   #0f172a;
+$border:    #1e293b;
+$primary:   #6366f1;
+$phover:    #818cf8;
+$secondary: #0891b2;
+$shover:    #06b6d4;
+$text:      #e2e8f0;
+$muted:     #64748b;
+$dim:       #475569;
+$accent:    #f5a623;
+$err:       #ef4444;
+
+Screen { layout: vertical; background: $bg; color: $text; }
+
+/* ── Main Layout ────────────────────────── */
+#header { height: 1; background: $sidebar; border-bottom: solid $border; color: $muted; padding: 0 2; dock: top; }
+#processing { height: 1; background: $primary; display: none; dock: top; color: #0b0f19; text-style: bold; content-align: center middle; }
+#processing.active { display: block; }
+#body { height: 1fr; }
+#chat-log { height: 100%; background: $bg; padding: 1 2; border: none; }
+#stream-output { height: auto; max-height: 50%; background: $bg; padding: 1 2; border: none; color: $text; display: none; overflow-y: auto; }
+#view-panel { height: 100%; background: $bg; display: none; padding: 1 2; }
+#view-panel.active { display: block; }
+#view-panel #view-title { height: 3; background: $sidebar; border: solid $border; color: $accent; text-style: bold; content-align: center middle; margin-bottom: 1; }
+#view-panel #view-list { height: 1fr; padding: 0; }
+#view-panel #view-list Button { height: 3; background: $sidebar; color: $text; border: solid $border; content-align: left middle; padding: 0 2; margin-bottom: 1; }
+#view-panel #view-list Button:hover { background: #1e293b; color: $primary; border: solid $primary; }
+#view-panel #view-list Button.active { background: #1e1b4b; color: $phover; border: solid $primary; }
+
+/* ── Sidebar ────────────────────────────── */
+#sidebar { width: 28; height: 100%; background: $sidebar; border-right: solid $border; padding: 0; overflow-y: auto; }
+#sidebar-brand { height: 3; content-align: center middle; color: $phover; text-style: bold; background: #0b0f19; border-bottom: solid $border; }
+#sidebar .sidebar-group { color: $muted; text-style: bold; padding: 1 2 0 2; height: 2; }
+#sidebar .sidebar-divider { height: 1; background: $border; margin: 1 0; }
+#sidebar Button.sidebar-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; border-left: solid transparent; content-align: left middle; padding: 0 2; margin: 0; }
+#sidebar Button.sidebar-btn:hover { background: #1e293b; color: $phover; border-left: solid $primary; }
+#sidebar Button.sidebar-btn.active { background: #1e1b4b; color: $phover; border-left: solid $primary; text-style: bold; }
+#sidebar Button.sidebar-btn:focus { background: #1e293b; color: $phover; }
+#sidebar-footer { height: 3; content-align: center middle; background: #0b0f19; border-top: solid $border; margin-top: 1; padding: 0 2; }
+
+/* ── Input & Status ─────────────────────── */
+#input-container { height: auto; min-height: 3; background: $sidebar; border-top: solid $primary; padding: 0 2; dock: bottom; align: left middle; }
+#input-container #prompt-label { width: 2; color: $primary; text-style: bold; content-align: center middle; margin-right: 1; }
+#input { height: 100%; background: transparent; color: $text; border: none; padding: 0; }
+#input:focus { border: none; }
+#status { height: 1; background: $sidebar; border-top: solid $border; color: $muted; text-style: italic; padding: 0 2; dock: bottom; }
+.doctor-title { margin-bottom: 1; border-bottom: solid $border; padding-bottom: 1; }
+#doctor-running { height: 1; color: $phover; text-style: bold; }
+
+/* =============================================================
+   UNIVERSAL MODAL DESIGN SYSTEM
+   ============================================================= */
+
+/* All modal screens share this wrapper */
+ModalScreen {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+/* Dialog box — override width per screen via #id */
+.dialog-box {
+    width: 80%;
+    max-width: 84;
+    height: auto;
+    max-height: 85%;
+    background: $sidebar;
+    border: tall $primary;
+    padding: 1 2;
+}
+
+/* Title bar — every dialog has exactly one */
+.dialog-title {
+    height: 3;
+    content-align: center middle;
+    color: $phover;
+    text-style: bold;
+    background: #0b0f19;
+    border-bottom: solid $border;
+    margin-bottom: 1;
+}
+
+/* Content area (RichLog or ScrollableContainer) */
+.dialog-body {
+    height: 1fr;
+    background: #0b0f19;
+    border: solid $border;
+    padding: 0 1;
+}
+
+/* Scrollable form inside dialogs */
+.dialog-form {
+    height: 1fr;
+}
+
+.dialog-form Label {
+    color: $phover;
+    margin-top: 1;
+    margin-bottom: 0;
+    text-style: bold;
+}
+
+.dialog-form Input, .dialog-form Select {
+    margin-bottom: 1;
+}
+
+/* Actions bar — every dialog has exactly one at bottom */
+.dialog-actions {
+    height: 3;
+    margin-top: 1;
+    align: right middle;
+    border-top: solid $border;
+    padding-top: 1;
+}
+
+.dialog-actions Button {
+    margin-left: 1;
+    min-width: 16;
+    height: 3;
+}
+
+/* Subtitle text in dialogs */
+.dialog-subtitle {
+    height: 1;
+    color: $dim;
+    padding: 0 0 0 1;
+    margin-bottom: 0;
+}
+
+/* ── Delete confirmation (red variant) ──── */
+.delete-dialog { border: tall $err; }
+.delete-title { color: $err; }
+
+/* Delete action bar (centered buttons) */
+.dialog-actions-center { height: 3; margin-top: 1; align: center middle; border-top: solid $border; padding-top: 1; }
+.dialog-actions-center Button { margin: 0 1; min-width: 16; height: 3; }
+
+/* ── Picker dialog (narrow, for selection lists) ── */
+.picker-dialog { width: 60%; max-width: 50; height: auto; max-height: 60%; background: $sidebar; border: tall $secondary; padding: 1 2; }
+.picker-title { height: 3; content-align: center middle; color: $secondary; text-style: bold; border-bottom: solid $border; margin-bottom: 1; }
+.picker-list { height: 1fr; padding: 0; }
+.pick-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; content-align: left middle; padding: 0 2; }
+.pick-btn:hover { background: #1e293b; color: $phover; }
+.picker-actions { height: 3; margin-top: 1; align: right middle; border-top: solid $border; padding-top: 1; }
+
+/* ── Delete message body ────────────────── */
+.delete-msg { padding: 1; text-align: center; }
+
+/* ══════════════════════════════════════════════
+   FULL-SCREEN LIST SCREENS (Memory, Sessions)
+   ══════════════════════════════════════════════ */
+
+.list-screen { background: #0b0f19; }
+
+/* Title bar */
+.list-title {
+    height: 3;
+    content-align: center middle;
+    color: $phover;
+    text-style: bold;
+    background: $sidebar;
+    border-bottom: solid $border;
+    dock: top;
+}
+
+/* Status bar below title */
+.list-status {
+    height: 1;
+    color: $dim;
+    padding: 0 2;
+    dock: top;
+}
+
+/* Toolbar with action buttons */
+.list-toolbar {
+    height: 3;
+    background: $sidebar;
+    border-bottom: solid $border;
+    padding: 0 1;
+    dock: top;
+    align: left middle;
+}
+
+.list-toolbar Button {
+    height: 3;
+    margin: 0 1;
+    min-width: 14;
+}
+
+/* Search input inside toolbar */
+.list-search {
+    width: 30;
+    margin-left: 2;
+}
+
+/* Main RichLog content area */
+.list-content {
+    height: 1fr;
+    padding: 1 2;
+}
+
+/* Footer help bar */
+.list-footer {
+    height: 1;
+    background: $sidebar;
+    border-top: solid $border;
+    dock: bottom;
+}
+
+.list-footer-text {
+    content-align: center middle;
+}
+
+/* ── Override dialog sizes per screen ──── */
+#settings-dialog { max-width: 60; }
+#help-dialog { max-width: 80; }
+#tool-detail-dialog { max-width: 90; }
+#text-detail-dialog { max-width: 90; }
+#mem-edit-dialog { width: 70%; max-width: 60; max-height: 70%; }
+#mem-delete-dialog { width: 50%; max-width: 45; }
+#mem-picker-dialog { max-width: 50; }
+#sess-picker-dialog { max-width: 55; }
+#sess-rename-dialog { width: 60%; max-width: 55; }
+#sess-delete-dialog { width: 50%; max-width: 45; }
+
+/* ── Settings specific ──────────────────── */
+#key-status-row { height: 3; align: left middle; margin-bottom: 1; }
+#key-status-row #key-status { width: 15; content-align: left middle; color: #10b981; }
+.config-path-hint { color: $dim; margin-top: 1; text-style: italic; }
+
+/* ── Rename specific ────────────────────── */
+.rename-old { color: $dim; padding: 0 1; margin-bottom: 1; }
+
+/* =============================================================
+   GLOBAL WIDGET STYLES
+   ============================================================= */
+
+Button {
+    background: transparent; border: none; padding: 0 2; color: #cbd5e1;
+}
+Button:hover { color: $phover; }
+Button.primary { background: $primary; color: #0b0f19; text-style: bold; }
+Button.primary:hover { background: $phover; }
+Button.error { background: #b91c1c; color: $text; text-style: bold; }
+Button.error:hover { background: $err; }
+
+Input { border: solid $border; background: #0b0f19; color: $text; }
+Input:focus { border: solid $primary; }
+
+Select { background: #0b0f19; color: $text; border: solid $border; }
+Select:focus { border: solid $primary; }
+
+Scrollbar { background: transparent; }
+Scrollbar > .scrollbar--slider { background: $border; }
+Scrollbar > .scrollbar--slider:hover { background: $phover; }

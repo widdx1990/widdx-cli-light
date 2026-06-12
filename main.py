@@ -9,7 +9,7 @@ from core.uil import UnifiedIntelligenceLayer, ExecutionMode
 from core.providers.providers import create_provider, fetch_free_models
 from core.proxy import proxy_manager
 from core.skills import skill_manager
-from core.commands import handle_model, handle_provider, handle_sandbox, handle_mcp, handle_load, handle_undo, handle_doctor, handle_export, handle_version
+from core.commands import handle_model, handle_provider, handle_sandbox, handle_mcp, handle_load, handle_undo, handle_doctor, handle_export, handle_version, handle_permissions
 from core.config.keychain import prompt_key, has_key
 from core.mcp.client import get_mcp_manager
 from core.project import state as project_state
@@ -339,6 +339,10 @@ def run():
             continue
         elif cmd == "/version":
             handle_version()
+            continue
+        elif cmd == "/permissions":
+            sub = parts[1] if len(parts) > 1 else ""
+            handle_permissions(sub)
             continue
         elif cmd == "/theme":
             use_enhanced_ui(not is_enhanced())

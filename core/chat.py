@@ -79,11 +79,11 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
             print_system_msg(f"Error: {e}")
             break
         state["cost"] += estimate_turn_cost(_get_model(state), 500, 1000)
-        if content and content.startswith("[思考中]"):
-            end_idx = content.find("[/思考中]")
+        if content and content.startswith("[thinking]"):
+            end_idx = content.find("[/thinking]")
             if end_idx > 0:
-                reasoning = content[len("[思考中]"):end_idx].strip()
-                content = content[end_idx + len("[/思考中]"):].strip()
+                reasoning = content[len("[thinking]"):end_idx].strip()
+                content = content[end_idx + len("[/thinking]"):].strip()
                 if reasoning:
                     state["_last_reasoning"] = reasoning
                     print_reasoning(reasoning)
@@ -155,7 +155,7 @@ def run_stream_turn(provider, messages, state, tool_defs, cfg):
             state["_last_reasoning"] = full_reasoning
             print_reasoning(full_reasoning)
 
-        # Strip any [思考中] tags that the provider may have prepended
+        # Strip any [thinking] tags that the provider may have prepended
         if content and content.startswith("["):
             end_idx = content.find("[/")
             if end_idx > 0:

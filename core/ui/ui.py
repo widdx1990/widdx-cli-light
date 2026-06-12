@@ -261,6 +261,7 @@ def handle_help():
         ("/mcp", "List connected MCP servers and their tools"),
         ("/agent", "Autonomous agent mode (Expert Team is default)"),
         ("/doctor", "Run system health check"),
+        ("/permissions", "Manage tool permissions (level, forget, status)"),
         ("/export", "Export conversation as markdown file"),
         ("/version", "Show version info"),
         ("/remember", "Save a fact to persistent memory (e.g. /remember prefers Python)"),

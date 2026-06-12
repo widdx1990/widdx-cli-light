@@ -1,5 +1,51 @@
 [project]
 name = "widdx-chat"
-version = "2.0.0"
-description = "WIDDX — Terminal AI Chat Tool with Expert Team"
+version = "3.0.0"
+description = "WIDDX — Terminal AI Chat Tool with UIL Cognitive Architecture"
+readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["ai", "chat", "cli", "tui", "terminal"]
+
+authors = [
+    {name = "widdx", email = "widdx@users.noreply.github.com"},
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Terminals :: Terminal Emulators/X Terminals",
+]
+
+dependencies = [
+    "rich>=13.0",
+    "httpx>=0.25",
+    "textual>=1.0",
+    "prompt_toolkit>=3.0",
+    "pygments>=2.15",
+]
+
+[project.optional-dependencies]
+toml = ["tomli>=2.0"]
+
+[project.scripts]
+widdx = "core.cli:run"
+widdx-tui = "tui.__main__:run_tui"
+
+[project.urls]
+Homepage = "https://github.com/widdx/chat-tool"
+Repository = "https://github.com/widdx/chat-tool"
+Documentation = "https://github.com/widdx/chat-tool#readme"
+
+[tool.setuptools.packages.find]
+include = ["core*", "tui*"]
+
+[tool.setuptools.package-data]
+tui = ["*.tcss"]

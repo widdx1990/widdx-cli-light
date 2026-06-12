@@ -6,8 +6,10 @@ Saves/loads from <project-dir>/.widdx/ :
 """
 
 import json
-import re
+import re, logging
 from pathlib import Path
+
+logger = logging.getLogger("widdx.project.state")
 
 
 # ── paths ────────────────────────────────────────────────────────────────
@@ -51,7 +53,8 @@ def load_project_config(project_dir: str | Path | None = None) -> dict:
         merged = dict(DEFAULT_CONFIG)
         merged.update(data)
         return merged
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to load project config from %s: %s", path, e)
         return dict(DEFAULT_CONFIG)
 
 
@@ -90,7 +93,8 @@ def load_session(project_dir: str | Path | None = None) -> dict | None:
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to load session from %s: %s", path, e)
         return None
 
 
@@ -145,8 +149,8 @@ def build_index(project_dir: str | Path, extra_ignore: list | None = None) -> di
             try:
                 text = p.read_text(encoding="utf-8", errors="ignore")
                 symbols.extend(_extract_symbols(text, str(rel.as_posix()), p.suffix))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Symbol extraction failed for %s: %s", p.name, e)
 
     return {
         "file_count": len(files),
@@ -213,7 +217,8 @@ def load_index(project_dir: str | Path | None = None) -> dict | None:
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to load index from %s: %s", path, e)
         return None
 
 
