@@ -7,25 +7,65 @@ sys.path.insert(0, "e:/deepseek/chat-tool")
 test_dir = Path("e:/deepseek/chat-tool/.test_workdir")
 test_dir.mkdir(exist_ok=True)
 
+# Clean up leftover files from previous failed runs (except the locked test.txt)
+def force_rmtree(path):
+    import os, stat
+    def remove_readonly(func, p, excinfo):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+    shutil.rmtree(path, onerror=remove_readonly)
+
+if test_dir.exists():
+    for item in test_dir.iterdir():
+        if item.name == "test.txt":
+            continue
+        try:
+            if item.is_dir():
+                force_rmtree(item)
+            else:
+                try:
+                    import os, stat
+                    os.chmod(item, stat.S_IWRITE)
+                except Exception:
+                    pass
+                item.unlink()
+        except Exception:
+            pass
+
 try:
     # Test 1: Git auto-commit + undo
     subprocess.run(["git", "init"], cwd=str(test_dir), capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(test_dir), capture_output=True)
     subprocess.run(["git", "config", "user.name", "test"], cwd=str(test_dir), capture_output=True)
 
+    # Ignore test.txt because the user has it open in their IDE (creating a Windows file lock)
+    exclude_path = test_dir / ".git" / "info" / "exclude"
+    exclude_path.parent.mkdir(parents=True, exist_ok=True)
+    exclude_path.write_text("test.txt\n")
+
     from core.project.git import is_git_repo, has_changes, auto_commit, undo_last_commit
 
     assert is_git_repo(test_dir), "Should be a git repo"
-    assert not has_changes(test_dir), "Should have no changes yet"
+    status_proc = subprocess.run(["git", "status", "--porcelain"], cwd=str(test_dir), capture_output=True, text=True)
+    assert not has_changes(test_dir), f"Should have no changes yet, but got status:\n{status_proc.stdout}\nerr:\n{status_proc.stderr}"
 
-    # Create first commit
-    (test_dir / "test.txt").write_text("hello")
+    # Create and commit initial file manually to make it tracked
+    (test_dir / "test_run.txt").write_text("hello")
+    subprocess.run(["git", "add", "test_run.txt"], cwd=str(test_dir), capture_output=True)
+    subprocess.run(["git", "commit", "-m", "WIDDX: initial commit"], cwd=str(test_dir), capture_output=True)
+    assert not has_changes(test_dir), "No changes after manual commit"
+
+    # Modify the tracked file (auto_commit should succeed now)
+    (test_dir / "test_run.txt").write_text("hello v2")
     committed = auto_commit(test_dir, "test commit 1")
     assert committed, "First auto-commit should succeed"
     assert not has_changes(test_dir), "No changes after first commit"
 
-    # Create second commit (so undo has something to go back to)
-    (test_dir / "test.txt").write_text("hello v2")
+    # Modify it again for the second commit
+    (test_dir / "test_run.txt").write_text("hello v3")
     committed = auto_commit(test_dir, "test commit 2")
     assert committed, "Second auto-commit should succeed"
 
@@ -33,8 +73,8 @@ try:
     result = undo_last_commit(test_dir)
     assert "Undone" in result, f"Undo should succeed: {result}"
     # With --soft, file content is preserved (not reverted)
-    text = (test_dir / "test.txt").read_text()
-    assert text == "hello v2", f"Undo --soft should preserve file content, got: {text}"
+    text = (test_dir / "test_run.txt").read_text()
+    assert text == "hello v3", f"Undo --soft should preserve file content, got: {text}"
     # Check that HEAD moved back (previous commit message)
     log = subprocess.run(["git", "log", "-1", "--format=%s"],
                           cwd=str(test_dir), capture_output=True, text=True, timeout=5)
@@ -98,7 +138,7 @@ try:
     (test_dir / "src").mkdir(exist_ok=True)
     (test_dir / "src" / "main.py").write_text("def hello(): pass")
 
-    index = build_index(test_dir, extra_ignore=["ignored_dir"])
+    index = build_index(test_dir, extra_ignore=["ignored_dir", "test.txt"])
     assert index["file_count"] == 2
     assert index["symbol_count"] >= 1
     print("Index with extra_ignore OK")
@@ -109,7 +149,7 @@ finally:
     # Retry cleanup a few times (git can lock files)
     for attempt in range(3):
         try:
-            shutil.rmtree(test_dir)
+            force_rmtree(test_dir)
             break
-        except PermissionError:
+        except Exception:
             time.sleep(0.5)

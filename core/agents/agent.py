@@ -207,6 +207,9 @@ class AutonomousAgent:
             return "", []
 
         content = "".join(content_chunks)
+        if content and tool_calls:
+            done()
+
         full_reasoning = "".join(reasoning_chunks)
         if full_reasoning:
             self.state["_last_reasoning"] = full_reasoning

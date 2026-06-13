@@ -47,16 +47,16 @@ _MODE_MAP: dict[TaskType, ExecutionMode] = {
 
 _TOOL_GROUPS: dict[TaskType, list[str] | None] = {
     TaskType.CHAT:       [],
-    TaskType.CODE_READ:  ["read", "glob", "grep"],
-    TaskType.CODE_WRITE: ["read", "write", "edit", "glob", "grep", "bash"],
-    TaskType.CODE_MODIFY: ["read", "write", "edit", "glob", "grep", "bash"],
-    TaskType.CODE_REVIEW: ["read", "glob", "grep"],
+    TaskType.CODE_READ:  ["read", "glob", "grep", "list_files"],
+    TaskType.CODE_WRITE: ["read", "write", "edit", "glob", "grep", "bash", "validate", "list_files"],
+    TaskType.CODE_MODIFY: ["read", "write", "edit", "glob", "grep", "bash", "validate", "list_files"],
+    TaskType.CODE_REVIEW: ["read", "glob", "grep", "validate", "list_files"],
     TaskType.BROWSER:    ["mcp__playwright__*"],
     TaskType.DATABASE:   ["mcp__sqlite__*", "mcp__filesystem__read_file"],
     TaskType.RESEARCH:   ["web_fetch", "mcp__fetch__*", "read", "grep"],
     TaskType.REASONING:  ["read", "grep", "glob",
                           "mcp__sequential-thinking__*"],
-    TaskType.FILE_OPS:   ["read", "write", "bash"],
+    TaskType.FILE_OPS:   ["read", "write", "bash", "list_files", "glob", "grep"],
     TaskType.SYSTEM:     ["bash"],
     TaskType.COMPLEX:    None,
     TaskType.UNKNOWN:    None,
@@ -244,11 +244,20 @@ class DecisionRouter:
                        f"{', '.join(domain_patterns)}",
             ))
 
+        from core.skills import skill_manager
+        skill_tool_names = {t["name"] for t in skill_manager.get_active_tools()}
+
         filtered: list[dict] = []
         matched_names: list[str] = []
 
         for td in all_tool_defs:
             name = td["name"]
+            # Always preserve use_skill and active skill tools
+            if name == "use_skill" or name in skill_tool_names:
+                filtered.append(td)
+                matched_names.append(name)
+                continue
+
             for pattern in allowed_patterns:
                 if pattern.endswith("*"):
                     prefix = pattern[:-1]
