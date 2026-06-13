@@ -317,6 +317,7 @@ class MainScreen(Screen):
         "deepseek":     ("🔵", "#0891b2", "DeepSeek"),
         "openai":       ("⚪", "#94a3b8", "OpenAI"),
         "ollama":       ("🟠", "#f5a623", "Ollama"),
+        "gguf":         ("📦", "#8b5cf6", "GGUF Local"),
     }
 
     def _update_header(self) -> None:
