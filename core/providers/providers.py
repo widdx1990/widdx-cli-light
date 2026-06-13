@@ -1010,6 +1010,18 @@ try:
 except ImportError:
     pass
 
+_LLAMA_INSTALL_HINT = """
+llama-cpp-python is not installed. To run GGUF models directly:
+
+  pip install llama-cpp-python
+
+If that fails on Windows, download a pre-built wheel from:
+  https://github.com/abetlen/llama-cpp-python/releases
+
+Or use Ollama as an alternative (runs GGUF natively):
+  https://ollama.com/download
+"""
+
 
 class GGUFDirectProvider(Provider):
     """Load & run a .gguf file directly via llama-cpp-python.
@@ -1029,10 +1041,7 @@ class GGUFDirectProvider(Provider):
         if self._loaded:
             return
         if not _LLAMA_CPP_AVAILABLE:
-            raise RuntimeError(
-                "llama-cpp-python not installed.\n"
-                "Run: pip install llama-cpp-python"
-            )
+            raise RuntimeError(_LLAMA_INSTALL_HINT)
         path = Path(self.model)
         if not path.exists():
             raise FileNotFoundError(f"GGUF file not found: {self.model}")
