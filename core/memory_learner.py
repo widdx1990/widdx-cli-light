@@ -83,39 +83,51 @@ class MemoryLearner:
     def _build_prompt(self, user_input: str, response: str, tools: list[str]) -> str:
         tools_str = ", ".join(tools[:5]) if tools else "none"
         return (
-            "Extract 0-2 facts worth remembering from this exchange. "
-            "Focus on user preferences, project conventions, learned fixes, "
-            "and tool usage patterns.\n\n"
-            f"User: {user_input[:300]}\n"
-            f"Assistant: {response[:500]}\n"
-            f"Tools used: {tools_str}\n\n"
-            'Output ONLY a JSON array, e.g.: '
-            '[{"name":"use-httpx","content":"User prefers httpx over requests",'
-            '"type":"user_preference","context":"HTTP client choice"}]\n'
-            'Output [] if nothing worth remembering.'
+            "You are a memory extraction tool. Output ONLY valid JSON, no explanations.\n\n"
+            "Extract 0-2 facts worth remembering from this exchange:\n\n"
+            f"User: {user_input[:200]}\n"
+            f"Assistant: {response[:300]}\n"
+            f"Tools: {tools_str}\n\n"
+            'Output EXACTLY one of these (no other text):\n'
+            '  []\n'
+            '  [{"name":"slug","content":"fact","type":"user_preference","context":"topic"}]\n'
+            '  [{"name":"a","content":"a","type":"user_preference","context":"x"},{"name":"b","content":"b","type":"project_convention","context":"y"}]\n\n'
+            'Types: user_preference | project_convention | learned_fix | tool_usage_pattern\n'
+            'Name: max 40 chars kebab-case. Content: max 120 chars. Context: max 60 chars.\n\n'
+            'CRITICAL: Start your response with [ and end with ]. Nothing else.'
         )
 
     def _parse_memories(self, output: str) -> list[dict]:
         """Parse LLM JSON output into structured memory dicts."""
         try:
-            # Find JSON array in output
             import re
-            m = re.search(r'\[.*\]', output, re.DOTALL)
-            if not m:
-                return []
-            data = json.loads(m.group(0))
-            if not isinstance(data, list):
-                return []
-            # Validate fields
-            result = []
-            for item in data[:2]:  # max 2
-                if isinstance(item, dict) and item.get("name") and item.get("content"):
-                    result.append({
-                        "name": str(item["name"])[:40],
-                        "content": str(item["content"])[:200],
-                        "type": str(item.get("type", "learned_fix")),
-                        "context": str(item.get("context", ""))[:60],
-                    })
-            return result
-        except (json.JSONDecodeError, KeyError, TypeError):
+            # Strip thinking block if present
+            clean = re.sub(r'\[thinking\].*?\[/thinking\]', '', output, flags=re.DOTALL).strip()
+            # Find JSON array — first [ to matching ]
+            depth = 0
+            start = -1
+            for i, ch in enumerate(clean):
+                if ch == '[':
+                    if depth == 0:
+                        start = i
+                    depth += 1
+                elif ch == ']':
+                    depth -= 1
+                    if depth == 0 and start >= 0:
+                        json_str = clean[start:i+1]
+                        data = json.loads(json_str)
+                        if isinstance(data, list):
+                            result = []
+                            for item in data[:2]:
+                                if isinstance(item, dict) and item.get("content"):
+                                    result.append({
+                                        "name": str(item.get("name", "fact"))[:40],
+                                        "content": str(item["content"])[:200],
+                                        "type": str(item.get("type", "learned_fix")),
+                                        "context": str(item.get("context", ""))[:60],
+                                    })
+                            return result
+                        break
+            return []
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return []
