@@ -1067,6 +1067,7 @@ class MainScreen(Screen):
         msgs.append({"role": "assistant", "content": content or None,
                      "tool_calls": tc_list})
         for tc in tool_calls:
+            self._state["turns"] = self._state.get("turns", 0) + 1
             if tc.name == "use_skill":
                 # Handle skill activation/deactivation (same as CLI process_tool_calls)
                 result = tools.execute_with_skills(tc.name, tc.args)
@@ -1101,6 +1102,24 @@ class MainScreen(Screen):
             _sanitize_tool_call_ids(msgs)  # ensure valid tool_call_ids before API call
             content, calls = pv.chat(msgs, td, cfg_t)
             self._state["cost"] += estimate_turn_cost(model_name, 500, 1000)
+
+            # Handle reasoning (if [thinking] tag is present)
+            if content and content.startswith(_THINK_START):
+                end_idx = content.find(_THINK_END)
+                if end_idx > 0:
+                    reasoning = content[len(_THINK_START):end_idx].strip()
+                    content = content[end_idx + len(_THINK_END):].strip()
+                    if reasoning:
+                        self._state["_last_reasoning"] = reasoning
+
+            # Strip leading [thinking] tags (alternate format)
+            if content and content.startswith("["):
+                end_idx = content.find("[/")
+                if end_idx > 0:
+                    close_bracket = content.find("]", end_idx)
+                    if close_bracket > 0:
+                        content = content[close_bracket + 1:].strip()
+
             if not calls:
                 self.post_message(ResultMsg(content, msgs=msgs))
                 return
@@ -1115,6 +1134,7 @@ class MainScreen(Screen):
         for turn in range(max_iter):
             _sanitize_tool_call_ids(msgs)  # ensure valid tool_call_ids before API call
             content_chunks: list[str] = []
+            reasoning_chunks: list[str] = []
             err_msg: str | None = None
             tool_calls = None
 
@@ -1122,6 +1142,8 @@ class MainScreen(Screen):
                 if event["type"] == "content":
                     content_chunks.append(event["data"])
                     self.post_message(StreamChunkMsg(event["data"]))
+                elif event["type"] == "reasoning":
+                    reasoning_chunks.append(event["data"])
                 elif event["type"] == "error":
                     err_msg = event["data"]
                     break
@@ -1134,6 +1156,18 @@ class MainScreen(Screen):
                 return
 
             content = "".join(content_chunks)
+            full_reasoning = "".join(reasoning_chunks)
+            if full_reasoning:
+                self._state["_last_reasoning"] = full_reasoning
+
+            # Strip leading [thinking] tags (if any)
+            if content and content.startswith("["):
+                end_idx = content.find("[/")
+                if end_idx > 0:
+                    close_bracket = content.find("]", end_idx)
+                    if close_bracket > 0:
+                        content = content[close_bracket + 1:].strip()
+
             self._state["cost"] += estimate_turn_cost(model_name, 500, 1000)
 
             if tool_calls:

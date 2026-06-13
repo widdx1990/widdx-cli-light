@@ -154,7 +154,7 @@ class MemoryEditScreen(ModalScreen):
                 yield Label("Type:")
                 yield Select([(l, v) for v, l in MEMORY_TYPES], value=self._meta.get("type", "user"), id="mem-edit-type")
                 yield Label("Content:")
-                yield TextArea(self._content, id="mem-edit-content")
+                yield TextArea(self._content, id="mem-edit-content", language="markdown", theme="monokai")
             with Horizontal(classes="dialog-actions"):
                 yield Button("  💾 Save (Ctrl+S)  ", id="mem-save", variant="primary")
                 yield Button("  Cancel (Esc)  ", id="mem-cancel")
