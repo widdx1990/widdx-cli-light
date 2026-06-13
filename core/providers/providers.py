@@ -130,25 +130,29 @@ class Provider:
 
 # Models known to support native function calling (tool use)
 _TOOL_CAPABLE_PATTERNS = [
-    "llama3.1", "llama3.2", "llama3.3", "llama3.",
-    "qwen2.5", "qwen2.", "qwen3",
+    "llama3.1", "llama3.2", "llama3.3", "llama3.", "llama4.",
+    "qwen2.5", "qwen2.", "qwen3", "qwen3.5", "qwq",
     "mistral", "mixtral", "codestral",
-    "command-r",
+    "command-r", "command-r-plus",
     "nemotron",
-    "granite3.1", "granite3.",
-    "phi3", "phi4",
-    "gemma3", "gemma2",
-    "deepseek-coder", "deepseek-v3", "deepseek-r1",
+    "granite3.1", "granite3.", "granite4.",
+    "phi3", "phi4", "phi4.5",
+    "gemma3", "gemma2", "gemma3.5",
+    "deepseek-coder", "deepseek-v4", "deepseek-v3", "deepseek-r1",
     "minicpm",
     "dbrx",
+    "hermes",
+    "nousresearch",
 ]
 
 # Models known to return reasoning / thinking (either native or in-content)
 _REASONING_PATTERNS = [
     "deepseek-r1", "deepseek-r1-",
-    "qwq", "qwen3-",
+    "qwq", "qwen3-", "qwen3.5-",
     "openthinker",
-    "phi4-",
+    "phi4-", "phi4.5-",
+    "llama3.3-",
+    "minicpm-",
 ]
 
 
@@ -531,22 +535,85 @@ class OllamaProvider(Provider):
 
 class OpenAICompatibleProvider(Provider):
     def chat(self, messages: list, tool_defs: list, temperature: float = 0.7):
+        content = ""
+        calls = []
+        for event in self.stream(messages, tool_defs, temperature):
+            if event["type"] == "error":
+                return f"\u26a0\ufe0f  {event['data']}", []
+            if event["type"] == "done":
+                content, calls = event["data"]
+        return content, calls
+
+    def stream(self, messages: list, tool_defs: list, temperature: float = 0.7):
+        """Generator: yields content chunks + tool calls + done event."""
         url = f"{self.base_url}/chat/completions"
+        # Auto-append /v1 if base_url ends with openai.com but missing /v1
+        if "/openai.com" in url and not url.endswith("/v1/chat/completions"):
+            url = f"{self.base_url}/v1/chat/completions"
         schema = self.build_tools_schema(tool_defs)
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        body = {"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": _DEFAULT_MAX_TOKENS}
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": _DEFAULT_MAX_TOKENS,
+            "stream": True,
+        }
         if schema:
             body["tools"] = schema
+
         try:
-            resp = httpx.post(url, json=body, headers=headers, timeout=300)
-            resp.raise_for_status()
-            return self._parse(resp.json())
-        except httpx.HTTPStatusError as e:
-            return f"\u26a0\ufe0f  Error {e.response.status_code}: {e.response.text[:500]}", []
+            with httpx.Client(timeout=300) as client:
+                with client.stream("POST", url, json=body, headers=headers) as resp:
+                    if resp.status_code != 200:
+                        err_body = resp.read().decode("utf-8", errors="replace")
+                        yield {"type": "error", "data": f"{resp.status_code}: {err_body[:500]}"}
+                        return
+
+                    content_chunks: list[str] = []
+                    reasoning_chunks: list[str] = []
+                    current_tool_calls: dict = {}
+
+                    for line in resp.iter_lines():
+                        if not line or line == "data: [DONE]" or line.startswith(":keepalive"):
+                            continue
+                        if not line.startswith("data: "):
+                            continue
+                        try:
+                            chunk = json.loads(line[6:])
+                        except json.JSONDecodeError:
+                            continue
+                        choices = chunk.get("choices")
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        if not delta:
+                            continue
+                        if delta.get("content"):
+                            content_chunks.append(delta["content"])
+                            yield {"type": "content", "data": delta["content"]}
+                        if delta.get("reasoning_content"):
+                            reasoning_chunks.append(delta["reasoning_content"])
+                            yield {"type": "reasoning", "data": delta["reasoning_content"]}
+                        tc = delta.get("tool_calls")
+                        if tc:
+                            for t in tc:
+                                self._accumulate_tool_call(current_tool_calls, t)
+
+                    # Build final result
+                    content, calls = self._finalize_stream(
+                        content_chunks, reasoning_chunks, current_tool_calls,
+                    )
+                    yield {"type": "done", "data": (content, calls)}
+
         except httpx.ConnectError:
-            return f"\u26a0\ufe0f  Cannot connect to {self.base_url}", []
+            yield {"type": "error", "data": f"Cannot connect to {self.base_url}"}
+        except httpx.ReadTimeout:
+            yield {"type": "error", "data": "Timeout (300 seconds)"}
+        except Exception as e:
+            yield {"type": "error", "data": f"Error: {e}"}
 
     def _parse(self, data: dict) -> tuple:
         msg = data.get("choices", [{}])[0].get("message", {})
@@ -1066,51 +1133,65 @@ class GGUFDirectProvider(Provider):
 
     def chat(self, messages: list, tool_defs: list,
              temperature: float = 0.7) -> tuple[str, list]:
-        self._ensure_loaded()
+        content = ""
+        calls = []
+        for event in self.stream(messages, tool_defs, temperature):
+            if event["type"] == "error":
+                return f"⚠️  {event['data']}", []
+            if event["type"] == "done":
+                content, calls = event["data"]
+        return content, calls
 
-        # Build prompt from messages (simple format: System + User + Assistant)
-        prompt_parts = []
-        for m in messages:
-            role = m.get("role", "user")
-            content = m.get("content", "") or ""
-            if role == "system":
-                prompt_parts.append(f"<|system|>\n{content}\n<|end|>")
-            elif role == "user":
-                prompt_parts.append(f"<|user|>\n{content}\n<|end|>")
-            elif role == "assistant":
-                prompt_parts.append(f"<|assistant|>\n{content}\n<|end|>")
-            elif role == "tool":
-                prompt_parts.append(f"<|tool|>\n{content}\n<|end|>")
-        prompt_parts.append("<|assistant|>\n")
-        full_prompt = "\n".join(prompt_parts)
-
-        # If tools are requested, inject tool descriptions into prompt
-        if tool_defs:
-            tool_desc = "\n".join(
-                f"- {t['name']}: {t.get('description', '')}"
-                for t in tool_defs[:10]
-            )
-            full_prompt = (
-                f"<|system|>\nAvailable tools:\n{tool_desc}\n"
-                f"To call a tool, output JSON: "
-                f'{{"tool": "name", "arguments": {{...}}}}\n<|end|>\n'
-                + full_prompt
-            )
-
+    def stream(self, messages: list, tool_defs: list,
+              temperature: float = 0.7):
         try:
-            result = self._llm(
+            self._ensure_loaded()
+
+            # Build prompt from messages
+            prompt_parts = []
+            for m in messages:
+                role = m.get("role", "user")
+                content = m.get("content", "") or ""
+                if role == "system":
+                    prompt_parts.append(f"<|system|>\n{content}\n<|end|>")
+                elif role == "user":
+                    prompt_parts.append(f"<|user|>\n{content}\n<|end|>")
+                elif role == "assistant":
+                    prompt_parts.append(f"<|assistant|>\n{content}\n<|end|>")
+                elif role == "tool":
+                    prompt_parts.append(f"<|tool|>\n{content}\n<|end|>")
+            prompt_parts.append("<|assistant|>\n")
+            full_prompt = "\n".join(prompt_parts)
+
+            if tool_defs:
+                tool_desc = "\n".join(
+                    f"- {t['name']}: {t.get('description', '')}"
+                    for t in tool_defs[:10]
+                )
+                full_prompt = (
+                    f"<|system|>\nAvailable tools:\n{tool_desc}\n"
+                    f"To call a tool, output JSON: "
+                    f'{{"tool": "name", "arguments": {{...}}}}\n<|end|>\n'
+                    + full_prompt
+                )
+
+            content_chunks: list[str] = []
+            for token in self._llm.create_completion(
                 full_prompt,
                 max_tokens=_DEFAULT_MAX_TOKENS,
                 temperature=temperature,
                 stop=["<|user|>", "<|system|>"],
-            )
-            content = result["choices"][0]["text"].strip()
+                stream=True,
+            ):
+                chunk = token["choices"][0]["text"]
+                content_chunks.append(chunk)
+                yield {"type": "content", "data": chunk}
 
-            # Parse text response for tool calls
-            cleaned, calls = self._parse_tool_calls_from_text(content)
-            return cleaned, calls
+            full_content = "".join(content_chunks).strip()
+            cleaned, calls = self._parse_tool_calls_from_text(full_content)
+            yield {"type": "done", "data": (cleaned, calls)}
         except Exception as e:
-            return f"⚠️  GGUF error: {e}", []
+            yield {"type": "error", "data": f"GGUF error: {e}"}
 
     @staticmethod
     def _parse_tool_calls_from_text(content: str) -> tuple[str, list]:
