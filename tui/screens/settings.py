@@ -56,16 +56,6 @@ PROVIDER_LIST = [
         "needs_key": False,
         "badge": "[bold #f5a623]LOCAL[/]",
     },
-    {
-        "id": "gguf",
-        "label": "📦 GGUF Models",
-        "tab":   "gguf",
-        "desc":  "Imported .gguf files — runs locally via Ollama",
-        "default_url": "http://localhost:11434",
-        "default_models": [],  # filled dynamically from import log
-        "needs_key": False,
-        "badge": "[bold #c084fc]GGUF[/]",
-    },
 ]
 
 
