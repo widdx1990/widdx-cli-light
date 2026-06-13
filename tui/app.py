@@ -542,25 +542,29 @@ class MainScreen(Screen):
     def _on_settings_result(self, result: dict | None) -> None:
         if result:
             try:
+                # Config was already saved by SettingsScreen._do_save()
                 new_cfg = config.load()
+                # Rebuild the provider object from the freshly-saved config
                 self._provider = create_provider(new_cfg)
-                pname = result.get("provider", self._provider.name)
-                model = result.get("model", self._provider.model)
+                pname = self._provider.name
+                model = self._provider.model
+                # Sync state so header + sidebar show the right info
                 self._state["model"] = f"{pname}/{model}"
+                self._state["_provider_name"] = pname
                 self._update_header()
-                self._log_message("system", f"✓ Switched to: {pname}/{model}")
-                # If switching to opencode-zen, refresh proxies
+                self._log_message(
+                    "system",
+                    f"✓ Provider switched → {pname}/{model}"
+                )
+                # Provider-specific post-switch actions
                 if pname in ("opencode-zen", "opencode"):
                     from core.proxy import proxy_manager
                     proxy_manager.force_refresh()
-                # If Ollama, refresh model cache
-                if pname == "ollama":
+                elif pname == "ollama":
                     fetch_ollama_models(force_refresh=True)
             except Exception as e:
                 self._log_message("system", f"✗ Settings error: {e}")
-        else:
-            # User cancelled — no action needed
-            pass
+        # User cancelled — no action needed
 
     def _on_session_result(self, result: tuple | None) -> None:
         """Handle session load result from SessionListScreen."""

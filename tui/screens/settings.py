@@ -80,9 +80,14 @@ class SettingsScreen(Screen):
 
     def __init__(self):
         super().__init__()
-        p = config.load().get("provider", {})
+        cfg = config.load()
+        p = cfg.get("provider", {})
         self._active_provider = p.get("name", "opencode-zen")
         self._saved = False
+        # Cache current model from config so it can be pre-selected
+        self._current_model = p.get("model", "")
+        # Cache saved URL for active provider
+        self._current_url = p.get("base_url", "")
 
     def compose(self):
         # ── Header (docked top) ─────────────────────────
@@ -106,7 +111,10 @@ class SettingsScreen(Screen):
                 yield Static(pi["desc"], classes="hint")
 
                 yield Label("Model:")
-                yield Select(options=[], id=f"model-{pid}")
+                with Horizontal(id=f"model-row-{pid}"):
+                    yield Select(options=[], id=f"model-{pid}")
+                    yield Button("↻", id=f"btn-refresh-{pid}", tooltip="Refresh model list")
+                yield Static("", id=f"model-status-{pid}", classes="hint")
 
                 yield Label("Base URL:")
                 yield Input(
@@ -200,30 +208,38 @@ class SettingsScreen(Screen):
                 self.query_one("#active-desc", Static).update(f"[dim]{pi['desc']}[/]")
                 break
 
-    def _fill_models(self, pid: str):
-        """Populate the model Select for a given provider."""
+    def _fill_models(self, pid: str, force_refresh: bool = False):
+        """Populate the model Select for a given provider (sync — uses defaults first)."""
         select = self.query_one(f"#model-{pid}", Select)
+        pi = next((p for p in PROVIDER_LIST if p["id"] == pid), None)
 
-        if pid == "opencode-zen":
+        # Always show defaults immediately so Save works even before fetch completes
+        if pid in ("deepseek", "openai"):
+            models = list(pi["default_models"]) if pi else []
+        elif pid == "opencode-zen":
+            # Use cached list if available; schedule a background fetch
             try:
-                models = fetch_free_models()
+                models = fetch_free_models.__wrapped__() if hasattr(fetch_free_models, "__wrapped__") else []
             except Exception:
                 models = []
+            if not models and pi:
+                models = list(pi["default_models"])
+            # Kick off background refresh
+            self._fetch_models_bg(pid, force_refresh)
         elif pid == "ollama":
             url = self.query_one(f"#url-{pid}", Input).value
             try:
-                # Use cached results first (fast), force_refresh only on explicit user action
                 installed = fetch_ollama_models(base_url=url, force_refresh=False)
-                if not installed:
-                    installed = fetch_ollama_models(base_url=url, force_refresh=True)
                 models = [m["name"] for m in installed]
             except Exception:
                 models = []
+            if not models and pi:
+                models = list(pi["default_models"])
+            if force_refresh:
+                self._fetch_models_bg(pid, True)
         else:
             models = []
 
-        # Fallback
-        pi = next((p for p in PROVIDER_LIST if p["id"] == pid), None)
         if not models and pi:
             models = list(pi["default_models"])
 
@@ -233,8 +249,73 @@ class SettingsScreen(Screen):
             else:
                 opts = [(m, m) for m in models]
             select.set_options(opts)
-            if opts:
+            # Pre-select current model if it matches
+            cfg_model = self._current_model if pid == self._active_provider else ""
+            matched = False
+            if cfg_model:
+                for _, val in opts:
+                    if val == cfg_model:
+                        select.value = val
+                        matched = True
+                        break
+            if not matched and opts:
                 select.value = opts[0][1]
+
+    def _fetch_models_bg(self, pid: str, force_refresh: bool = False):
+        """Background worker: fetch real model list and update Select."""
+        import threading
+
+        def _run():
+            pi = next((p for p in PROVIDER_LIST if p["id"] == pid), None)
+            try:
+                self.call_from_thread(
+                    lambda: self.query_one(f"#model-status-{pid}", Static).update("[dim]Fetching models...[/]")
+                )
+            except Exception:
+                pass
+
+            try:
+                if pid == "opencode-zen":
+                    models = fetch_free_models()
+                elif pid == "ollama":
+                    url = self.query_one(f"#url-{pid}", Input).value
+                    installed = fetch_ollama_models(base_url=url, force_refresh=force_refresh)
+                    models = [m["name"] for m in installed]
+                else:
+                    models = []
+            except Exception:
+                models = []
+
+            if not models and pi:
+                models = list(pi["default_models"])
+
+            def _apply():
+                try:
+                    select = self.query_one(f"#model-{pid}", Select)
+                    if models:
+                        if pid == "ollama":
+                            opts = [(f"{m}  {_guess_ollama_caps(m)}", m) if _guess_ollama_caps(m) else (m, m) for m in models]
+                        else:
+                            opts = [(m, m) for m in models]
+                        select.set_options(opts)
+                        cfg_model = self._current_model if pid == self._active_provider else ""
+                        matched = False
+                        if cfg_model:
+                            for _, val in opts:
+                                if val == cfg_model:
+                                    select.value = val
+                                    matched = True
+                                    break
+                        if not matched and opts:
+                            select.value = opts[0][1]
+                    status = self.query_one(f"#model-status-{pid}", Static)
+                    status.update(f"[dim]{len(models)} models[/]")
+                except Exception:
+                    pass
+
+            self.call_from_thread(_apply)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _fill_key_status(self, pid: str):
         """Update key status display for a provider."""
@@ -288,7 +369,7 @@ class SettingsScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed):
         bid = event.button.id or ""
 
-        # ── Key buttons ─────────────────────────────
+        # ── Key + Refresh buttons ────────────────────
         for pi in PROVIDER_LIST:
             pid = pi["id"]
             if bid == f"btn-key-{pid}":
@@ -300,6 +381,9 @@ class SettingsScreen(Screen):
             if bid == f"btn-forget-{pid}":
                 forget_key(pid)
                 self._fill_key_status(pid)
+                return
+            if bid == f"btn-refresh-{pid}":
+                self._fill_models(pid, force_refresh=True)
                 return
 
         # ── GGUF buttons ────────────────────────────
@@ -331,24 +415,40 @@ class SettingsScreen(Screen):
             all_providers: dict[str, dict] = {}
             for pi in PROVIDER_LIST:
                 pid = pi["id"]
+
+                # Guard against Select.BLANK — fall back to first default
                 try:
-                    model = str(self.query_one(f"#model-{pid}", Select).value or pi["default_models"][0])
+                    raw_model = self.query_one(f"#model-{pid}", Select).value
+                    if raw_model is None or str(raw_model) in ("", "BLANK") or raw_model == Select.BLANK:
+                        model = pi["default_models"][0]
+                    else:
+                        model = str(raw_model)
                 except Exception:
                     model = pi["default_models"][0]
+
                 try:
                     url = self.query_one(f"#url-{pid}", Input).value.strip() or pi["default_url"]
                 except Exception:
                     url = pi["default_url"]
 
-                all_providers[pid] = {"model": model, "base_url": url}
+                # Include API key so switching providers preserves keys in config
+                try:
+                    from core.config.keychain import get_key
+                    key = get_key(pid) or ("public" if not pi["needs_key"] else "")
+                except Exception:
+                    key = "public" if not pi["needs_key"] else ""
+
+                all_providers[pid] = {"model": model, "base_url": url, "api_key": key}
 
             # Set the active provider
             active = self._active_provider
             ap = all_providers.get(active, {})
+            pi_active = next((p for p in PROVIDER_LIST if p["id"] == active), {})
             new_cfg["provider"] = {
                 "name": active,
-                "model": ap.get("model", "deepseek-v4-flash-free"),
-                "base_url": ap.get("base_url", "https://opencode.ai/zen/v1"),
+                "model": ap.get("model") or (pi_active.get("default_models", ["deepseek-v4-flash-free"])[0]),
+                "base_url": ap.get("base_url") or pi_active.get("default_url", "https://opencode.ai/zen/v1"),
+                "api_key": ap.get("api_key", "public"),
             }
 
             # Temperature
@@ -360,15 +460,18 @@ class SettingsScreen(Screen):
             except Exception:
                 pass
 
-            # Store all provider configs for future use
+            # Store all provider configs for future switching
             new_cfg["all_providers"] = all_providers
 
             config.save(new_cfg)
             self._saved = True
 
+            final_model = new_cfg["provider"]["model"]
             self.dismiss({
                 "provider": active,
-                "model": ap.get("model", ""),
+                "model": final_model,
+                "base_url": new_cfg["provider"]["base_url"],
+                "api_key": new_cfg["provider"]["api_key"],
                 "all_providers": all_providers,
             })
         except Exception as e:
