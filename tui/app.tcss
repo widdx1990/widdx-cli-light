@@ -19,7 +19,10 @@ $err:       #ef4444;
 Screen { layout: vertical; background: $bg; color: $text; }
 
 /* ── Main Layout ────────────────────────── */
-#header { height: auto; min-height: 2; background: $sidebar; border-bottom: solid $border; color: $muted; padding: 0 2; dock: top; content-align: left middle; }
+#header { height: 3; min-height: 3; background: $sidebar; border-bottom: solid $border; border: none; padding: 0; dock: top; }
+#header Button.header-btn { width: 5; height: 100%; background: transparent; color: $accent; border: none; text-style: bold; content-align: center middle; padding: 0; margin: 0; }
+#header Button.header-btn:hover { background: #1e293b; color: #8b5cf6; }
+#header-info { height: 100%; content-align: left middle; color: #cbd5e1; min-width: 1; padding: 0 2; }
 #processing { height: 1; background: $primary; display: none; dock: top; color: #0b0f19; text-style: bold; content-align: center middle; }
 #processing.active { display: block; }
 #body { height: 1fr; }
@@ -33,18 +36,24 @@ Screen { layout: vertical; background: $bg; color: $text; }
 #view-panel #view-list Button:hover { background: #1e293b; color: $primary; border: solid $primary; }
 #view-panel #view-list Button.active { background: #1e1b4b; color: $phover; border: solid $primary; }
 
-/* ── Sidebar ────────────────────────────── */
-#sidebar { width: 28; height: 100%; background: $sidebar; border-right: solid $border; padding: 0; overflow-y: auto; }
-#sidebar-brand { height: 5; content-align: center middle; color: $primary; text-style: bold; background: #080d17; border-bottom: solid $border; padding: 0 1; }
-#quick-provider { margin: 1 1; background: #0b0f19; color: $text; border: solid $border; }
-#quick-provider:focus { border: solid $primary; }
-#sidebar .sidebar-group { color: $muted; text-style: bold; padding: 1 2 0 2; height: 2; }
-#sidebar .sidebar-divider { height: 1; background: $border; margin: 1 0; }
-#sidebar Button.sidebar-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; border-left: solid transparent; content-align: left middle; padding: 0 2; margin: 0; transition: background 120ms, color 120ms, border 120ms; }
-#sidebar Button.sidebar-btn:hover { background: #1e293b; color: $phover; border-left: solid $primary; }
-#sidebar Button.sidebar-btn.active { background: #1e1b4b; color: $phover; border-left: solid $primary; text-style: bold; }
-#sidebar Button.sidebar-btn:focus { background: #1e293b; color: $phover; }
-#sidebar-footer { height: 3; content-align: center middle; background: #0b0f19; border-top: solid $border; margin-top: 1; padding: 0 2; }
+/* ── UbuntuGrid ──────────────────────────── */
+UbuntuGrid { align: center top; background: rgba(0, 0, 0, 0.85); }
+#grid-overlay { height: 1; }
+#grid-title { height: 3; content-align: center middle; color: $primary; text-style: bold; margin-top: 0; margin-bottom: 1; }
+#grid-search-hint { height: 0; }
+#grid-prov-branch { height: 3; align: center middle; margin-bottom: 1; }
+.grid-inline-label { width: auto; color: $muted; content-align: right middle; margin-right: 1; }
+.grid-inline-select { width: 22; }
+.grid-section-title { height: 2; content-align: center middle; color: $muted; text-style: bold; margin-top: 1; }
+.grid-row { height: auto; align: center middle; layout: grid; grid-size: 7; grid-gutter: 1; padding: 0 2; }
+.grid-icon-btn {
+    width: 12; height: 5; background: $sidebar; border: solid $border; color: #cbd5e1;
+    content-align: center middle; padding: 0; text-style: bold;
+    transition: background 120ms, color 120ms, border 120ms;
+}
+.grid-icon-btn:hover { background: #1e293b; border: solid $primary; color: $phover; }
+.grid-icon-btn:focus { background: #1e1b4b; border: solid $primary; color: $phover; }
+#grid-footer { height: 1; }
 
 /* ── Input & Status ─────────────────────── */
 #input-container { height: auto; min-height: 3; background: $sidebar; border-top: solid $primary; padding: 0 2; dock: bottom; align: left middle; }
