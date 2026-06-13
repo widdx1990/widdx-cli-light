@@ -341,7 +341,9 @@ class GGUFTab(ScrollableContainer):
                 classes="field-input",
             )
             yield Button("📥 Import", id="btn-gguf-import", classes="btn-sm")
-        yield Button("📋 List imported models", id="btn-gguf-list")
+        with Horizontal(classes="field-row"):
+            yield Button("🔍 Scan computer for .gguf files", id="btn-gguf-scan")
+            yield Button("📋 List imported", id="btn-gguf-list")
         yield Static("", id="gguf-status", classes="field-hint")
 
     def on_button_pressed(self, event: Button.Pressed):
@@ -349,9 +351,36 @@ class GGUFTab(ScrollableContainer):
         if bid == "btn-gguf-import":
             self._do_import()
             event.stop()
+        elif bid == "btn-gguf-scan":
+            self._do_scan()
+            event.stop()
         elif bid == "btn-gguf-list":
             self._do_list()
             event.stop()
+
+    def _do_scan(self):
+        status = self.query_one("#gguf-status", Static)
+        status.update("[dim]🔍 Scanning your computer for .gguf files…[/]")
+        import threading
+        def _run():
+            try:
+                from core.providers.gguf import scan_gguf_files
+                from rich.table import Table
+                found = scan_gguf_files(force_refresh=True)
+                if not found:
+                    self.call_from_thread(status.update, "[dim]No .gguf files found. Try importing manually.[/]")
+                    return
+                lines = [f"[bold #10b981]✅ Found {len(found)} GGUF files:[/]"]
+                for f in found[:10]:
+                    size_str = f"{f['size_gb']:.1f} GB" if f["size_gb"] >= 1 else f"{f['size_mb']:.0f} MB"
+                    lines.append(f"  • [bold]{f['name']}[/] [dim]({size_str})[/]")
+                    lines.append(f"    [dim]{f['path']}[/]")
+                if len(found) > 10:
+                    lines.append(f"  … and {len(found)-10} more")
+                self.call_from_thread(status.update, "\n".join(lines))
+            except Exception as e:
+                self.call_from_thread(status.update, f"[bold #e74c3c]❌ Scan failed: {e}[/]")
+        threading.Thread(target=_run, daemon=True).start()
 
     def _do_import(self):
         path = self.query_one("#gguf-path", Input).value.strip()

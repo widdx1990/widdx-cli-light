@@ -494,3 +494,78 @@ def remove_import(model_name: str) -> dict:
         "output": (proc.stdout + proc.stderr).strip(),
         "model_name": model_name,
     }
+
+
+# ── GGUF Discovery Scanner ─────────────────────────────────
+
+# Common directories where GGUF files are typically stored
+_SCAN_DIRS = [
+    Path.home() / "Models",
+    Path.home() / ".cache" / "lm-studio" / "models",
+    Path.home() / ".cache" / "ollama",
+    Path.home() / "Downloads",
+    Path.home() / "Documents" / "Models",
+    Path.home() / "Desktop",
+    Path("E:/Models"),
+    Path("D:/Models"),
+    Path("C:/Models"),
+]
+
+_SCAN_CACHE: dict = {"files": [], "timestamp": 0}
+_SCAN_CACHE_TTL = 300  # 5 minutes
+
+
+def scan_gguf_files(force_refresh: bool = False) -> list[dict]:
+    """Scan common directories for .gguf files.
+
+    Returns list of dicts: {path, name, size_gb, modified}
+    Cached for 5 minutes.
+    """
+    now = time.time()
+    if not force_refresh and _SCAN_CACHE["files"] and (now - _SCAN_CACHE["timestamp"]) < _SCAN_CACHE_TTL:
+        return _SCAN_CACHE["files"]
+
+    found = {}
+    dirs_to_scan = _SCAN_DIRS[:]
+
+    # Also scan current working directory
+    dirs_to_scan.insert(0, Path.cwd())
+
+    # Add extra drives on Windows
+    try:
+        import string
+        for letter in string.ascii_uppercase:
+            p = Path(f"{letter}:/")
+            if p.exists() and p not in dirs_to_scan:
+                dirs_to_scan.append(p / "Models")
+    except Exception:
+        pass
+
+    for scan_dir in dirs_to_scan:
+        if not scan_dir.exists():
+            continue
+        try:
+            for gguf_file in scan_dir.rglob("*.gguf"):
+                try:
+                    if gguf_file.is_file() and gguf_file.stat().st_size > 100 * 1024:
+                        key = str(gguf_file.resolve())
+                        if key not in found:
+                            st = gguf_file.stat()
+                            found[key] = {
+                                "path": key,
+                                "name": gguf_file.name,
+                                "size_gb": st.st_size / 1e9,
+                                "size_mb": st.st_size / 1e6,
+                                "modified": st.st_mtime,
+                            }
+                except (PermissionError, OSError):
+                    continue
+            # Stop after finding enough
+            if len(found) >= 20:
+                break
+        except (PermissionError, OSError):
+            continue
+
+    result = sorted(found.values(), key=lambda x: x["size_gb"], reverse=True)
+    _SCAN_CACHE = {"files": result, "timestamp": now}
+    return result
