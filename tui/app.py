@@ -1329,6 +1329,13 @@ def run_tui() -> None:
     from core.permissions import enable_tui_mode
     enable_tui_mode()
 
+    # Pre-install llama-cpp-python in background (for direct GGUF support)
+    import threading
+    threading.Thread(
+        target=lambda: __import__("core.providers.providers").providers._auto_install_llama_cpp(),
+        daemon=True,
+    ).start()
+
     cfg = config.load()
     tools.configure(cfg.get("sandbox_path"))  # sandbox safety (same as CLI)
     provider = create_provider(cfg)
