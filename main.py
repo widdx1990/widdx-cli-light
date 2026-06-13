@@ -215,6 +215,17 @@ def run():
             break
         if not user_input:
             continue
+        
+        # ── Auto-Skill Suggestion ─────────────────────────────────────
+        if not user_input.startswith("!") and not user_input.startswith("/"):
+            suggested_skills = skill_manager.suggest_skills(user_input)
+            if suggested_skills and not skill_manager.active:
+                icons = [s.icon for s in suggested_skills if s.icon]
+                names = [s.name for s in suggested_skills]
+                msg = f"💡 Suggested skills: {', '.join([f'{icon} {name}' for icon, name in zip(icons, names)])}"
+                print_system_msg(msg)
+                print_system_msg(f"   Activate with: !{suggested_skills[0].name}")
+        
         print_divider()
         print_user_msg(user_input)
 

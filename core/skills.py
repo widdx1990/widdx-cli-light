@@ -168,6 +168,30 @@ class SkillManager:
             }
         }
 
+    def suggest_skills(self, user_input: str) -> list[Skill]:
+        """Suggest relevant skills based on user input using keyword matching."""
+        user_input = user_input.lower()
+        suggestions = []
+
+        # Keyword mappings for each skill
+        keyword_maps = {
+            "code-review": ["review", "code review", "audit", "check code", "bug", "security", "style"],
+            "document": ["document", "write docs", "document code", "docs", "documentation"],
+            "explain-code": ["explain", "explain code", "how does this work", "understand"],
+            "fix-bug": ["fix bug", "debug", "fix error", "problem", "issue", "broken"],
+            "generate-tests": ["test", "tests", "generate tests", "write tests", "unit test"],
+            "refactor": ["refactor", "improve code", "clean up", "reorganize", "restructure"],
+            "tui-builder": ["tui", "terminal ui", "textual", "build interface", "ui"],
+        }
+
+        for skill in self._skills.values():
+            keywords = keyword_maps.get(skill.name, [])
+            # Also check if skill name or description contains input terms
+            if skill.name.lower() in user_input or any(kw in user_input for kw in keywords):
+                suggestions.append(skill)
+
+        return suggestions
+
     def execute_tool(self, name: str, args: dict) -> str:
         """Execute a custom tool from the active skill."""
         if not self._active or name not in self._active.tools:

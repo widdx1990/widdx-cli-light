@@ -1104,12 +1104,24 @@ class GGUFDirectProvider(Provider):
     Install:  pip install llama-cpp-python
     """
 
+    # Known prompt templates for GGUF models
+    _PROMPT_TEMPLATES = {
+        "chatml":   ("<|im_start|>{role}\n{content}<|im_end|>\n", ["<|im_start|>", "<|im_end|>"]),
+        "llama3":   ("<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>\n", ["<|start_header_id|>", "<|eot_id|>"]),
+        "mistral":  ("<s>[INST] {content} [/INST]\n", ["[INST]", "[/INST]"]),
+        "phi3":     ("<|{role}|>\n{content}<|end|>\n", ["<|user|>", "<|system|>"]),
+        "gemma":    ("<start_of_turn>{role}\n{content}<end_of_turn>\n", ["<start_of_turn>", "<end_of_turn>"]),
+        "deepseek": ("<｜{role}｜>{content}\n", ["<｜User｜>", "<｜Assistant｜>"]),
+    }
+
     def __init__(self, name: str, model: str,
                  base_url: str = "", api_key: str = ""):
-        # model = path to .gguf file
         super().__init__(name, model, base_url or "local://gguf", api_key)
         self._llm = None
         self._loaded = False
+        self._template = "chatml"  # default, can be overridden via cfg
+        self._n_ctx = 8192
+        self._n_threads = None  # auto: os.cpu_count() or 4
 
     def _ensure_loaded(self):
         if self._loaded:
@@ -1123,11 +1135,40 @@ class GGUFDirectProvider(Provider):
                 )
         path = Path(self.model)
         if not path.exists():
-            raise FileNotFoundError(f"GGUF file not found: {self.model}")
+            # Try resolving from import log
+            from .gguf import list_imports
+            for entry in list_imports():
+                if entry.get("model_name") == self.model:
+                    candidate = Path(entry.get("metadata", {}).get("path", ""))
+                    if candidate and candidate.exists():
+                        path = candidate
+                        break
+            if not path.exists():
+                raise FileNotFoundError(f"GGUF file not found: {self.model}")
+        # Auto-detect threads
+        if self._n_threads is None:
+            import os
+            self._n_threads = max(1, (os.cpu_count() or 4) - 1)
+        # Read GGUF metadata for context if available
+        try:
+            from .gguf import read_gguf_metadata
+            meta = read_gguf_metadata(str(path))
+            self._n_ctx = meta.get("context_length", 8192)
+            # Auto-detect template from architecture
+            arch = meta.get("architecture", "").lower()
+            template_map = {"llama": "llama3", "mistral": "mistral", "phi": "phi3",
+                          "phi3": "phi3", "phi4": "phi3", "gemma": "gemma",
+                          "gemma2": "gemma", "deepseek": "deepseek", "deepseek2": "deepseek"}
+            for arch_key, tmpl in template_map.items():
+                if arch_key in arch:
+                    self._template = tmpl
+                    break
+        except Exception:
+            pass
         self._llm = Llama(
             model_path=str(path),
-            n_ctx=8192,
-            n_threads=4,
+            n_ctx=self._n_ctx,
+            n_threads=self._n_threads,
             verbose=False,
         )
         self._loaded = True
@@ -1148,45 +1189,60 @@ class GGUFDirectProvider(Provider):
         try:
             self._ensure_loaded()
 
-            # Build prompt from messages
+            # Build prompt using the selected template
+            tmpl, stops = self._PROMPT_TEMPLATES.get(
+                self._template,
+                self._PROMPT_TEMPLATES["chatml"],
+            )
+
             prompt_parts = []
             for m in messages:
                 role = m.get("role", "user")
                 content = m.get("content", "") or ""
                 if role == "system":
-                    prompt_parts.append(f"<|system|>\n{content}\n<|end|>")
+                    prompt_parts.append(tmpl.format(role="system", content=content))
                 elif role == "user":
-                    prompt_parts.append(f"<|user|>\n{content}\n<|end|>")
+                    prompt_parts.append(tmpl.format(role="user", content=content))
                 elif role == "assistant":
-                    prompt_parts.append(f"<|assistant|>\n{content}\n<|end|>")
+                    prompt_parts.append(tmpl.format(role="assistant", content=content))
                 elif role == "tool":
-                    prompt_parts.append(f"<|tool|>\n{content}\n<|end|>")
-            prompt_parts.append("<|assistant|>\n")
-            full_prompt = "\n".join(prompt_parts)
+                    # Tools results as user context
+                    prompt_parts.append(f"[Tool result: {m.get('name', '?')}]\n{content}\n")
+            prompt_parts.append(tmpl.format(role="assistant", content=""))
 
+            full_prompt = "".join(prompt_parts)
+
+            # Inject tool descriptions if needed
             if tool_defs:
                 tool_desc = "\n".join(
                     f"- {t['name']}: {t.get('description', '')}"
                     for t in tool_defs[:10]
                 )
-                full_prompt = (
-                    f"<|system|>\nAvailable tools:\n{tool_desc}\n"
-                    f"To call a tool, output JSON: "
-                    f'{{"tool": "name", "arguments": {{...}}}}\n<|end|>\n'
-                    + full_prompt
+                tool_prefix = (
+                    f"{tmpl.format(role='system', content=f'Available tools:\n{tool_desc}\n'
+                    f'To call a tool, output EXACTLY: '
+                    f'{{"tool": "tool_name", "arguments": {{...}}}}')}"
                 )
+                full_prompt = tool_prefix + full_prompt
 
             content_chunks: list[str] = []
-            for token in self._llm.create_completion(
+            stream = self._llm.create_completion(
                 full_prompt,
                 max_tokens=_DEFAULT_MAX_TOKENS,
                 temperature=temperature,
-                stop=["<|user|>", "<|system|>"],
+                stop=[s for s in stops if s],
                 stream=True,
-            ):
-                chunk = token["choices"][0]["text"]
-                content_chunks.append(chunk)
-                yield {"type": "content", "data": chunk}
+            )
+            try:
+                for token in stream:
+                    chunk = token["choices"][0]["text"]
+                    content_chunks.append(chunk)
+                    yield {"type": "content", "data": chunk}
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
 
             full_content = "".join(content_chunks).strip()
             cleaned, calls = self._parse_tool_calls_from_text(full_content)
@@ -1200,8 +1256,9 @@ class GGUFDirectProvider(Provider):
         import re
         tool_calls = []
         cleaned = content
+        # Pattern: {"tool": "name", "arguments": {...}} with nested braces support
         for m in re.finditer(
-            r'\{\s*"tool"\s*:\s*"(\w[\w.-]*)"\s*,\s*"arguments"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*\}',
+            r'\{\s*"tool"\s*:\s*"(\w[\w.-]*)"\s*,\s*"arguments"\s*:\s*(\{.*?\})\s*\}',
             content,
         ):
             name = m.group(1)
@@ -1212,6 +1269,20 @@ class GGUFDirectProvider(Provider):
                 cleaned = cleaned.replace(m.group(0), "", 1)
             except (json.JSONDecodeError, TypeError):
                 pass
+        # Also try the Ollama text-based tool format
+        if not tool_calls:
+            # ```tool\n{...}\n```
+            for m in re.finditer(r'```tool\s*\n(\{.+?\})\s*\n```', content, re.DOTALL):
+                try:
+                    data = json.loads(m.group(1))
+                    name = data.get("tool", "")
+                    args = data.get("arguments", {})
+                    if name:
+                        call_id = f"call_{uuid.uuid4().hex[:12]}"
+                        tool_calls.append(ToolCall(name=name, args=args, id=call_id))
+                        cleaned = cleaned.replace(m.group(0), "", 1)
+                except (json.JSONDecodeError, TypeError):
+                    pass
         return cleaned.strip(), tool_calls
 
 
