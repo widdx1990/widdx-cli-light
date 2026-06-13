@@ -5,9 +5,26 @@ import sys
 import logging
 from datetime import datetime
 from pathlib import Path
+from bidi.algorithm import get_display
 ROOT = str(Path(__file__).resolve().parent.parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+
+
+def _fix_rtl(text: str) -> str:
+    """Fix RTL/Arabic text for proper display using python-bidi."""
+    if not text:
+        return ""
+    # Check if text contains RTL characters
+    rtl_chars = any("\u0600" <= char <= "\u06FF" or  # Arabic
+                    "\u0750" <= char <= "\u077F" or  # Arabic Supplement
+                    "\u08A0" <= char <= "\u08FF" or  # Arabic Extended-A
+                    "\uFB50" <= char <= "\uFDFF" or  # Arabic Presentation Forms-A
+                    "\uFE70" <= char <= "\uFEFF"    # Arabic Presentation Forms-B
+                    for char in text)
+    if rtl_chars:
+        return get_display(text)
+    return text
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -212,6 +229,9 @@ class MainScreen(Screen):
         from rich.markdown import Markdown
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M")
+
+        # Fix RTL text
+        content = _fix_rtl(content)
 
         if role == "user":
             title = f" 👤 You  [dim]{ts}[/dim] "
@@ -1201,6 +1221,7 @@ class MainScreen(Screen):
         if reasoning and self._chat_log:
             from rich.panel import Panel
             from rich.text import Text
+            reasoning = _fix_rtl(reasoning)
             reasoning_summary = reasoning[:300] + "..." if len(reasoning) > 300 else reasoning
             title = f" 🧠 Thinking Process ({reasoning.count('\n')+1} lines) "
             reasoning_panel = Panel(
@@ -1252,7 +1273,7 @@ class MainScreen(Screen):
             # Bug#3 fix: cap accumulated text to prevent memory bloat
             if len(current) > 10_000:
                 current = current[-8_000:]
-            stream_out.update(current + msg.chunk)
+            stream_out.update(current + _fix_rtl(msg.chunk))
             # Bug#2 fix: Static.scroll_visible() doesn't exist — scroll chat-log instead
             try:
                 self.query_one("#chat-log", RichLog).scroll_end(animate=False)
@@ -1274,6 +1295,7 @@ class MainScreen(Screen):
         if reasoning and self._chat_log:
             from rich.panel import Panel
             from rich.text import Text
+            reasoning = _fix_rtl(reasoning)
             reasoning_summary = reasoning[:300] + "..." if len(reasoning) > 300 else reasoning
             title = f" 🧠 Thinking Process ({reasoning.count(chr(10))+1} lines) "
             reasoning_panel = Panel(
