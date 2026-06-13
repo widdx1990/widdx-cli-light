@@ -35,7 +35,7 @@ Screen { layout: vertical; background: $bg; color: $text; }
 
 /* ── Sidebar ────────────────────────────── */
 #sidebar { width: 28; height: 100%; background: $sidebar; border-right: solid $border; padding: 0; overflow-y: auto; }
-#sidebar-brand { height: 4; content-align: center middle; color: $primary; text-style: bold; background: #080d17; border-bottom: solid $border; }
+#sidebar-brand { height: 5; content-align: center middle; color: $primary; text-style: bold; background: #080d17; border-bottom: solid $border; padding: 0 1; }
 #sidebar .sidebar-group { color: $muted; text-style: bold; padding: 1 2 0 2; height: 2; }
 #sidebar .sidebar-divider { height: 1; background: $border; margin: 1 0; }
 #sidebar Button.sidebar-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; border-left: solid transparent; content-align: left middle; padding: 0 2; margin: 0; }
@@ -278,55 +278,98 @@ ModalScreen {
     content-align: left middle;
 }
 
-/* Section titles in settings body */
-.section-title {
-    color: $accent;
+/* ── Settings — Active provider row ────── */
+#active-prov-row {
+    height: 4;
+    background: $sidebar;
+    border-bottom: solid $border;
+    dock: top;
+    align: left middle;
+    padding: 0 2;
+}
+#active-prov-label {
+    width: 18;
+    color: $muted;
+    text-style: bold;
+    content-align: left middle;
+}
+#active-prov-row Select { width: 28; }
+#active-badge {
+    width: 1fr;
+    content-align: left middle;
+    padding-left: 2;
+    color: $dim;
+}
+
+/* ── Settings — Tabs ────────────────────── */
+#settings-tabs {
+    height: 1fr;
+}
+
+TabbedContent ContentSwitcher { height: 1fr; }
+TabbedContent TabPane { height: 1fr; overflow-y: auto; padding: 1 2; }
+
+/* ── Provider Tab fields ─────────────────── */
+.prov-desc {
+    height: 2;
+    color: $dim;
+    margin-bottom: 1;
+    content-align: left middle;
+}
+
+.field-label {
+    color: $secondary;
     text-style: bold;
     margin-top: 1;
+    margin-bottom: 0;
+    height: 1;
 }
 
-/* Hint text */
-.hint {
+.field-hint {
     color: $dim;
     text-style: italic;
+    height: 1;
     margin-bottom: 0;
 }
 
-#settings-body Label {
-    color: #cbd5e1;
-    margin-top: 1;
-    margin-bottom: 0;
-}
-
-#settings-body Input, #settings-body Select {
-    margin-bottom: 0;
-}
-
-#key-status-row { height: 3; align: left middle; margin-bottom: 1; }
-#key-status-row #key-status { width: 15; content-align: left middle; color: #10b981; }
-.config-path-hint { color: $dim; margin-top: 1; text-style: italic; }
-
-/* Model capabilities & hints */
-.model-info-hint {
+.field-hint-inline {
     color: $dim;
     text-style: italic;
-    padding: 0;
-    margin-bottom: 1;
+    content-align: left middle;
+    width: 1fr;
+    padding-left: 2;
 }
 
-/* GGUF import row */
-#gguf-import-row {
+.field-row {
     height: 3;
     align: left middle;
     margin-bottom: 0;
 }
-#gguf-import-row Button {
+
+.field-select { width: 1fr; }
+.field-input  { width: 1fr; }
+
+.btn-icon {
+    width: 4;
+    min-width: 4;
     margin-left: 1;
+    background: $sidebar;
+    border: solid $border;
+    color: $accent;
+    content-align: center middle;
 }
-#gguf-status {
-    color: $dim;
-    margin-bottom: 1;
+.btn-icon:hover { background: $border; color: $phover; }
+
+.btn-sm {
+    min-width: 10;
+    height: 3;
+    margin-left: 1;
+    background: $sidebar;
+    border: solid $border;
 }
+.btn-sm:hover { background: $border; color: $phover; }
+.btn-danger { border: solid $err; color: $err; }
+.btn-danger:hover { background: $err; color: $text; }
 
 /* Thinking / Reasoning switch */
 Switch {
