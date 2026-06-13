@@ -29,7 +29,7 @@ def _fix_rtl(text: str) -> str:
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import RichLog, Input, Static, Button, Label, Select
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer
 from textual.screen import Screen
 from textual.message import Message
 from textual import work
@@ -491,7 +491,7 @@ class MainScreen(Screen):
             new_branch = result[7:]
             self._switch_branch(new_branch)
         elif result == "clear":
-            self._do_clear_chat()
+            self._do_action("clear")
         else:
             # It's a nav action (chat, tools, skills, etc.)
             self.run_worker(self._do_action(result))
@@ -736,9 +736,9 @@ class MainScreen(Screen):
                 self._chat_log.clear()
                 self._print_history()
                 self._update_header()
-                self._toast(f"Switched to branch '{new_branch}'!")
+                self._show_toast(f"Switched to branch '{new_branch}'!", kind="success")
             else:
-                self._toast(f"Failed to switch branch!")
+                self._show_toast("Failed to switch branch!", kind="error")
         except Exception as e:
             self._log_message("system", f"Failed to switch branch: {e}")
 
@@ -859,9 +859,9 @@ class MainScreen(Screen):
             from core.diagnostics import audit_silent_errors
             r = audit_silent_errors()
             total = sum(r["counts"].values())
-            self._log_message("system",
-                f"🔍 Silent error audit: {r['counts']}\n"
-                + "\n".join(f"  {f['file']}: {f['loc']}" for f in r["files"][:10]))
+            lines = [f"🔍 Silent error audit: {total} found — {r['counts']}"]
+            lines += [f"  {f['file']}: {f['loc']}" for f in r["files"][:10]]
+            self._log_message("system", "\n".join(lines))
         elif cmd == "/save":
             await self._do_action("save")
         elif cmd == "/export":
@@ -889,7 +889,7 @@ class MainScreen(Screen):
                 if new_name:
                     ok = create_branch(new_name)
                     if ok:
-                        self._toast(f"Branch '{new_name}' created!")
+                        self._show_toast(f"Branch '{new_name}' created!", kind="success")
                     else:
                         self._log_message("system", "Failed to create branch.")
             elif sub.startswith("switch"):
