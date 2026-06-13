@@ -1,6 +1,7 @@
 """Real autonomous agent — AI-driven tool-calling loop with full control."""
 
 import json, uuid
+from datetime import datetime
 from typing import Any, Optional
 
 from rich.panel import Panel
@@ -20,7 +21,6 @@ def _vid(tc_id) -> str:
     if not tc_id or not isinstance(tc_id, str) or not tc_id.strip():
         return f"call_{uuid.uuid4().hex[:12]}"
     return tc_id
-from datetime import datetime
 
 
 # ---------------------------------------------------------------------------

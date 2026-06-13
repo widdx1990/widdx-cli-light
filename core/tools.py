@@ -5,6 +5,7 @@ Every tool is registered here via a dict with:
 """
 import glob as glob_module
 import os, subprocess, platform, re, json, time, logging
+import httpx
 from pathlib import Path
 import tempfile
 from typing import Any
