@@ -1325,7 +1325,7 @@ class MainScreen(Screen):
             from rich.text import Text
             reasoning = _fix_rtl(reasoning)
             reasoning_summary = reasoning[:300] + "..." if len(reasoning) > 300 else reasoning
-            title = f" 🧠 Thinking Process ({reasoning.count(chr(10))+1} lines) "
+            title = f" 🧠 Thinking Process ({reasoning.count('\n')+1} lines) "
             reasoning_panel = Panel(
                 Text(reasoning_summary, style="italic #c084fc"),
                 title=title,
