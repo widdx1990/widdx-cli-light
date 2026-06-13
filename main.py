@@ -276,6 +276,20 @@ def run():
             generate_manifest()
             print_system_msg("MANIFEST.json regenerated")
             continue
+        elif cmd == "/debug":
+            from core.diagnostics import audit_silent_errors, error_collector
+            # Run audit and show results
+            r = audit_silent_errors()
+            print_system_msg(f"Silent errors found: {r['counts']}")
+            if r["files"]:
+                print_system_msg("Files with silent error patterns:")
+                for f in r["files"]:
+                    print_system_msg(f"  {f['file']}: {f['loc']}")
+            # Also show collector report if enabled
+            report = error_collector.report_text(clear=True)
+            if "No silent errors" not in report:
+                print_system_msg(report)
+            continue
         elif cmd == "/reasoning":
             last = state.get("_last_reasoning")
             if last:

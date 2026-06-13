@@ -6,7 +6,7 @@ Every decision is traceable via DecisionStep logs.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 
 
 # -------------------------------------------------------------------
