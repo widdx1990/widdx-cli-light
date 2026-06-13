@@ -49,33 +49,33 @@ class UbuntuGrid(Screen):
 
         # ── Navigate section ──
         yield Static("NAVIGATE", classes="grid-section-title")
-        yield Horizontal(id="grid-navigate", classes="grid-row")
-        for _, icon, label, action, _ in self._nav_buttons:
-            yield Button(
-                f"{icon}\n{label}",
-                id=f"g{action}",
-                classes="grid-icon-btn",
-            )
+        with Horizontal(id="grid-navigate", classes="grid-row"):
+            for _, icon, label, action, _ in self._nav_buttons:
+                yield Button(
+                    f"{icon}\n{label}",
+                    id=f"g{action}",
+                    classes="grid-icon-btn",
+                )
 
         # ── Actions section ──
         yield Static("ACTIONS", classes="grid-section-title")
-        yield Horizontal(id="grid-actions", classes="grid-row")
-        for _, icon, label, action, _ in self._act_buttons:
-            yield Button(
-                f"{icon}\n{label}",
-                id=f"g{action}",
-                classes="grid-icon-btn",
-            )
+        with Horizontal(id="grid-actions", classes="grid-row"):
+            for _, icon, label, action, _ in self._act_buttons:
+                yield Button(
+                    f"{icon}\n{label}",
+                    id=f"g{action}",
+                    classes="grid-icon-btn",
+                )
 
         # ── Help section ──
         yield Static("", classes="grid-section-title")
-        yield Horizontal(id="grid-help", classes="grid-row")
-        for _, icon, label, action, _ in self._help_buttons:
-            yield Button(
-                f"{icon}\n{label}",
-                id=f"g{action}",
-                classes="grid-icon-btn",
-            )
+        with Horizontal(id="grid-help", classes="grid-row"):
+            for _, icon, label, action, _ in self._help_buttons:
+                yield Button(
+                    f"{icon}\n{label}",
+                    id=f"g{action}",
+                    classes="grid-icon-btn",
+                )
 
         # ── Footer ──
         yield Static("", id="grid-footer")
@@ -101,8 +101,11 @@ class UbuntuGrid(Screen):
         """Handle provider/branch switch from grid."""
         if not self._grid_ready:
             return
+        value = event.value
+        if value is None or value == Select.BLANK:
+            return
         sid = event.select.id or ""
         if sid == "grid-provider":
-            self.dismiss(f"provider:{event.value}")
+            self.dismiss(f"provider:{value}")
         elif sid == "grid-branch":
-            self.dismiss(f"branch:{event.value}")
+            self.dismiss(f"branch:{value}")

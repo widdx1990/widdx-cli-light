@@ -54,7 +54,7 @@ class SessionListScreen(Screen):
         Binding("escape", "go_back", "Back"),
         Binding("l", "load", "Load", show=False),
         Binding("d", "delete", "Delete", show=False),
-        Binding("r", "rename", "Rename", show=False),
+        Binding("r", "refresh", "Refresh", show=False),
         Binding("s", "save_now", "Save Now", show=False),
         Binding("e", "export_md", "Export MD", show=False),
     ]
