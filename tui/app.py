@@ -1052,6 +1052,28 @@ class MainScreen(Screen):
                 msgs = [m for m in msgs if not m.get("_skill_prompt")]
                 msgs.insert(0, {"role": "system", "content": skill_manager.active.prompt, "_skill_prompt": True})
 
+            # Feature 1: Inject fresh project context
+            try:
+                from core.project.scanner import ProjectScanner
+                scanner = ProjectScanner()
+                ctx = scanner.build_context_block()
+                if ctx:
+                    msgs = [m for m in msgs if not m.get("_project_context")]
+                    msgs.insert(0, {"role": "system", "content": ctx, "_project_context": True})
+            except Exception:
+                pass
+
+            # Feature 2: Inject relevant memories
+            try:
+                from core.memory_learner import MemoryLearner
+                ml = MemoryLearner(provider=pv)
+                mem_ctx = ml.load_relevant(text)
+                if mem_ctx:
+                    msgs = [m for m in msgs if not m.get("_memory_context")]
+                    msgs.insert(0, {"role": "system", "content": mem_ctx, "_memory_context": True})
+            except Exception:
+                pass
+
             # Route: complex tasks → agent, simple → single-loop chat
             if mode and mode in (ExecutionMode.AUTONOMOUS, ExecutionMode.EXPERT_TEAM):
                 self._log_message("system", f"🧠 UIL routed to {mode.value} agent")
@@ -1365,6 +1387,34 @@ class MainScreen(Screen):
         except Exception as e:
             logger.debug("Summarization skipped: %s", e)
 
+        # Feature 2: Auto-extract memories from this turn (TUI)
+        try:
+            from core.utils import get_last_turn
+            msgs = self._state.get("_messages", [])
+            last = get_last_turn(msgs)
+            if last and self._state.get("turns", 0) % 2 == 0:
+                from core.memory_learner import MemoryLearner
+                ml = MemoryLearner(provider=self._provider)
+                tools_used = list(self._state.get("tools_used", []))
+                memories = ml.extract_from_turn(last["user"], last["assistant"], tools_used)
+                if memories:
+                    ml.store_memories(memories)
+                    self._refresh_sidebar_badges()
+                    for m in memories:
+                        self._log_message("system", f"Memory: [{m['type']}] {m['content'][:60]}")
+        except Exception as e:
+            logger.debug("Memory extraction skipped: %s", e)
+
+        # Feature 3: Proactive suggestions (TUI)
+        try:
+            from core.suggester import ProjectSuggester
+            ps = ProjectSuggester()
+            suggestions = ps.suggest()
+            for s in suggestions[:2]:
+                self._show_toast(f"{s.icon}  {s.title}", kind="info", duration=4.0)
+        except Exception as e:
+            logger.debug("Suggestions skipped: %s", e)
+
 
 class WIDDXTUI(App):
     CSS_PATH = "app.tcss"
@@ -1404,9 +1454,13 @@ def run_tui() -> None:
             st["turns"] = ss.get("turns", 0)
             if ss.get("model"):
                 st["model"] = ss["model"]
-    ctx = project_state.build_project_context()
+    try:
+        from core.project.scanner import ProjectScanner
+        ctx = ProjectScanner().build_context_block()
+    except Exception:
+        ctx = None
     if ctx and not sd:
-        st["_messages"].append({"role": "system", "content": f"[PROJECT CONTEXT]\n{ctx}"})
+        st["_messages"].append({"role": "system", "content": f"[PROJECT CONTEXT]\n{ctx}", "_project_context": True})
     ins = project_state.load_project_config().get("project_instructions", "")
     if ins:
         st["_messages"].append({"role": "system", "content": f"[INSTRUCTIONS]\n{ins}"})
