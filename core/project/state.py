@@ -129,18 +129,25 @@ def build_index(project_dir: str | Path, extra_ignore: list | None = None) -> di
 
     for p in sorted(root.rglob("*")):
         # Skip ignored dirs
-        rel = p.relative_to(root)
+        try:
+            rel = p.relative_to(root)
+        except ValueError:
+            continue
         parts = rel.parts
         if any(part in ignore_dirs for part in parts):
             continue
-        if not p.is_file():
-            continue
-        if p.suffix in IGNORE_EXTS:
-            continue
+        try:
+            if not p.is_file():
+                continue
+            if p.suffix in IGNORE_EXTS:
+                continue
+            st = p.stat()
+        except (PermissionError, OSError):
+            continue  # skip files/dirs we can't access
 
         files.append({
             "path": str(rel.as_posix()),
-            "size": p.stat().st_size,
+            "size": st.st_size,
             "ext": p.suffix,
         })
 

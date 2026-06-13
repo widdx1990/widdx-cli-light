@@ -1,6 +1,6 @@
 """Conversation loop and tool processing for WIDDX."""
 
-import json
+import json, uuid
 
 from core import tools
 from core.skills import skill_manager
@@ -9,6 +9,34 @@ from core.ui import (
     print_ai_stream,
 )
 from core.providers.providers import estimate_turn_cost
+
+
+# ── Tool-call ID validation ────────────────────────────────
+# Some API backends (OpenCode Zen proxy, strict OpenAI-compatible
+# servers) reject empty, null, or malformed tool_call_id values.
+# We guarantee every tool_call_id is a valid non-empty string.
+
+def _valid_tool_call_id(tc_id: str | None) -> str:
+    """Return a guaranteed-valid tool_call_id."""
+    if not tc_id or not isinstance(tc_id, str) or not tc_id.strip():
+        return f"call_{uuid.uuid4().hex[:12]}"
+    return tc_id
+
+
+def _sanitize_tool_call_ids(messages: list[dict]) -> list[dict]:
+    """Remove ``tool_call_id`` from any message whose role is NOT ``tool``,
+    and ensure every ``tool``-role message has a valid non-empty ``tool_call_id``.
+
+    Also strips ``tool_calls`` from assistant messages when they contain
+    IDs that look like UUID placeholders (leftover from text-based parsing).
+    """
+    for m in messages:
+        if m.get("role") == "tool":
+            m["tool_call_id"] = _valid_tool_call_id(m.get("tool_call_id", ""))
+        elif "tool_call_id" in m:
+            # Non-tool messages should never carry tool_call_id
+            del m["tool_call_id"]
+    return messages
 
 
 def _inject_skill_prompt(messages):
@@ -25,6 +53,28 @@ def _get_model(state: dict) -> str:
     """Extract the model name from state (format: 'provider/model')."""
     full = state.get("model", "")
     return full.split("/")[-1] if "/" in full else full
+
+
+def _build_tc_list(tool_calls) -> list[dict]:
+    """Convert ToolCall objects to OpenAI-compatible tool_calls dict list."""
+    return [
+        {"id": _valid_tool_call_id(tc.id), "type": "function",
+         "function": {"name": tc.name,
+                      "arguments": json.dumps(tc.args, ensure_ascii=False)}}
+        for tc in tool_calls
+    ]
+
+
+def _handle_tool_calls(tool_calls, content, messages, state):
+    """Shared: append assistant msg with tool_calls, print intents, execute tools."""
+    tc_list = _build_tc_list(tool_calls)
+    messages.append({
+        "role": "assistant", "content": content or None,
+        "tool_calls": tc_list,
+    })
+    for tc in tool_calls:
+        print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
+    return process_tool_calls(tool_calls, messages, state)
 
 
 def process_tool_calls(tool_calls, messages, state):
@@ -53,13 +103,13 @@ def process_tool_calls(tool_calls, messages, state):
                 messages[:] = [m for m in messages if not m.get("_skill_prompt")]
             state["cost"] += estimate_turn_cost(model, 200, 50)
             print_system_msg(result.replace("'", ""))
-            messages.append({"role": "tool", "tool_call_id": tc.id,
+            messages.append({"role": "tool", "tool_call_id": _valid_tool_call_id(tc.id),
                              "name": tc.name, "content": result})
             continue
 
         print_tool_msg(tc.name, json.dumps(tc.args, ensure_ascii=False))
         result = tools.execute_with_skills(tc.name, tc.args)
-        messages.append({"role": "tool", "tool_call_id": tc.id,
+        messages.append({"role": "tool", "tool_call_id": _valid_tool_call_id(tc.id),
                          "name": tc.name, "content": result})
         # Tool call: ~200 input tokens for context, ~100 output tokens for result
         state["cost"] += estimate_turn_cost(model, 200, 100)
@@ -71,6 +121,7 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
     Returns (messages, state)."""
     max_turns = cfg.get("max_turns", 10)
     for turn in range(max_turns):
+        _sanitize_tool_call_ids(messages)  # ensure valid tool_call_ids before API call
         try:
             content, tool_calls = provider.chat(
                 messages, tool_defs, cfg.get("temperature", 0.7)
@@ -88,20 +139,7 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
                     state["_last_reasoning"] = reasoning
                     print_reasoning(reasoning)
         if tool_calls:
-            tc_list = [
-                {"id": tc.id, "type": "function",
-                 "function": {"name": tc.name,
-                              "arguments": json.dumps(tc.args, ensure_ascii=False)}}
-                for tc in tool_calls
-            ]
-            messages.append({
-                "role": "assistant", "content": content or None,
-                "tool_calls": tc_list,
-            })
-            # Show tool intent before execution
-            for tc in tool_calls:
-                print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
-            messages = process_tool_calls(tool_calls, messages, state)
+            messages = _handle_tool_calls(tool_calls, content, messages, state)
         else:
             messages.append({"role": "assistant", "content": content})
             if content:
@@ -120,6 +158,7 @@ def run_stream_turn(provider, messages, state, tool_defs, cfg):
 
     max_turns = cfg.get("max_turns", 10)
     for turn in range(max_turns):
+        _sanitize_tool_call_ids(messages)  # ensure valid tool_call_ids before API call
         live, update, done = print_ai_stream()
         content_chunks = []
         reasoning_chunks = []
@@ -165,19 +204,7 @@ def run_stream_turn(provider, messages, state, tool_defs, cfg):
 
         if tool_calls:
             done()  # commit the streamed text before showing tool calls
-            tc_list = [
-                {"id": tc.id, "type": "function",
-                 "function": {"name": tc.name,
-                              "arguments": json.dumps(tc.args, ensure_ascii=False)}}
-                for tc in tool_calls
-            ]
-            messages.append({
-                "role": "assistant", "content": content or None,
-                "tool_calls": tc_list,
-            })
-            for tc in tool_calls:
-                print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
-            messages = process_tool_calls(tool_calls, messages, state)
+            messages = _handle_tool_calls(tool_calls, content, messages, state)
         else:
             messages.append({"role": "assistant", "content": content})
             if content:

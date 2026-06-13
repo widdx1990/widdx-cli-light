@@ -18,12 +18,13 @@ from textual.message import Message
 from textual import work
 
 from core import config, tools
-from core.providers.providers import create_provider, estimate_turn_cost
+from core.providers.providers import create_provider, estimate_turn_cost, fetch_ollama_models
 from core.proxy import proxy_manager
 from core.skills import skill_manager
 from core.mcp.client import get_mcp_manager
 from core.memory import MemoryStore
 from core.project import state as project_state
+from core.chat import _valid_tool_call_id, _build_tc_list, _sanitize_tool_call_ids
 
 logger = logging.getLogger("widdx.tui")
 
@@ -86,7 +87,7 @@ class MainScreen(Screen):
 
     BINDINGS = [
         Binding("ctrl+q", "app.quit", "Quit", show=False, priority=True),
-        Binding("escape", "focus_input", "Input"),
+        Binding("escape", "cancel_or_focus", "Cancel/Focus", show=False),
         Binding("ctrl+l", "clear_chat", "Clear", show=False),
         Binding("ctrl+p", "show_help", "Help", show=False),
     ]
@@ -119,16 +120,16 @@ class MainScreen(Screen):
         self._tool_defs = tool_defs or []
         self._chat_log = None
         self._processing = False
+        self._cancel_requested = False
         self._current_tools = []
-        self._current_memories = []
 
     def compose(self) -> ComposeResult:
         yield Static(id="header")
-        yield Static("⚡  Thinking and Executing Tools...", id="processing")
+        yield Static("[bold #0b0f19]⚡  Thinking and executing tools  —  please wait...[/]", id="processing")
         with Horizontal(id="body"):
             with Vertical(id="sidebar"):
                 # Brand header
-                yield Static("◈  W I D D X", id="sidebar-brand")
+                yield Static("[bold #6366f1]◈  W I D D X[/]\n[dim #475569]Chat  •  Think  •  Act[/]", id="sidebar-brand")
                 yield Static(classes="sidebar-divider")
                 yield Static("NAVIGATE", classes="sidebar-group")
                 for bid, icon, label, _, _ in self.NAV_BUTTONS:
@@ -175,26 +176,26 @@ class MainScreen(Screen):
         from rich.markdown import Markdown
         
         if role == "user":
-            title = " You "
-            border_style = "bright_blue"
-            msg_text = Text(content, style="default")
-            panel = Panel(msg_text, title=title, title_align="left", border_style=border_style, padding=(0, 2))
-        elif role == "assistant":
-            title = " Assistant "
+            title = " 👤 You "
             border_style = "#6366f1"
+            msg_text = Text(content, style="default")
+            panel = Panel(msg_text, title=title, title_align="left", border_style=border_style, padding=(1, 2))
+        elif role == "assistant":
+            title = " 🤖 Assistant "
+            border_style = "#10b981"
             md = Markdown(content)
             panel = Panel(md, title=title, title_align="left", border_style=border_style, padding=(1, 2))
         elif role == "system":
-            title = " System "
-            border_style = "yellow"
-            panel = Panel(content, title=title, title_align="left", border_style=border_style, padding=(0, 2))
+            title = " ⚙️ System "
+            border_style = "#f5a623"
+            panel = Panel(content, title=title, title_align="left", border_style=border_style, padding=(1, 2))
         elif role == "tool":
-            title = " Tool Response "
-            border_style = "cyan"
-            preview = content[:300] + "\n..." if len(content) > 300 else content
-            panel = Panel(preview, title=title, title_align="left", border_style=border_style, padding=(0, 2))
+            title = " 🛠️ Tool Execution "
+            border_style = "#0ea5e9"
+            preview = content[:600] + "\n..." if len(content) > 600 else content
+            panel = Panel(preview, title=title, title_align="left", border_style=border_style, padding=(1, 2))
         else:
-            panel = Panel(content, border_style="dim", padding=(0, 2))
+            panel = Panel(content, border_style="dim", padding=(1, 2))
             
         self._chat_log.write(panel)
 
@@ -204,21 +205,28 @@ class MainScreen(Screen):
         from rich.panel import Panel
         from rich.align import Align
         from rich.text import Text
-        
+        from rich.rule import Rule
+
         welcome_text = Text.assemble(
-            ("WIDDX Terminal Chat Tool v3.0\n", "bold #6366f1"),
-            ("A professional, keyboard-driven interface powered by UIL Cognitive Architecture.\n\n", "italic #818cf8"),
-            ("Press ", "dim"), ("Ctrl+P", "bold #0891b2"), (" to view help or type ", "dim"), ("/help", "bold #0891b2"), (".\n", "dim"),
-            ("Use ", "dim"), ("!skill_name", "bold #f5a623"), (" to toggle a cognitive skill.\n", "dim"),
-            ("Type your message below and press Enter to start.", "dim")
+            ("\n◈  WIDDX  Terminal Chat Tool  v3.0\n", "bold #6366f1"),
+            ("─" * 44 + "\n\n", "dim #374151"),
+            ("🤖  Powered by UIL Cognitive Architecture\n\n", "italic #818cf8"),
+            ("  ", ""), ("Ctrl+P", "bold #0891b2 on #0c1a2e"), ("  Help    ", "dim"),
+            ("Ctrl+L", "bold #0891b2 on #0c1a2e"), ("  Clear    ", "dim"),
+            ("Ctrl+Q", "bold #0891b2 on #0c1a2e"), ("  Quit\n\n", "dim"),
+            ("  Type ", "dim"), ("!skill_name", "bold #f5a623"), (" to activate a cognitive skill  |  ", "dim"),
+            ("!off", "bold #f5a623"), (" to stop\n", "dim"),
+            ("  Send a message below to begin\n", "dim #6b7280"),
         )
-        
+
         panel = Panel(
             Align.center(welcome_text, vertical="middle"),
             border_style="#6366f1",
             padding=(1, 4),
-            subtitle="Ready",
-            subtitle_align="right"
+            title="[bold #6366f1]  W I D D X  [/]",
+            title_align="center",
+            subtitle="[dim #10b981]● Ready[/]",
+            subtitle_align="right",
         )
         self._chat_log.write(panel)
 
@@ -249,27 +257,46 @@ class MainScreen(Screen):
         m = self._state.get("model", "?")
         c = self._state.get("cost", 0.0)
         t = self._state.get("turns", 0)
+        # Only show proxy status for opencode-zen (other providers connect directly)
+        is_opencode = self._state.get("_provider_name", "") in ("opencode-zen", "opencode")
+        proxy = proxy_manager.status()[:18] if is_opencode else ""
+        proxy_icon = ("🔒" if proxy_manager.current_proxy() else "🌐") if is_opencode else ""
+        cost_color = "#ef4444" if c > 0.10 else "#10b981"
         sk = ""
         if skill_manager.active:
-            sk = f"  │  [bold #f5a623]⚡ !{skill_manager.active.name}[/]"
+            sk = f"  [dim]│[/]  [bold #f5a623]⚡ !{skill_manager.active.name}[/]"
+        proxy_part = f"  [dim]│[/]  {proxy_icon} [dim]{proxy}[/]" if proxy else ""
         self.query_one("#header", Static).update(
-            f"  [bold #00c896]WIDDX[/]  │  {m}  │  ${c:.4f}  │  {t} turns  │  proxy: {proxy_manager.status()[:15]}{sk}"
+            f"  [bold #00c896]◈ WIDDX[/]  [dim]│[/]  [dim]{m}[/]  "
+            f"[dim]│[/]  [{cost_color}]${c:.4f}[/]  [dim]│[/]  "
+            f"[dim]{t} turns[/]{proxy_part}{sk}"
         )
         self._update_sidebar_footer(m)
 
     def _update_status(self) -> None:
         self.query_one("#status", Static).update(
-            "  Ready  [dim]Ctrl+L  Clear    Ctrl+P  Help    Ctrl+Q  Quit[/]"
+            "  [dim #10b981]◈ Ready[/]   "
+            "[bold #0891b2]Ctrl+P[/] [dim]Help[/]   "
+            "[bold #0891b2]Ctrl+L[/] [dim]Clear[/]   "
+            "[bold #f5a623]/agent[/] [dim]Auto[/]   "
+            "[bold #0891b2]Ctrl+Q[/] [dim]Quit[/]"
         )
 
     def _update_sidebar_footer(self, model: str) -> None:
         """Update the sidebar footer with model and connection info."""
-        proxy_status = proxy_manager.status()[:12]
         model_short = model.split("/")[-1][:18] if "/" in model else model[:18]
-        active_icon = "🟢" if not proxy_manager.current_proxy() else "🔒"
+        is_opencode = self._state.get("_provider_name", "") in ("opencode-zen", "opencode")
+        if is_opencode:
+            proxy_status = proxy_manager.status()[:14]
+            connected = not proxy_manager.current_proxy()
+            conn_icon  = "[#10b981]🟢[/]" if connected else "[#f5a623]🔒[/]"
+            conn_label = "[dim]Direct[/]" if connected else f"[dim]{proxy_status}[/]"
+        else:
+            conn_icon = "[#10b981]🟢[/]"
+            conn_label = "[dim]Direct API[/]"
         try:
             self.query_one("#sidebar-footer", Static).update(
-                f"[dim]{active_icon} {model_short}[/]\n[dim]{proxy_status}[/]"
+                f"{conn_icon} [dim]{model_short}[/]\n{conn_label}"
             )
         except Exception as e:
             logger.debug("UI update skipped: %s", e)
@@ -322,8 +349,6 @@ class MainScreen(Screen):
         "sk-":   "_on_sk_btn",
         "tool-": "_on_item_btn",
         "hist-": "_on_hist_btn",
-        "mem-":  "_on_mem_btn",
-        "sess-": "_on_sess_btn",
     }
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -373,17 +398,6 @@ class MainScreen(Screen):
         except (IndexError, KeyError, ValueError) as e:
             logger.debug("Invalid history index: %s", e)
 
-    async def _on_mem_btn(self, bid: str) -> None:
-        try:
-            idx = int(bid[4:])
-            m = self._current_memories[idx]
-            from .screens.detail import TextDetailScreen
-            self.app.push_screen(TextDetailScreen(
-                f"Memory Detail — {m.get('name', 'Memory')}",
-                m.get("description", "No description."),
-            ))
-        except (IndexError, KeyError, ValueError) as e:
-            logger.debug("Invalid memory index: %s", e)
 
     async def _do_action(self, action: str) -> None:
         if action == "chat":
@@ -403,8 +417,9 @@ class MainScreen(Screen):
             self._current_tools = tl
             for i, td in enumerate(tl):
                 name = td["name"]
-                desc = (td.get("description", "") or "")[:80]
-                vlist.mount(Button(f"  {name}  —  {desc}", id=f"tool-{i}"))
+                desc = (td.get("description", "") or "")[:75]
+                mcp_tag = "  [MCP]" if name.startswith("mcp__") else ""
+                vlist.mount(Button(f"  🛠️  {name}{mcp_tag}  —  {desc}", id=f"tool-{i}"))
         elif action == "skills":
             self._show_view("Skills")
             vlist = self.query_one("#view-list", ScrollableContainer)
@@ -412,7 +427,8 @@ class MainScreen(Screen):
             for s in skill_manager.list_all():
                 active = skill_manager.active and s.name == skill_manager.active.name
                 marker = "◉" if active else "○"
-                btn = Button(f"  {marker}  !{s.name}  —  {s.description[:50]}", id=f"sk-{s.name}")
+                icon = getattr(s, "icon", "") or "🎯"
+                btn = Button(f"  {marker}  {icon}  !{s.name}  —  {s.description[:50]}", id=f"sk-{s.name}")
                 if active:
                     btn.set_class(True, "active")
                 vlist.mount(btn)
@@ -420,11 +436,13 @@ class MainScreen(Screen):
             self._show_view("History")
             vlist = self.query_one("#view-list", ScrollableContainer)
             await vlist.remove_children()
+            role_icons = {"user": "👤", "assistant": "🤖", "system": "⚙️", "tool": "🛠️"}
             for i, m in enumerate(self._state.get("_messages", [])[-30:]):
                 role = m.get("role", "?")
                 c = (m.get("content", "") or "")
                 preview = (c[:60] if isinstance(c, str) else str(c)[:60]).replace("\n", " ")
-                vlist.mount(Button(f"  [{role}]  {preview}", id=f"hist-{i}"))
+                icon = role_icons.get(role, "•")
+                vlist.mount(Button(f"  {icon}  [{role}]  {preview}", id=f"hist-{i}"))
         elif action == "memories":
             from .screens.memory_crud import MemoryListScreen
             self.app.push_screen(MemoryListScreen(state=self._state))
@@ -502,22 +520,47 @@ class MainScreen(Screen):
                 self.query_one("#doctor-running").remove()
             except Exception:
                 pass
-                
-            git_status = "[bold #10b981]✓ OK[/]" if git_ok else "[bold #ef4444]✗ Missing[/]"
-            node_status = "[bold #10b981]✓ OK[/]" if node_ok else "[bold #ef4444]✗ Missing[/]"
-            
-            vlist.mount(Static(f"\n  [bold #6366f1]SYSTEM DIAGNOSTICS[/]\n", classes="doctor-title"))
-            vlist.mount(Static(f"  📂 Git:      {git_status}  [dim]({git_ver})[/]"))
-            vlist.mount(Static(f"  🟢 Node:     {node_status}  [dim]({node_ver})[/]"))
-            vlist.mount(Static(f"  🤖 MCP:      [bold #10b981]Active[/]"))
+
+            ok  = "[bold #10b981]✅  OK[/]"
+            err = "[bold #ef4444]❌  Missing[/]"
+            git_status  = ok  if git_ok  else err
+            node_status = ok  if node_ok else err
+
+            vlist.mount(Static("\n  [bold #6366f1]◈  SYSTEM DIAGNOSTICS[/]\n", classes="doctor-title"))
+            vlist.mount(Static(f"  📦  Git     {git_status}  [dim]{git_ver}[/]"))
+            vlist.mount(Static(f"  🟢  Node    {node_status}  [dim]{node_ver}[/]"))
+            vlist.mount(Static(f"  🔗  MCP     [bold #10b981]✅  Active[/]"))
+            vlist.mount(Static(f"  🐍  Python  [bold #10b981]✅  OK[/]  [dim]v3.12[/]"))
+            vlist.mount(Static(""))
+            all_ok = git_ok and node_ok
+            summary_color = "#10b981" if all_ok else "#f5a623"
+            summary_icon  = "✅" if all_ok else "⚠️"
+            vlist.mount(Static(f"  {summary_icon}  [bold {summary_color}]{'All systems operational' if all_ok else 'Some tools missing — check above'}[/]\n"))
         except Exception as e:
             logger.debug("UI update skipped: %s", e)
 
     def _on_settings_result(self, result: dict | None) -> None:
         if result:
-            self._provider = create_provider(config.load())
-            self._log_message("system", "✓ Settings saved and updated successfully")
-            self._update_header()
+            try:
+                new_cfg = config.load()
+                self._provider = create_provider(new_cfg)
+                pname = result.get("provider", self._provider.name)
+                model = result.get("model", self._provider.model)
+                self._state["model"] = f"{pname}/{model}"
+                self._update_header()
+                self._log_message("system", f"✓ Switched to: {pname}/{model}")
+                # If switching to opencode-zen, refresh proxies
+                if pname in ("opencode-zen", "opencode"):
+                    from core.proxy import proxy_manager
+                    proxy_manager.force_refresh()
+                # If Ollama, refresh model cache
+                if pname == "ollama":
+                    fetch_ollama_models(force_refresh=True)
+            except Exception as e:
+                self._log_message("system", f"✗ Settings error: {e}")
+        else:
+            # User cancelled — no action needed
+            pass
 
     def _on_session_result(self, result: tuple | None) -> None:
         """Handle session load result from SessionListScreen."""
@@ -548,6 +591,9 @@ class MainScreen(Screen):
 
         if cmd in ("/exit", "/quit"):
             self.app.exit()
+        elif cmd == "/agent" and len(parts) > 1:
+            task = parts[1]
+            self._chat_agent(task)
         elif cmd == "/clear":
             if self._chat_log:
                 self._chat_log.clear()
@@ -578,22 +624,112 @@ class MainScreen(Screen):
             self._do_skill(parts[1].strip().lstrip("!"))
         elif cmd == "/version":
             self._log_message("system", "WIDDX v3.0 — Terminal AI Chat Tool")
+        elif cmd == "/agent" and len(parts) > 1:
+            self._chat_agent(parts[1])
         else:
             self._log_message("system", f"✗ Unknown command: {cmd}. Click Help in sidebar or type /help")
 
     def _do_skill(self, name: str) -> None:
         if name == "off":
             skill_manager.deactivate()
+            # Strip all skill prompts from stored messages
+            msgs = self._state.get("_messages", [])
+            self._state["_messages"] = [m for m in msgs if not m.get("_skill_prompt")]
             self._log_message("system", "⚡ Skill deactivated")
         elif skill_manager.toggle(name):
             s = skill_manager.active
             if s:
+                # Inject skill prompt into stored messages (same as CLI)
+                msgs = [m for m in self._state.get("_messages", []) if not m.get("_skill_prompt")]
+                msgs.insert(0, {"role": "system", "content": s.prompt, "_skill_prompt": True})
+                self._state["_messages"] = msgs
                 self._log_message("system", f"⚡ Skill activated: !{s.name} — {s.description[:60]}")
             else:
+                msgs = [m for m in self._state.get("_messages", []) if not m.get("_skill_prompt")]
+                self._state["_messages"] = msgs
                 self._log_message("system", "⚡ Skill deactivated")
             self._update_header()
         else:
             self._log_message("system", f"✗ Unknown skill: {name}")
+
+    # ── Agent execution ─────────────────
+
+    def _chat_agent(self, task: str) -> None:
+        """Run task through AutonomousAgent (expert team)."""
+        if self._processing:
+            return
+        self._show_chat()
+        try:
+            self._processing = True
+            self._log_message("user", f"/agent {task}")
+            self.query_one("#input", Input).disabled = True
+            self._update_header()
+            self.query_one("#processing", Static).set_class(True, "active")
+            cfg = config.load()
+            pv = self._provider or create_provider(cfg)
+            td = list(self._tool_defs or tools.TOOL_DEFINITIONS)
+            # Add use_skill + skill tools + MCP
+            use_skill_def = skill_manager.get_use_skill_tool_def()
+            if use_skill_def:
+                td.append(use_skill_def)
+            skill_tools = skill_manager.get_active_tools()
+            if skill_tools:
+                td.extend(skill_tools)
+            try:
+                td.extend(get_mcp_manager().get_all_tool_definitions())
+            except Exception:
+                pass
+            self._run_agent(pv, td, task, cfg)
+        except Exception as e:
+            logger.warning("_chat_agent setup error: %s", e)
+            self._processing = False
+            raise
+
+    @work(thread=True)
+    def _run_agent(self, pv, td, task, cfg_d):
+        """Run AutonomousAgent in background thread with live TUI feedback."""
+        # ── Redirect agent output to TUI chat log ────────────
+        import core.ui.ui as ui_mod
+        _orig_sys = ui_mod.print_system_msg
+        _orig_tc  = ui_mod.print_tool_call
+        _orig_tm  = ui_mod.print_tool_msg
+        _orig_re  = ui_mod.print_reasoning
+        _orig_ai  = ui_mod.print_ai_msg
+
+        def _tui_sys(msg): self.post_message(ResultMsg(f"⚙️ {msg}"))
+        def _tui_tc(name, args):  self.post_message(ToolStepMsg(name, "pending", args[:100]))
+        def _tui_tm(name, args):  self.post_message(ToolStepMsg(name, "ok", args[:200]))
+        def _tui_re(text):  self._log_message("system", f"🧠 {text[:500]}")
+        def _tui_ai(msg):   pass
+
+        try:
+            ui_mod.print_system_msg = _tui_sys
+            ui_mod.print_tool_call  = _tui_tc
+            ui_mod.print_tool_msg   = _tui_tm
+            ui_mod.print_reasoning  = _tui_re
+            ui_mod.print_ai_msg     = _tui_ai
+
+            from core.agents.agent import AutonomousAgent
+            cfg_d["_cancel_flag"] = lambda: self._cancel_requested
+            agent = AutonomousAgent(pv, td, cfg_d, self._state)
+            steps, summary = agent.run(task)
+            step_log = "\n".join(
+                f"  Step {s.step_num}: {s.tool_name} — {s.status}"
+                for s in steps
+            ) if steps else "  (no tools called)"
+            result = f"[Agent completed {len(steps)} steps]\n\n{step_log}\n\n{summary}"
+            self._state.setdefault("turns", 0)
+            self._state["turns"] += len(steps)
+            self.post_message(ResultMsg(result))
+        except Exception as e:
+            logger.warning("Agent execution error: %s", e)
+            self.post_message(ErrorMsg(str(e)))
+        finally:
+            ui_mod.print_system_msg = _orig_sys
+            ui_mod.print_tool_call  = _orig_tc
+            ui_mod.print_tool_msg   = _orig_tm
+            ui_mod.print_reasoning  = _orig_re
+            ui_mod.print_ai_msg     = _orig_ai
 
     # ── Chat execution ──────────────────
 
@@ -610,18 +746,43 @@ class MainScreen(Screen):
             cfg = config.load()
             pv = self._provider or create_provider(cfg)
             td = list(self._tool_defs or tools.TOOL_DEFINITIONS)
-            # Add MCP tools if available
+            use_skill_def = skill_manager.get_use_skill_tool_def()
+            if use_skill_def:
+                td.append(use_skill_def)
+            skill_tools = skill_manager.get_active_tools()
+            if skill_tools:
+                td.extend(skill_tools)
             try:
                 td.extend(get_mcp_manager().get_all_tool_definitions())
             except Exception:
                 pass
+
+            # ── UIL routing: auto-detect if task needs agent ──
+            try:
+                from core.uil import UnifiedIntelligenceLayer, ExecutionMode
+                uil = UnifiedIntelligenceLayer(provider=pv)
+                uil.set_tool_defs(td)
+                decision, _ = uil.process(text)
+                mode = decision.mode if decision else ExecutionMode.SIMPLE_CHAT
+            except Exception:
+                mode = None  # fallback to simple chat
+
             msgs = list(self._state.get("_messages", []))
             if not any(m.get("role") == "system" for m in msgs):
                 sp = cfg.get("system_prompt", "")
                 sn = ", ".join(s.name for s in skill_manager.list_all()) or "none"
                 msgs.insert(0, {"role": "system", "content": sp.replace("{skills_list}", sn)})
-            msgs.append({"role": "user", "content": text})
-            self._run_chat(pv, td, msgs, cfg)
+            if skill_manager.active:
+                msgs = [m for m in msgs if not m.get("_skill_prompt")]
+                msgs.insert(0, {"role": "system", "content": skill_manager.active.prompt, "_skill_prompt": True})
+
+            # Route: complex tasks → agent, simple → single-loop chat
+            if mode and mode in (ExecutionMode.AUTONOMOUS, ExecutionMode.EXPERT_TEAM):
+                self._log_message("system", f"🧠 UIL routed to {mode.value} agent")
+                self._run_agent(pv, td, text, cfg)
+            else:
+                msgs.append({"role": "user", "content": text})
+                self._run_chat(pv, td, msgs, cfg)
         except Exception as e:
             logger.warning("_chat setup error: %s", e)
             self._processing = False
@@ -644,26 +805,50 @@ class MainScreen(Screen):
             except Exception:
                 self.app.call_from_thread(self._finish)
 
+    def _execute_tool_calls(self, tool_calls, content, msgs, model_name):
+        """Shared: append assistant msg with tool_calls, execute tools, post results."""
+        tc_list = _build_tc_list(tool_calls)
+        msgs.append({"role": "assistant", "content": content or None,
+                     "tool_calls": tc_list})
+        for tc in tool_calls:
+            if tc.name == "use_skill":
+                # Handle skill activation/deactivation (same as CLI process_tool_calls)
+                result = tools.execute_with_skills(tc.name, tc.args)
+                if "activated" in result and skill_manager.active:
+                    msgs = [m for m in msgs if not m.get("_skill_prompt")]
+                    msgs.insert(0, {"role": "system", "content": skill_manager.active.prompt, "_skill_prompt": True})
+                elif "deactivated" in result:
+                    msgs[:] = [m for m in msgs if not m.get("_skill_prompt")]
+                self._state["cost"] += estimate_turn_cost(model_name, 200, 50)
+                msgs.append({"role": "tool",
+                             "tool_call_id": _valid_tool_call_id(tc.id),
+                             "name": tc.name, "content": result})
+                continue
+
+            if tc.name not in self._state.setdefault("tools_used", []):
+                self._state["tools_used"].append(tc.name)
+            try:
+                result = tools.execute_with_skills(tc.name, tc.args)
+            except Exception as tool_err:
+                result = f"[Tool error: {tool_err}]"
+            self._state["cost"] += estimate_turn_cost(model_name, 200, 100)
+            msgs.append({"role": "tool",
+                         "tool_call_id": _valid_tool_call_id(tc.id),
+                         "name": tc.name, "content": result})
+            self.post_message(ToolStepMsg(tc.name, "ok", result[:200]))
+
     def _nonstream_run(self, pv, td, msgs, cfg_t: float, max_iter: int) -> None:
         """Fallback: non-streaming provider."""
         last_content = ""
         model_name = self._state.get("model", "").split("/")[-1] or "unknown"
         for _ in range(max_iter):
+            _sanitize_tool_call_ids(msgs)  # ensure valid tool_call_ids before API call
             content, calls = pv.chat(msgs, td, cfg_t)
             self._state["cost"] += estimate_turn_cost(model_name, 500, 1000)
             if not calls:
                 self.post_message(ResultMsg(content, msgs=msgs))
                 return
-            for tc in calls:
-                if tc.name != "use_skill" and tc.name not in self._state.setdefault("tools_used", []):
-                    self._state["tools_used"].append(tc.name)
-                try:
-                    result = tools.execute_with_skills(tc.name, tc.args)
-                except Exception as tool_err:
-                    result = f"[Tool error: {tool_err}]"
-                self._state["cost"] += estimate_turn_cost(model_name, 200, 100)
-                msgs.append({"role": "tool", "tool_call_id": tc.id, "name": tc.name, "content": result})
-                self.post_message(ToolStepMsg(tc.name, "ok", result[:200]))
+            self._execute_tool_calls(calls, content, msgs, model_name)
             last_content = content or ""
         self.post_message(ResultMsg(last_content or "[Max iterations]", msgs=msgs))
 
@@ -672,6 +857,7 @@ class MainScreen(Screen):
         model_name = self._state.get("model", "").split("/")[-1] or "unknown"
 
         for turn in range(max_iter):
+            _sanitize_tool_call_ids(msgs)  # ensure valid tool_call_ids before API call
             content_chunks: list[str] = []
             err_msg: str | None = None
             tool_calls = None
@@ -695,27 +881,7 @@ class MainScreen(Screen):
             self._state["cost"] += estimate_turn_cost(model_name, 500, 1000)
 
             if tool_calls:
-                tc_list = [
-                    {"id": tc.id, "type": "function",
-                     "function": {"name": tc.name,
-                                  "arguments": json.dumps(tc.args, ensure_ascii=False)}}
-                    for tc in tool_calls
-                ]
-                msgs.append({
-                    "role": "assistant", "content": content or None,
-                    "tool_calls": tc_list,
-                })
-                for tc in tool_calls:
-                    if tc.name != "use_skill" and tc.name not in self._state.setdefault("tools_used", []):
-                        self._state["tools_used"].append(tc.name)
-                    try:
-                        result = tools.execute_with_skills(tc.name, tc.args)
-                    except Exception as tool_err:
-                        result = f"[Tool error: {tool_err}]"
-                    self._state["cost"] += estimate_turn_cost(model_name, 200, 100)
-                    msgs.append({"role": "tool", "tool_call_id": tc.id,
-                                 "name": tc.name, "content": result})
-                    self.post_message(ToolStepMsg(tc.name, "ok", result[:200]))
+                self._execute_tool_calls(tool_calls, content, msgs, model_name)
             else:
                 self.post_message(StreamEndMsg(content, msgs))
                 return
@@ -743,13 +909,25 @@ class MainScreen(Screen):
         raw = msg.text
         display, reasoning = self._parse_thinking(raw)
         if reasoning and self._chat_log:
-            self._chat_log.write(f"[dim]⚡ Reasoning: {reasoning[:300]}...[/]")
+            from rich.panel import Panel
+            from rich.text import Text
+            reasoning_summary = reasoning[:300] + "..." if len(reasoning) > 300 else reasoning
+            title = f" 🧠 Thinking Process ({reasoning.count('\n')+1} lines) "
+            reasoning_panel = Panel(
+                Text(reasoning_summary, style="italic #c084fc"),
+                title=title,
+                title_align="left",
+                border_style="#8b5cf6",
+                padding=(0, 2),
+            )
+            self._chat_log.write(reasoning_panel)
         if msg.msgs:
-            self._state["_messages"] = msg.msgs
+            # Bug#5 fix: strip _tool_desc injected by OllamaProvider text-mode
+            self._state["_messages"] = [m for m in msg.msgs if not m.get("_tool_desc")]
         else:
             self._state["_messages"].append({"role": "assistant", "content": raw})
         self._state["turns"] = self._state.get("turns", 0) + 1
-        
+
         self._log_message("assistant", display)
         self.query_one("#chat-log", RichLog).scroll_end(animate=False)
         self._finish()
@@ -761,25 +939,49 @@ class MainScreen(Screen):
         """Live chunk from AI stream — update in-place Static widget."""
         try:
             stream_out = self.query_one("#stream-output", Static)
-            current = stream_out.renderable or ""
+            if not stream_out.display:
+                stream_out.display = True
+            current = str(stream_out.renderable or "")
+            # Bug#3 fix: cap accumulated text to prevent memory bloat
+            if len(current) > 10_000:
+                current = current[-8_000:]
             stream_out.update(current + msg.chunk)
-            stream_out.scroll_visible()
+            # Bug#2 fix: Static.scroll_visible() doesn't exist — scroll chat-log instead
+            try:
+                self.query_one("#chat-log", RichLog).scroll_end(animate=False)
+            except Exception:
+                pass
         except Exception as e:
             logger.debug("UI update skipped: %s", e)  # widget not available yet
 
     def on_stream_end_msg(self, msg: StreamEndMsg) -> None:
         """Stream completed — hide live widget, show formatted panel."""
         try:
-            self.query_one("#stream-output", Static).update("")
+            stream_out = self.query_one("#stream-output", Static)
+            stream_out.update("")
+            stream_out.display = False
         except Exception as e:
             logger.debug("UI update skipped: %s", e)
         raw = msg.content
         display, reasoning = self._parse_thinking(raw)
         if reasoning and self._chat_log:
-            self._chat_log.write(f"[dim]⚡ Reasoning: {reasoning[:300]}...[/]")
-        msgs = list(msg.msgs)
-        msgs.append({"role": "assistant", "content": raw})
-        self._state["_messages"] = msgs
+            from rich.panel import Panel
+            from rich.text import Text
+            reasoning_summary = reasoning[:300] + "..." if len(reasoning) > 300 else reasoning
+            title = f" 🧠 Thinking Process ({reasoning.count(chr(10))+1} lines) "
+            reasoning_panel = Panel(
+                Text(reasoning_summary, style="italic #c084fc"),
+                title=title,
+                title_align="left",
+                border_style="#8b5cf6",
+                padding=(0, 2),
+            )
+            self._chat_log.write(reasoning_panel)
+        # Bug#4 fix: strip internal _tool_desc messages before saving to state
+        # Bug#5 fix: _tool_desc added by OllamaProvider text-mode must not persist
+        clean_msgs = [m for m in msg.msgs if not m.get("_tool_desc")]
+        clean_msgs.append({"role": "assistant", "content": raw})
+        self._state["_messages"] = clean_msgs
         self._state["turns"] = self._state.get("turns", 0) + 1
         self._log_message("assistant", display)
         self._finish()
@@ -788,9 +990,18 @@ class MainScreen(Screen):
         self._log_message("system", f"Error: {msg.text}")
         self._finish()
 
+    def action_cancel_or_focus(self) -> None:
+        """Escape: cancel running task, or focus input if idle."""
+        if self._processing:
+            self._cancel_requested = True
+            self._log_message("system", "🛑 Cancel requested — finishing current step...")
+        else:
+            self.query_one("#input", Input).focus()
+
     def _finish(self) -> None:
         if not self._processing:
             return
+        self._cancel_requested = False
         self._processing = False
         self.query_one("#input", Input).disabled = False
         self.query_one("#input", Input).focus()
@@ -799,7 +1010,31 @@ class MainScreen(Screen):
         try:
             project_state.save_session(self._state.get("_messages", []), self._state)
         except Exception as e:
-            logger.debug("UI update skipped: %s", e)
+            logger.debug("Session save skipped: %s", e)
+
+        # ── Auto-index + auto-commit + summarization (same as CLI main.py) ──
+        try:
+            project_state.save_index(Path().resolve(), extra_ignore=[])
+        except Exception as e:
+            logger.debug("Index save skipped: %s", e)
+
+        try:
+            from core.project import git as git_utils
+            auto_commit = project_state.load_project_config().get("auto_commit", True)
+            if auto_commit:
+                git_utils.auto_commit(Path().resolve(), "")
+        except Exception as e:
+            logger.debug("Auto-commit skipped: %s", e)
+
+        try:
+            msgs = self._state.get("_messages", [])
+            old_len = len(msgs)
+            msgs = project_state.summarize_conversation(msgs, keep_last=10)
+            if len(msgs) < old_len:
+                self._state["_messages"] = msgs
+                self._log_message("system", f"Conversation summarized ({old_len} → {len(msgs)} messages)")
+        except Exception as e:
+            logger.debug("Summarization skipped: %s", e)
 
 
 class WIDDXTUI(App):
@@ -818,7 +1053,12 @@ class WIDDXTUI(App):
 
 
 def run_tui() -> None:
+    # Prevent permission prompts from freezing TUI (no input() in async mode)
+    from core.permissions import enable_tui_mode
+    enable_tui_mode()
+
     cfg = config.load()
+    tools.configure(cfg.get("sandbox_path"))  # sandbox safety (same as CLI)
     provider = create_provider(cfg)
     if provider.name in ("opencode-zen", "opencode"):
         proxy_manager.force_refresh()

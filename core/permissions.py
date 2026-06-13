@@ -141,10 +141,12 @@ class PermissionManager:
     def _ask(self, tool_name: str, console=None) -> bool:
         """Ask the user for permission via console prompt.
 
-        Returns True/False. If no console available, allows (fail-open).
+        Returns True/False. If no console available, or in TUI mode, allows (fail-open).
         """
         if console is None:
             return True
+        if getattr(self, '_tui_mode', False):
+            return True  # TUI can't use input() — auto-allow
 
         from rich.prompt import Prompt as RPrompt
         from rich.text import Text
@@ -186,3 +188,10 @@ def get_permission_manager() -> PermissionManager:
     if _permission_manager is None:
         _permission_manager = PermissionManager()
     return _permission_manager
+
+
+def enable_tui_mode():
+    """Set permission manager to TUI-safe mode (auto-allow, no input() blocking)."""
+    pm = get_permission_manager()
+    pm._tui_mode = True
+    pm._level = PermissionLevel.PERMISSIVE

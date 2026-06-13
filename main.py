@@ -77,15 +77,18 @@ def _project_changed(project_dir: Path, extra_ignore: list) -> bool:
     entries = []
     try:
         for f in sorted(root.rglob("*")):
-            if f.is_file():
-                rel = f.relative_to(root)
-                parts = rel.parts
-                if any(part in ignore or part.startswith(".") for part in parts):
-                    continue
-                st = f.stat()
-                entries.append(f"{rel}:{st.st_size}:{st.st_mtime_ns}")
+            try:
+                if f.is_file():
+                    rel = f.relative_to(root)
+                    parts = rel.parts
+                    if any(part in ignore or part.startswith(".") for part in parts):
+                        continue
+                    st = f.stat()
+                    entries.append(f"{rel}:{st.st_size}:{st.st_mtime_ns}")
+            except (PermissionError, OSError):
+                continue  # skip inaccessible files/dirs
     except OSError:
-        pass
+        pass  # whole-tree failure (e.g. rglob itself fails)
     current_hash = hashlib.md5("|".join(entries).encode()).hexdigest()
     if current_hash == _last_index_hash:
         return False
@@ -114,7 +117,9 @@ def run():
         if not provider.api_key or provider.api_key == "public":
             print_system_msg(f"No API key found for {provider.name}. "
                              f"Set {provider.name.upper()}_API_KEY env var or enter one now.")
-            prompt_key(provider.name)
+            api_key = prompt_key(provider.name)
+            if api_key:
+                provider.api_key = api_key  # update the live provider
 
     # ── Register MCP servers (lazy — no subprocess spawn yet) ─────────
     mcp_mgr = get_mcp_manager()
@@ -274,6 +279,7 @@ def run():
             action = parts[1].strip() if len(parts) > 1 else ""
             if action == "forget":
                 forget_key(provider.name)
+                provider.api_key = ""  # clear from live provider
                 print_system_msg(f"API key for {provider.name} removed from session")
             elif action == "show":
                 if has_key(provider.name):
@@ -281,25 +287,18 @@ def run():
                 else:
                     print_system_msg(f"\u274c No API key set for {provider.name}")
             else:
-                prompt_key(provider.name)
+                key = prompt_key(provider.name)
+                if key:
+                    provider.api_key = key  # update live provider
                 print_system_msg(f"API key for {provider.name} stored securely in session")
             continue
         elif cmd == "/mcp":
             sub = parts[1].strip() if len(parts) > 1 else ""
             if sub == "discover":
-                from core.mcp.client import discover_mcp_servers, MCPClientManager
-                from rich.table import Table
+                from core.mcp.client import discover_mcp_servers
+                from core.commands import build_mcp_discover_table
                 discovered = discover_mcp_servers(force_refresh=True)
-                table = Table(title=f"Discovered {len(discovered)} MCP servers",
-                              border_style="dim", header_style="bold #f5a623")
-                table.add_column("Name", style="bold #00c896")
-                table.add_column("Command", style="white")
-                table.add_column("Status", style="dim")
-                for s in discovered:
-                    name = s["name"]
-                    exists = "✅" if mcp_mgr.get_server(name) else "⬜"
-                    table.add_row(name, f"{s['command']} {' '.join(s.get('args', []))[:40]}", exists)
-                console.print(table)
+                console.print(build_mcp_discover_table(discovered, mcp_mgr))
                 print_system_msg("Use /mcp add <name> <command> [args] to add a server")
             elif sub.startswith("add "):
                 from core.mcp.client import MCPServerConnection
@@ -343,6 +342,11 @@ def run():
         elif cmd == "/permissions":
             sub = parts[1] if len(parts) > 1 else ""
             handle_permissions(sub)
+            continue
+        elif cmd == "/gguf":
+            from core.commands import handle_gguf
+            sub = parts[1] if len(parts) > 1 else ""
+            handle_gguf(sub, provider, state)
             continue
         elif cmd == "/theme":
             use_enhanced_ui(not is_enhanced())
