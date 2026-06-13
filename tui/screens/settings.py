@@ -56,6 +56,16 @@ PROVIDER_LIST = [
         "needs_key": False,
         "badge": "[bold #f5a623]LOCAL[/]",
     },
+    {
+        "id": "gguf",
+        "label": "📦 GGUF Models",
+        "tab":   "gguf",
+        "desc":  "Imported .gguf files — runs via Ollama or directly (llama-cpp)",
+        "default_url": "http://localhost:11434",
+        "default_models": [],
+        "needs_key": False,
+        "badge": "[bold #c084fc]GGUF[/]",
+    },
 ]
 
 
@@ -473,10 +483,10 @@ class SettingsScreen(Screen):
                 current_model = self._current_model if is_active else ""
                 current_url   = self._current_url   if is_active else ""
                 with TabPane(pi["label"], id=f"tab-{pid}"):
-                    yield ProviderTab(pi, current_model, current_url, is_active)
-
-            with TabPane("📦 GGUF", id="tab-gguf"):
-                yield GGUFTab()
+                    if pid == "gguf":
+                        yield GGUFTab()
+                    else:
+                        yield ProviderTab(pi, current_model, current_url, is_active)
 
         # ── Footer ──────────────────────────────────────
         with Horizontal(id="settings-footer"):
