@@ -7,6 +7,7 @@ from rich.prompt import Prompt as RPrompt
 
 from core.ui.ui import print_system_msg, console
 from rich.text import Text
+from rich.table import Table
 from core.providers.providers import create_provider, fetch_free_models, fetch_ollama_models
 from core.config.keychain import prompt_key, forget_key
 from core import config
@@ -14,7 +15,6 @@ from core import config
 
 def build_mcp_discover_table(discovered: list[dict], mgr=None) -> "Table":
     """Build a Rich Table for discovered MCP servers. Shared by CLI and TUI."""
-    from rich.table import Table
     if mgr is None:
         from core.mcp.client import get_mcp_manager
         mgr = get_mcp_manager()

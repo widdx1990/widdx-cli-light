@@ -521,6 +521,7 @@ def scan_gguf_files(force_refresh: bool = False) -> list[dict]:
     Returns list of dicts: {path, name, size_gb, modified}
     Cached for 5 minutes.
     """
+    global _SCAN_CACHE
     now = time.time()
     if not force_refresh and _SCAN_CACHE["files"] and (now - _SCAN_CACHE["timestamp"]) < _SCAN_CACHE_TTL:
         return _SCAN_CACHE["files"]

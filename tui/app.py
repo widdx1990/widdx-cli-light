@@ -718,8 +718,8 @@ class MainScreen(Screen):
             vlist.mount(Static("\n  [bold #6366f1]◈  SYSTEM DIAGNOSTICS[/]\n", classes="doctor-title"))
             vlist.mount(Static(f"  📦  Git     {git_status}  [dim]{git_ver}[/]"))
             vlist.mount(Static(f"  🟢  Node    {node_status}  [dim]{node_ver}[/]"))
-            vlist.mount(Static(f"  🔗  MCP     [bold #10b981]✅  Active[/]"))
-            vlist.mount(Static(f"  🐍  Python  [bold #10b981]✅  OK[/]  [dim]v3.12[/]"))
+            vlist.mount(Static("  🔗  MCP     [bold #10b981]✅  Active[/]"))
+            vlist.mount(Static("  🐍  Python  [bold #10b981]✅  OK[/]  [dim]v3.12[/]"))
             vlist.mount(Static(""))
             all_ok = git_ok and node_ok
             summary_color = "#10b981" if all_ok else "#f5a623"
@@ -888,6 +888,13 @@ class MainScreen(Screen):
                 self._show_toast(f"Failed to switch model: {e}", kind="error")
         elif cmd == "/doctor":
             await self._do_action("doctor")
+        elif cmd == "/debug":
+            from core.diagnostics import audit_silent_errors
+            r = audit_silent_errors()
+            total = sum(r["counts"].values())
+            self._log_message("system",
+                f"🔍 Silent error audit: {r['counts']}\n"
+                + "\n".join(f"  {f['file']}: {f['loc']}" for f in r["files"][:10]))
         elif cmd == "/save":
             await self._do_action("save")
         elif cmd == "/export":

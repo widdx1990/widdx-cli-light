@@ -1,5 +1,6 @@
 import json, time, uuid
 import httpx
+from pathlib import Path
 from typing import Optional
 
 from ..proxy import proxy_manager, ZEN_BASE
