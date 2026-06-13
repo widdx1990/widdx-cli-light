@@ -999,6 +999,120 @@ def estimate_turn_cost(model: str, input_tokens: int = 500,
             output_tokens / 1_000_000 * out_price)
 
 
+# ---------------------------------------------------------------------------
+# GGUF Direct Provider — runs .gguf files via llama-cpp-python (no Ollama)
+# ---------------------------------------------------------------------------
+
+_LLAMA_CPP_AVAILABLE = False
+try:
+    from llama_cpp import Llama  # type: ignore
+    _LLAMA_CPP_AVAILABLE = True
+except ImportError:
+    pass
+
+
+class GGUFDirectProvider(Provider):
+    """Load & run a .gguf file directly via llama-cpp-python.
+
+    No Ollama required — the model runs in-process.
+    Install:  pip install llama-cpp-python
+    """
+
+    def __init__(self, name: str, model: str,
+                 base_url: str = "", api_key: str = ""):
+        # model = path to .gguf file
+        super().__init__(name, model, base_url or "local://gguf", api_key)
+        self._llm = None
+        self._loaded = False
+
+    def _ensure_loaded(self):
+        if self._loaded:
+            return
+        if not _LLAMA_CPP_AVAILABLE:
+            raise RuntimeError(
+                "llama-cpp-python not installed.\n"
+                "Run: pip install llama-cpp-python"
+            )
+        path = Path(self.model)
+        if not path.exists():
+            raise FileNotFoundError(f"GGUF file not found: {self.model}")
+        self._llm = Llama(
+            model_path=str(path),
+            n_ctx=8192,
+            n_threads=4,
+            verbose=False,
+        )
+        self._loaded = True
+
+    def chat(self, messages: list, tool_defs: list,
+             temperature: float = 0.7) -> tuple[str, list]:
+        self._ensure_loaded()
+
+        # Build prompt from messages (simple format: System + User + Assistant)
+        prompt_parts = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "") or ""
+            if role == "system":
+                prompt_parts.append(f"<|system|>\n{content}\n<|end|>")
+            elif role == "user":
+                prompt_parts.append(f"<|user|>\n{content}\n<|end|>")
+            elif role == "assistant":
+                prompt_parts.append(f"<|assistant|>\n{content}\n<|end|>")
+            elif role == "tool":
+                prompt_parts.append(f"<|tool|>\n{content}\n<|end|>")
+        prompt_parts.append("<|assistant|>\n")
+        full_prompt = "\n".join(prompt_parts)
+
+        # If tools are requested, inject tool descriptions into prompt
+        if tool_defs:
+            tool_desc = "\n".join(
+                f"- {t['name']}: {t.get('description', '')}"
+                for t in tool_defs[:10]
+            )
+            full_prompt = (
+                f"<|system|>\nAvailable tools:\n{tool_desc}\n"
+                f"To call a tool, output JSON: "
+                f'{{"tool": "name", "arguments": {{...}}}}\n<|end|>\n'
+                + full_prompt
+            )
+
+        try:
+            result = self._llm(
+                full_prompt,
+                max_tokens=_DEFAULT_MAX_TOKENS,
+                temperature=temperature,
+                stop=["<|user|>", "<|system|>"],
+            )
+            content = result["choices"][0]["text"].strip()
+
+            # Parse text response for tool calls
+            cleaned, calls = self._parse_tool_calls_from_text(content)
+            return cleaned, calls
+        except Exception as e:
+            return f"⚠️  GGUF error: {e}", []
+
+    @staticmethod
+    def _parse_tool_calls_from_text(content: str) -> tuple[str, list]:
+        """Parse JSON tool calls from model text output."""
+        import re
+        tool_calls = []
+        cleaned = content
+        for m in re.finditer(
+            r'\{\s*"tool"\s*:\s*"(\w[\w.-]*)"\s*,\s*"arguments"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*\}',
+            content,
+        ):
+            name = m.group(1)
+            try:
+                args = json.loads(m.group(2))
+                call_id = f"call_{uuid.uuid4().hex[:12]}"
+                tool_calls.append(ToolCall(name=name, args=args, id=call_id))
+                cleaned = cleaned.replace(m.group(0), "", 1)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return cleaned.strip(), tool_calls
+
+
 _DEFAULT_BASE_URLS = {
     "deepseek": "https://api.deepseek.com",
     "openai": "https://api.openai.com/v1",
@@ -1032,6 +1146,12 @@ def create_provider(cfg: dict) -> Provider:
     if name == "ollama":
         return OllamaProvider(name, model, base_url, api_key)
     if name == "gguf":
+        # If model is a .gguf file path → use direct provider, else fallback to Ollama
+        if model and (model.endswith(".gguf") or Path(model).exists()):
+            try:
+                return GGUFDirectProvider(name, model, base_url, api_key)
+            except Exception:
+                pass  # fall through to Ollama if llama-cpp not available
         return OllamaProvider(name, model, base_url, api_key)
     if name in ("opencode-zen", "opencode"):
         return OpenCodeZenProvider(name, model, base_url, api_key)
