@@ -129,7 +129,7 @@ class MainScreen(Screen):
         with Horizontal(id="body"):
             with Vertical(id="sidebar"):
                 # Brand header
-                yield Static("[bold #6366f1]◈  W I D D X[/]\n[dim #475569]Chat  •  Think  •  Act[/]", id="sidebar-brand")
+                yield Static("[bold #6366f1]◈  W I D D X  C O R T E X[/]\n[dim #475569]by Muhammad Muslih  •  widdx[/]", id="sidebar-brand")
                 yield Static(classes="sidebar-divider")
                 yield Static("NAVIGATE", classes="sidebar-group")
                 for bid, icon, label, _, _ in self.NAV_BUTTONS:
@@ -174,29 +174,31 @@ class MainScreen(Screen):
         from rich.panel import Panel
         from rich.text import Text
         from rich.markdown import Markdown
-        
+        from datetime import datetime
+        ts = datetime.now().strftime("%H:%M")
+
         if role == "user":
-            title = " 👤 You "
+            title = f" 👤 You  [dim]{ts}[/dim] "
             border_style = "#6366f1"
             msg_text = Text(content, style="default")
-            panel = Panel(msg_text, title=title, title_align="left", border_style=border_style, padding=(1, 2))
+            panel = Panel(msg_text, title=title, title_align="left", border_style=border_style, padding=(0, 2))
         elif role == "assistant":
-            title = " 🤖 Assistant "
+            title = f" 🤖 Assistant  [dim]{ts}[/dim] "
             border_style = "#10b981"
             md = Markdown(content)
-            panel = Panel(md, title=title, title_align="left", border_style=border_style, padding=(1, 2))
+            panel = Panel(md, title=title, title_align="left", border_style=border_style, padding=(0, 2))
         elif role == "system":
-            title = " ⚙️ System "
+            title = f" ⚙  [dim]{ts}[/dim] "
             border_style = "#f5a623"
-            panel = Panel(content, title=title, title_align="left", border_style=border_style, padding=(1, 2))
+            panel = Panel(content, title=title, title_align="left", border_style=border_style, padding=(0, 1))
         elif role == "tool":
-            title = " 🛠️ Tool Execution "
+            title = f" 🛠  [dim]{ts}[/dim] "
             border_style = "#0ea5e9"
-            preview = content[:600] + "\n..." if len(content) > 600 else content
-            panel = Panel(preview, title=title, title_align="left", border_style=border_style, padding=(1, 2))
+            preview = content[:600] + "\n[dim]…[/dim]" if len(content) > 600 else content
+            panel = Panel(preview, title=title, title_align="left", border_style=border_style, padding=(0, 1))
         else:
-            panel = Panel(content, border_style="dim", padding=(1, 2))
-            
+            panel = Panel(content, border_style="dim", padding=(0, 1))
+
         self._chat_log.write(panel)
 
     def _log_welcome_message(self) -> None:
@@ -207,16 +209,23 @@ class MainScreen(Screen):
         from rich.text import Text
         from rich.rule import Rule
 
+        model_short = self._state.get("model", "?").split("/")[-1][:24]
+        pname = self._state.get("_provider_name", "") or self._state.get("model", "").split("/")[0]
+        skill_count = len(skill_manager.list_all())
         welcome_text = Text.assemble(
-            ("\n◈  WIDDX  Terminal Chat Tool  v3.0\n", "bold #6366f1"),
+            ("\n◈  WIDDX Cortex  v3.0\n", "bold #6366f1"),
+            ("  by Muhammad Muslih  •  widdx\n", "dim #475569"),
             ("─" * 44 + "\n\n", "dim #374151"),
-            ("🤖  Powered by UIL Cognitive Architecture\n\n", "italic #818cf8"),
+            ("  Provider:  ", "dim"), (pname or "?", "bold #00c896"),
+            ("   Model:  ", "dim"), (model_short, "bold #818cf8"),
+            (f"   Skills:  ", "dim"), (str(skill_count), "bold #f5a623"), (" available\n\n", "dim"),
             ("  ", ""), ("Ctrl+P", "bold #0891b2 on #0c1a2e"), ("  Help    ", "dim"),
             ("Ctrl+L", "bold #0891b2 on #0c1a2e"), ("  Clear    ", "dim"),
             ("Ctrl+Q", "bold #0891b2 on #0c1a2e"), ("  Quit\n\n", "dim"),
-            ("  Type ", "dim"), ("!skill_name", "bold #f5a623"), (" to activate a cognitive skill  |  ", "dim"),
-            ("!off", "bold #f5a623"), (" to stop\n", "dim"),
-            ("  Send a message below to begin\n", "dim #6b7280"),
+            ("  ", ""), ("!", "bold #f5a623"), ("skill_name", "#f5a623"), ("  activate skill  │  ", "dim"),
+            ("!off", "bold #f5a623"), ("  deactivate  │  ", "dim"),
+            ("/help", "bold #0891b2"), ("  all commands\n", "dim"),
+            ("\n  Send a message to begin →\n", "dim #6b7280"),
         )
 
         panel = Panel(
@@ -253,25 +262,47 @@ class MainScreen(Screen):
 
     # ── UI helpers ──────────────────────
 
+    # ── Provider badge colours ──────────────────────────────────
+    _PROVIDER_BADGES = {
+        "opencode-zen": ("🌐", "#10b981", "OpenCode Zen"),
+        "opencode":     ("🌐", "#10b981", "OpenCode"),
+        "deepseek":     ("🔵", "#0891b2", "DeepSeek"),
+        "openai":       ("⚪", "#94a3b8", "OpenAI"),
+        "ollama":       ("🟠", "#f5a623", "Ollama"),
+    }
+
     def _update_header(self) -> None:
         m = self._state.get("model", "?")
         c = self._state.get("cost", 0.0)
         t = self._state.get("turns", 0)
-        # Only show proxy status for opencode-zen (other providers connect directly)
-        is_opencode = self._state.get("_provider_name", "") in ("opencode-zen", "opencode")
-        proxy = proxy_manager.status()[:18] if is_opencode else ""
-        proxy_icon = ("🔒" if proxy_manager.current_proxy() else "🌐") if is_opencode else ""
+        pname = self._state.get("_provider_name", "") or m.split("/")[0]
+        model_short = m.split("/")[-1] if "/" in m else m
+
+        # Provider badge
+        icon, color, label = self._PROVIDER_BADGES.get(pname, ("◉", "#6366f1", pname or "?"))
+        prov_badge = f"[{color}]{icon} {label}[/]"
+
+        # Cost colour
         cost_color = "#ef4444" if c > 0.10 else "#10b981"
-        sk = ""
-        if skill_manager.active:
-            sk = f"  [dim]│[/]  [bold #f5a623]⚡ !{skill_manager.active.name}[/]"
-        proxy_part = f"  [dim]│[/]  {proxy_icon} [dim]{proxy}[/]" if proxy else ""
+
+        # Proxy part (only for opencode)
+        is_opencode = pname in ("opencode-zen", "opencode")
+        proxy_part = ""
+        if is_opencode:
+            proxy = proxy_manager.status()[:16]
+            px_icon = "🔒" if proxy_manager.current_proxy() else "🌐"
+            proxy_part = f"  [dim]│[/]  {px_icon} [dim]{proxy}[/]"
+
+        # Skill badge
+        sk = f"  [dim]│[/]  [bold #f5a623]⚡ !{skill_manager.active.name}[/]" if skill_manager.active else ""
+
         self.query_one("#header", Static).update(
-            f"  [bold #00c896]◈ WIDDX[/]  [dim]│[/]  [dim]{m}[/]  "
-            f"[dim]│[/]  [{cost_color}]${c:.4f}[/]  [dim]│[/]  "
-            f"[dim]{t} turns[/]{proxy_part}{sk}"
+            f"  [bold #6366f1]◈[/]  {prov_badge}  [dim]│[/]  "
+            f"[dim]{model_short}[/]  [dim]│[/]  "
+            f"[{cost_color}]${c:.4f}[/]  [dim]│[/]  [dim]{t} turns[/]"
+            f"{proxy_part}{sk}"
         )
-        self._update_sidebar_footer(m)
+        self._update_sidebar_footer(model_short)
 
     def _update_status(self) -> None:
         self.query_one("#status", Static).update(
@@ -937,7 +968,24 @@ class MainScreen(Screen):
         self._finish()
 
     def on_tool_step_msg(self, msg: ToolStepMsg) -> None:
-        self._log_message("tool", f"Executed: {msg.tool}\nResult Summary:\n{msg.detail[:200]}")
+        # Update processing bar with current tool name
+        try:
+            bar = self.query_one("#processing", Static)
+            tool_icons = {
+                "read": "📖", "write": "✏️", "edit": "🔧", "bash": "💻",
+                "glob": "🔍", "grep": "🔎", "web_fetch": "🌐",
+                "validate": "✅", "use_skill": "⚡",
+            }
+            icon = tool_icons.get(msg.tool, "🛠")
+            if msg.status == "pending":
+                bar.update(f"[bold #0b0f19]{icon}  Calling: [bold]{msg.tool}[/]  —  {msg.detail[:50]}[/]")
+            else:
+                bar.update(f"[bold #0b0f19]{icon}  Done: [bold]{msg.tool}[/]  ✓  please wait…[/]")
+        except Exception:
+            pass
+        # Log only completed tool steps (not pending)
+        if msg.status == "ok":
+            self._log_message("tool", f"🛠 {msg.tool}\n{msg.detail[:300]}")
 
     def on_stream_chunk_msg(self, msg: StreamChunkMsg) -> None:
         """Live chunk from AI stream — update in-place Static widget."""
