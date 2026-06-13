@@ -30,11 +30,11 @@ dependencies = [
     "textual>=1.0",
     "prompt_toolkit>=3.0",
     "pygments>=2.15",
+    "llama-cpp-python>=0.2.0; sys_platform != 'win32' or python_version < '3.12'",
 ]
 
 [project.optional-dependencies]
 toml = ["tomli>=2.0"]
-gguf = ["llama-cpp-python>=0.2.0"]
 
 [project.scripts]
 widdx = "core.cli:run"
