@@ -556,7 +556,10 @@ class OpenAICompatibleProvider(Provider):
             func = tc.get("function", {})
             raw = func.get("arguments", "{}")
             if isinstance(raw, str):
-                raw = json.loads(raw) if raw.strip() else {}
+                try:
+                    raw = json.loads(raw) if raw.strip() else {}
+                except json.JSONDecodeError:
+                    raw = {}
             call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
             calls.append(ToolCall(name=func.get("name", ""), args=raw, id=call_id))
         return content, calls
@@ -1000,6 +1003,7 @@ _DEFAULT_BASE_URLS = {
     "deepseek": "https://api.deepseek.com",
     "openai": "https://api.openai.com/v1",
     "ollama": "http://localhost:11434",
+    "gguf": "http://localhost:11434",
     "opencode-zen": "https://opencode.ai/zen/v1",
     "opencode": "https://opencode.ai/zen/v1",
 }
@@ -1027,8 +1031,20 @@ def create_provider(cfg: dict) -> Provider:
         api_key = get_key(name) or p.get("api_key", "")
     if name == "ollama":
         return OllamaProvider(name, model, base_url, api_key)
+    if name == "gguf":
+        return OllamaProvider(name, model, base_url, api_key)
     if name in ("opencode-zen", "opencode"):
         return OpenCodeZenProvider(name, model, base_url, api_key)
     if name == "deepseek":
         return DeepSeekProvider(name, model, base_url, api_key, cfg=cfg)
     return OpenAICompatibleProvider(name, model, base_url, api_key)
+
+
+def fetch_gguf_models() -> list[str]:
+    """Return only GGUF-imported Ollama models (not all Ollama models)."""
+    try:
+        from .gguf import list_imports
+        imports = list_imports()
+        return [e["model_name"] for e in imports if e.get("model_name")]
+    except Exception:
+        return []

@@ -192,6 +192,7 @@ class MainScreen(Screen):
             ("🔵 DeepSeek", "deepseek"),
             ("⚪ OpenAI", "openai"),
             ("🟠 Ollama", "ollama"),
+            ("📦 GGUF (Local)", "gguf"),
         ]
         prov_select.set_options(providers)
         if pname in dict(providers):
