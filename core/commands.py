@@ -12,6 +12,24 @@ from core.config.keychain import prompt_key, forget_key
 from core import config
 
 
+def build_mcp_discover_table(discovered: list[dict], mgr=None) -> "Table":
+    """Build a Rich Table for discovered MCP servers. Shared by CLI and TUI."""
+    from rich.table import Table
+    if mgr is None:
+        from core.mcp.client import get_mcp_manager
+        mgr = get_mcp_manager()
+    table = Table(title=f"Discovered {len(discovered)} MCP servers",
+                  border_style="dim", header_style="bold #f5a623")
+    table.add_column("Name", style="bold #00c896")
+    table.add_column("Command", style="white")
+    table.add_column("Status", style="dim")
+    for s in discovered:
+        name = s["name"]
+        exists = "✅" if mgr.get_server(name) else "⬜"
+        table.add_row(name, f"{s['command']} {' '.join(s.get('args', []))[:40]}", exists)
+    return table
+
+
 def handle_model(provider, state):
     """Handle /model command — change AI model."""
     # ── Ollama: auto-discover local models ──────────────────────
@@ -30,6 +48,21 @@ def handle_model(provider, state):
 def _handle_ollama_model(provider, state):
     """Let the user pick from locally-installed Ollama models."""
     from rich.table import Table
+    from core.providers.providers import _TOOL_CAPABLE_PATTERNS, _REASONING_PATTERNS
+
+    def _guess_caps(model_name: str) -> str:
+        """Quick name-based capability badges (no API probe)."""
+        lower = model_name.lower()
+        badges = []
+        has_tools = any(pat in lower for pat in _TOOL_CAPABLE_PATTERNS)
+        has_reason = any(pat in lower for pat in _REASONING_PATTERNS)
+        if has_tools:
+            badges.append("[bold #00c896]🧰 tools[/]")
+        else:
+            badges.append("[dim]⚠ no-tools[/]")
+        if has_reason:
+            badges.append("[bold #f5a623]🧠 thinking[/]")
+        return " ".join(badges) if badges else ""
 
     models = fetch_ollama_models(base_url=provider.base_url, force_refresh=True)
     if not models:
@@ -46,9 +79,11 @@ def _handle_ollama_model(provider, state):
     table.add_column("#", style="dim", width=4)
     table.add_column("Model", style="bold white")
     table.add_column("Size", style="#f5a623")
+    table.add_column("Capabilities", style="white")
     for i, m in enumerate(models, 1):
         size_str = f"{m['size'] / 1e9:.1f} GB" if m["size"] > 1e9 else f"{m['size'] / 1e6:.0f} MB"
-        table.add_row(str(i), m["name"], size_str)
+        caps = _guess_caps(m["name"])
+        table.add_row(str(i), m["name"], size_str, caps)
     console.print(table)
 
     # Let user pick by number or name
@@ -66,7 +101,8 @@ def _handle_ollama_model(provider, state):
 
     provider.model = choice
     state["model"] = f"ollama/{choice}"
-    print_system_msg(f"Model changed to {choice}")
+    caps = _guess_caps(choice)
+    print_system_msg(f"Model changed to {choice} {caps}")
     return provider, state
 
 
@@ -95,7 +131,7 @@ def handle_provider(provider, state, cfg):
                 print_system_msg("No API key provided — check DEEPSEEK_API_KEY env var")
             model = RPrompt.ask("Model", default="deepseek-v4-flash")
             provider = create_provider({
-                "provider": {"name": "deepseek", "model": model}
+                "provider": {"name": "deepseek", "model": model, "base_url": "https://api.deepseek.com"}
             })
         elif new_p == "ollama":
             url = RPrompt.ask("Ollama URL", default="http://localhost:11434")
@@ -172,16 +208,7 @@ def handle_mcp():
         if not discovered:
             print_system_msg("No MCP servers discovered.")
             return
-        table = Table(title=f"Discovered {len(discovered)} MCP servers",
-                      border_style="dim", header_style="bold #f5a623")
-        table.add_column("Name", style="bold #00c896")
-        table.add_column("Command", style="white")
-        table.add_column("Status", style="dim")
-        for s in discovered:
-            name = s["name"]
-            exists = "✅" if mgr.get_server(name) else "⬜"
-            table.add_row(name, f"{s['command']} {' '.join(s.get('args', []))[:40]}", exists)
-        console.print(table)
+        console.print(build_mcp_discover_table(discovered, mgr))
         return
 
     # Default: show current servers
@@ -463,3 +490,196 @@ def handle_permissions(cmd: str = ""):
         print_system_msg(f"Forgot permissions{' for ' + tool if tool else ' (all)'}")
     else:
         print_system_msg(f"Unknown: /permissions {action}")
+
+
+def handle_gguf(cmd: str, provider, state):
+    """Handle /gguf command — import/list/remove GGUF models.
+
+    Usage:
+      /gguf import <path> [--name <name>] [--template <tmpl>] [--context <N>]
+      /gguf list
+      /gguf remove <name>
+    """
+    from core.providers.gguf import (
+        import_gguf, list_imports, remove_import,
+        read_gguf_metadata, suggest_model_name, suggest_template,
+        _CHAT_TEMPLATES,
+    )
+    from rich.table import Table
+    from rich.panel import Panel
+
+    parts = cmd.strip().split(None, 1)
+    action = parts[0].lower() if parts else ""
+
+    if action == "import":
+        # Parse: /gguf import <path> [--name X] [--template X] [--context N]
+        rest = parts[1] if len(parts) > 1 else ""
+        if not rest:
+            print_system_msg("Usage: /gguf import <path/to/model.gguf> [--name X] [--template X] [--context N]")
+            return
+
+        tokens = rest.split()
+        gguf_path = tokens[0]
+        model_name = None
+        template = None
+        context_size = None
+
+        i = 1
+        while i < len(tokens):
+            if tokens[i] == "--name" and i + 1 < len(tokens):
+                model_name = tokens[i + 1]
+                i += 2
+            elif tokens[i] == "--template" and i + 1 < len(tokens):
+                template = tokens[i + 1]
+                i += 2
+            elif tokens[i] == "--context" and i + 1 < len(tokens):
+                try:
+                    context_size = int(tokens[i + 1])
+                except ValueError:
+                    print_system_msg(f"Invalid context size: {tokens[i+1]}")
+                    return
+                i += 2
+            else:
+                i += 1
+
+        # ── Phase 1: Read metadata ─────────────────────────
+        try:
+            meta = read_gguf_metadata(gguf_path)
+        except FileNotFoundError:
+            print_system_msg(f"File not found: {gguf_path}")
+            return
+        except ValueError as e:
+            print_system_msg(f"Invalid GGUF file: {e}")
+            return
+
+        # Display metadata
+        size_mb = meta["file_size"] / (1024 ** 2)
+        size_str = f"{size_mb:.0f} MB" if size_mb < 1024 else f"{size_mb/1024:.1f} GB"
+
+        suggested_name = model_name or suggest_model_name(gguf_path, meta)
+        suggested_tmpl = template or suggest_template(meta) or "auto"
+
+        table = Table(title="GGUF Model Info", border_style="dim", header_style="bold #f5a623")
+        table.add_column("Field", style="bold #00c896")
+        table.add_column("Value", style="white")
+        table.add_row("File", str(Path(gguf_path).name))
+        table.add_row("Size", size_str)
+        table.add_row("Architecture", meta.get("architecture", "unknown"))
+        table.add_row("Context", str(meta.get("context_length", 2048)))
+        table.add_row("Model Name", suggested_name)
+        table.add_row("Template", suggested_tmpl)
+        if meta.get("description"):
+            table.add_row("Description", meta["description"][:100])
+        console.print(table)
+
+        # Show available templates if user wants to choose
+        if not template:
+            console.print(Text(
+                "Available --template values: " + ", ".join(_CHAT_TEMPLATES.keys()),
+                style="dim",
+            ))
+
+        # ── Confirm ─────────────────────────────────────────
+        confirm = RPrompt.ask(
+            f"\nImport as '{suggested_name}'?",
+            choices=["y", "n", "q"],
+            default="y",
+        )
+        if confirm != "y":
+            print_system_msg("Import cancelled")
+            return
+
+        # ── Phase 2: Import ─────────────────────────────────
+        print_system_msg(f"Importing {suggested_name} ... (this may take several minutes for large models)")
+        result = import_gguf(
+            gguf_path,
+            model_name=suggested_name,
+            template=suggested_tmpl if suggested_tmpl != "auto" else None,
+            context_size=context_size,
+        )
+
+        if result["success"]:
+            from core.providers.gguf import log_import
+            log_import(result)
+            # Reload Ollama models cache
+            from core.providers.providers import fetch_ollama_models
+            fetch_ollama_models(force_refresh=True)
+            print_system_msg(f"✅ Successfully imported: {result['model_name']}")
+            console.print(Text(result["output"][:500], style="dim"))
+            # Offer to switch to it
+            switch = RPrompt.ask(
+                f"Switch to '{result['model_name']}' now?",
+                choices=["y", "n"],
+                default="y",
+            )
+            if switch == "y":
+                provider.model = result["model_name"]
+                state["model"] = f"ollama/{result['model_name']}"
+                print_system_msg(f"Switched to ollama/{result['model_name']}")
+        else:
+            print_system_msg(f"❌ Import failed: {result['error']}")
+
+    elif action == "list":
+        imports = list_imports()
+        if not imports:
+            print_system_msg("No GGUF models imported yet. Use /gguf import <path>")
+            return
+
+        table = Table(title=f"Imported GGUF Models ({len(imports)})",
+                      border_style="dim", header_style="bold #00c896")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Model", style="bold white")
+        table.add_column("Arch", style="#f5a623")
+        table.add_column("Size", style="dim")
+        table.add_column("Imported", style="dim")
+        table.add_column("Status", style="white")
+
+        for i, entry in enumerate(imports, 1):
+            size_mb = entry.get("metadata", {}).get("file_size", 0) / (1024 ** 2)
+            size_str = f"{size_mb:.0f} MB" if size_mb < 1024 else f"{size_mb/1024:.1f} GB"
+            arch = entry.get("metadata", {}).get("architecture", "?")
+            imported = entry.get("imported_at", 0)
+            date_str = datetime.fromtimestamp(imported).strftime("%Y-%m-%d") if imported else "?"
+
+            # Check if model exists in Ollama
+            from core.providers.providers import fetch_ollama_models
+            ollama_models = fetch_ollama_models(force_refresh=False)
+            exists = any(m["name"] == entry["model_name"] for m in ollama_models)
+            status = "✅ available" if exists else "⚠️ missing"
+
+            table.add_row(str(i), entry["model_name"], arch, size_str, date_str, status)
+        console.print(table)
+
+    elif action == "remove":
+        rest = parts[1] if len(parts) > 1 else ""
+        name = rest.strip() if rest else ""
+        if not name:
+            print_system_msg("Usage: /gguf remove <model-name>")
+            return
+
+        confirm = RPrompt.ask(
+            f"Remove '{name}' from Ollama? This cannot be undone.",
+            choices=["y", "n"],
+            default="n",
+        )
+        if confirm != "y":
+            print_system_msg("Cancelled")
+            return
+
+        result = remove_import(name)
+        if result["success"]:
+            from core.providers.providers import fetch_ollama_models
+            fetch_ollama_models(force_refresh=True)
+            print_system_msg(f"✅ Removed: {name}")
+        else:
+            print_system_msg(f"❌ Failed to remove: {result.get('output', 'unknown error')}")
+
+    else:
+        console.print(Text(
+            "Usage:\n"
+            "  /gguf import <path.gguf> [--name X] [--template X] [--context N]\n"
+            "  /gguf list\n"
+            "  /gguf remove <model-name>\n\n"
+            "Available --template values: " + ", ".join(_CHAT_TEMPLATES.keys()),
+        ))
+        print_system_msg("See /gguf import --help for details")

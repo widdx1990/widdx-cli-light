@@ -125,36 +125,404 @@ class Provider:
 
 
 # ---------------------------------------------------------------------------
-# Ollama Provider
+# Ollama Provider \u2014 with automatic capability detection & fallback
 # ---------------------------------------------------------------------------
 
+# Models known to support native function calling (tool use)
+_TOOL_CAPABLE_PATTERNS = [
+    "llama3.1", "llama3.2", "llama3.3", "llama3.",
+    "qwen2.5", "qwen2.", "qwen3",
+    "mistral", "mixtral", "codestral",
+    "command-r",
+    "nemotron",
+    "granite3.1", "granite3.",
+    "phi3", "phi4",
+    "gemma3", "gemma2",
+    "deepseek-coder", "deepseek-v3", "deepseek-r1",
+    "minicpm",
+    "dbrx",
+]
+
+# Models known to return reasoning / thinking (either native or in-content)
+_REASONING_PATTERNS = [
+    "deepseek-r1", "deepseek-r1-",
+    "qwq", "qwen3-",
+    "openthinker",
+    "phi4-",
+]
+
+
 class OllamaProvider(Provider):
-    def chat(self, messages: list, tool_defs: list, temperature: float = 0.7):
+    # \u2500\u2500 Class-level capability cache \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    _capabilities: dict[str, dict] = {}  # model_name \u2192 {"tools": bool, "reasoning": bool}
+
+    def _get_capabilities(self) -> dict:
+        """Detect model capabilities (tools, reasoning).
+
+        Results are cached per model name so the probe runs at most once.
+        """
+        if self.model in self._capabilities:
+            return self._capabilities[self.model]
+
+        caps = {"tools": False, "reasoning": False}
+        model_lower = self.model.lower()
+
+        # \u2500\u2500 1. Lightweight probe: send a ping with a dummy tool \u2500\u2500
+        try:
+            url = f"{self.base_url}/v1/chat/completions"
+            body = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": "reply with exactly: ok"}],
+                "max_tokens": 10,
+                "temperature": 0,
+                "tools": [{
+                    "type": "function",
+                    "function": {
+                        "name": "_ping",
+                        "description": "test probe \u2014 ignore",
+                        "parameters": {"type": "object", "properties": {}, "required": []},
+                    },
+                }],
+            }
+            resp = httpx.post(url, json=body, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                msg = data.get("choices", [{}])[0].get("message", {})
+                if msg.get("tool_calls"):
+                    caps["tools"] = True
+                # Check for native reasoning_content field
+                if msg.get("reasoning_content"):
+                    caps["reasoning"] = True
+        except Exception:
+            pass  # probe failed \u2192 assume no capabilities, fall through to heuristics
+
+        # \u2500\u2500 2. Name-based heuristics \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        if not caps["tools"]:
+            for pat in _TOOL_CAPABLE_PATTERNS:
+                if pat in model_lower:
+                    caps["tools"] = True
+                    break
+
+        if not caps["reasoning"]:
+            for pat in _REASONING_PATTERNS:
+                if pat in model_lower:
+                    caps["reasoning"] = True
+                    break
+
+        # Also check for "think" / "reasoning" in model name
+        if not caps["reasoning"]:
+            if "think" in model_lower or "reason" in model_lower:
+                caps["reasoning"] = True
+
+        self._capabilities[self.model] = caps
+        return caps
+
+    # \u2500\u2500 Unified response parser \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    def _parse_response(self, data: dict) -> tuple[str, list]:
+        """Parse an OpenAI-compatible chat/completions response.
+
+        Handles: content, native tool_calls, and native reasoning_content.
+        """
+        choice = data.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+
+        content = msg.get("content") or ""
+
+        # \u2500\u2500 Native reasoning_content (DeepSeek-R1, QwQ, etc.) \u2500\u2500
+        reasoning = msg.get("reasoning_content") or ""
+        if reasoning:
+            content = f"[thinking]\n{reasoning}\n[/thinking]\n\n" + (content or "")
+
+        # \u2500\u2500 Native tool_calls \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        calls: list[ToolCall] = []
+        for tc in msg.get("tool_calls") or []:
+            func = tc.get("function", {})
+            raw = func.get("arguments", "{}")
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw) if raw.strip() else {}
+                except json.JSONDecodeError:
+                    raw = {}
+            call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+            calls.append(ToolCall(name=func.get("name", ""), args=raw, id=call_id))
+
+        return content, calls
+
+    # \u2500\u2500 Thinking extraction from content \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    @staticmethod
+    def _extract_thinking_from_content(content: str) -> tuple[str, str]:
+        """Extract \u2026 or [thinking]\u2026[/thinking] blocks from content.
+
+        Many small models embed reasoning inline in the text.
+        Returns (reasoning, cleaned_content).
+        """
+        import re
+
+        reasoning = ""
+        cleaned = content
+
+        # Pattern 1: <thinking>...</thinking> (Qwen, DeepSeek style)
+        m = re.search(r'<thinking>(.*?)</thinking>', content, re.DOTALL)
+        if m:
+            reasoning = m.group(1).strip()
+            cleaned = content[:m.start()] + content[m.end():]
+            return reasoning, cleaned.strip()
+
+        # Pattern 2: [thinking]...[/thinking] (bracket style)
+        m = re.search(r'\[thinking\]\s*(.*?)\s*\[/thinking\]', content, re.DOTALL | re.IGNORECASE)
+        if m:
+            reasoning = m.group(1).strip()
+            cleaned = content[:m.start()] + content[m.end():]
+            return reasoning, cleaned.strip()
+
+        # Pattern 3: <thinking>... (unclosed think tag \u2014 DeepSeek streaming)
+        m = re.search(r'<thinking>(.*?)$', content, re.DOTALL)
+        if m:
+            reasoning = m.group(1).strip()
+            # Only extract if there's substantial content after the tag
+            rest = content[m.end():].strip()
+            if len(rest) > 20:
+                cleaned = rest
+                return reasoning, cleaned
+
+        return reasoning, cleaned
+
+    # \u2500\u2500 Text-based tool description builder \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    @staticmethod
+    def _build_text_tools_prompt(tool_defs: list) -> str:
+        """Convert structured tool definitions into a text prompt.
+
+        Used when the model does NOT support native function calling.
+        """
+        if not tool_defs:
+            return ""
+
+        lines = [
+            "",
+            "## Available Tools",
+            "",
+            "You have access to tools. To call a tool, output EXACTLY one JSON block:",
+            "",
+            "```tool",
+            '{"tool": "<tool_name>", "arguments": {"arg1": "value1", ...}}',
+            "```",
+            "",
+            "Wait for the tool result before calling another tool or giving your final answer.",
+            "Only call a tool when you actually need it to complete the task.",
+            "",
+            "### Tool Reference:",
+            "",
+        ]
+
+        for t in tool_defs:
+            name = t.get("name", "?")
+            desc = t.get("description", "")
+            params = t.get("parameters", {})
+            props = params.get("properties", {}) if isinstance(params, dict) else {}
+            required = params.get("required", []) if isinstance(params, dict) else []
+
+            lines.append(f"**{name}** \u2014 {desc}")
+            if props:
+                for pname, pinfo in props.items():
+                    ptype = pinfo.get("type", "string") if isinstance(pinfo, dict) else "string"
+                    pdesc = pinfo.get("description", "") if isinstance(pinfo, dict) else ""
+                    req_mark = " *(required)*" if pname in required else ""
+                    lines.append(f"  \u2022 `{pname}` ({ptype}){req_mark}: {pdesc}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    # \u2500\u2500 Text-based tool call parser \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    @staticmethod
+    def _parse_text_tool_calls(content: str) -> tuple[str, list[ToolCall]]:
+        """Parse model text for tool-call JSON blocks.
+
+        Returns (cleaned_content, list_of_ToolCall).
+        The tool JSON blocks are removed from the returned content.
+        """
+        import re
+
+        tool_calls: list[ToolCall] = []
+        cleaned = content
+
+        # Pattern 1: ```tool\n{"tool": ..., "arguments": {...}}\n```
+        for m in re.finditer(r'```tool\s*\n(\{.+?\})\s*\n```', content, re.DOTALL):
+            try:
+                data = json.loads(m.group(1))
+                name = data.get("tool", "")
+                args = data.get("arguments", {})
+                if isinstance(name, str) and name:
+                    call_id = f"call_{uuid.uuid4().hex[:12]}"
+                    tool_calls.append(ToolCall(name=name, args=args, id=call_id))
+                    cleaned = cleaned.replace(m.group(0), "", 1)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+
+        # Pattern 2: ```json\n{"tool": ..., "arguments": {...}}\n```  (looser match)
+        if not tool_calls:
+            for m in re.finditer(r'```json\s*\n\s*(\{.+?"tool".+?\})\s*\n```', content, re.DOTALL):
+                try:
+                    data = json.loads(m.group(1))
+                    name = data.get("tool", "")
+                    args = data.get("arguments", {})
+                    if isinstance(name, str) and name:
+                        call_id = f"call_{uuid.uuid4().hex[:12]}"
+                        tool_calls.append(ToolCall(name=name, args=args, id=call_id))
+                        cleaned = cleaned.replace(m.group(0), "", 1)
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    pass
+
+        # Pattern 3: inline {"tool": "name", "arguments": {...}} (standalone JSON object)
+        if not tool_calls:
+            for m in re.finditer(
+                r'\{\s*"tool"\s*:\s*"(\w[\w.-]*)"\s*,\s*"arguments"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*\}',
+                content,
+            ):
+                name = m.group(1)
+                try:
+                    args = json.loads(m.group(2))
+                    call_id = f"call_{uuid.uuid4().hex[:12]}"
+                    tool_calls.append(ToolCall(name=name, args=args, id=call_id))
+                    cleaned = cleaned.replace(m.group(0), "", 1)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        return cleaned.strip(), tool_calls
+
+    # \u2500\u2500 Chat paths \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    def _chat_native(self, messages: list, tool_defs: list, temperature: float) -> tuple[str, list]:
+        """Path A: model supports native function calling."""
         url = f"{self.base_url}/v1/chat/completions"
         schema = self.build_tools_schema(tool_defs)
-        body = {"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": _DEFAULT_MAX_TOKENS}
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": _DEFAULT_MAX_TOKENS,
+        }
         if schema:
             body["tools"] = schema
         try:
             resp = httpx.post(url, json=body, timeout=300)
             resp.raise_for_status()
-            return self._parse(resp.json())
+            return self._parse_response(resp.json())
         except httpx.ConnectError:
             return f"\u26a0\ufe0f  Cannot connect to Ollama at {self.base_url}\nRun: ollama serve", []
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text[:300] if e.response.text else str(e)
+            return f"\u26a0\ufe0f  Ollama error {e.response.status_code}: {detail}", []
 
-    def _parse(self, data: dict) -> tuple:
-        choice = data.get("choices", [{}])[0]
-        msg = choice.get("message", {})
-        content = msg.get("content") or ""
-        calls = []
-        for tc in msg.get("tool_calls") or []:
-            func = tc.get("function", {})
-            raw = func.get("arguments", "{}")
-            if isinstance(raw, str):
-                raw = json.loads(raw) if raw.strip() else {}
-            call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
-            calls.append(ToolCall(name=func.get("name", ""), args=raw, id=call_id))
-        return content, calls
+    def _chat_text_tools(self, messages: list, tool_defs: list, temperature: float) -> tuple[str, list]:
+        """Path B: model does NOT support native tools.
+
+        1. Remap ``role=tool`` messages to ``role=user`` (the model doesn't understand tool role).
+        2. Inject tool descriptions as a labeled system message.
+        3. Send request WITHOUT the ``tools`` field.
+        4. Parse the text response for JSON tool-call blocks.
+        5. Extract any inline thinking / reasoning from the content.
+        """
+        url = f"{self.base_url}/v1/chat/completions"
+
+        # \u2500\u2500 1. Remap tool messages \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        remapped: list[dict] = []
+        for m in messages:
+            if m.get("role") == "tool":
+                remapped.append({
+                    "role": "user",
+                    "content": (
+                        f"[Tool Result: {m.get('name', 'unknown')}]\n"
+                        f"{m.get('content', '')}"
+                    ),
+                })
+            else:
+                remapped.append(m)
+
+        # \u2500\u2500 2. Inject tool descriptions (tagged so we can strip on re-entry) \u2500\u2500
+        tools_text = self._build_text_tools_prompt(tool_defs)
+        # Remove any previous tool-desc message to avoid duplication
+        remapped = [m for m in remapped if not m.get("_tool_desc")]
+        if tools_text:
+            remapped.append({
+                "role": "system",
+                "content": tools_text,
+                "_tool_desc": True,
+            })
+
+        body = {
+            "model": self.model,
+            "messages": remapped,
+            "temperature": temperature,
+            "max_tokens": _DEFAULT_MAX_TOKENS,
+            # No "tools" key \u2014 model doesn't support it
+        }
+
+        try:
+            resp = httpx.post(url, json=body, timeout=300)
+            resp.raise_for_status()
+            content, _native_calls = self._parse_response(resp.json())
+
+            # \u2500\u2500 3. Extract thinking from content \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+            reasoning, content = self._extract_thinking_from_content(content)
+            if reasoning:
+                content = f"[thinking]\n{reasoning}\n[/thinking]\n\n{content}"
+
+            # \u2500\u2500 4. Parse text for tool calls \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+            cleaned, tool_calls = self._parse_text_tool_calls(content)
+
+            return cleaned, tool_calls
+
+        except httpx.ConnectError:
+            return f"\u26a0\ufe0f  Cannot connect to Ollama at {self.base_url}\nRun: ollama serve", []
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text[:300] if e.response.text else str(e)
+            return f"\u26a0\ufe0f  Ollama error {e.response.status_code}: {detail}", []
+
+    def _chat_simple(self, messages: list, temperature: float) -> tuple[str, list]:
+        """Path C: no tools at all \u2014 plain chat."""
+        url = f"{self.base_url}/v1/chat/completions"
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": _DEFAULT_MAX_TOKENS,
+        }
+        try:
+            resp = httpx.post(url, json=body, timeout=300)
+            resp.raise_for_status()
+            content, _ = self._parse_response(resp.json())
+            # Try to extract thinking from content
+            reasoning, content = self._extract_thinking_from_content(content)
+            if reasoning:
+                content = f"[thinking]\n{reasoning}\n[/thinking]\n\n{content}"
+            return content, []
+        except httpx.ConnectError:
+            return f"\u26a0\ufe0f  Cannot connect to Ollama at {self.base_url}\nRun: ollama serve", []
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text[:300] if e.response.text else str(e)
+            return f"\u26a0\ufe0f  Ollama error {e.response.status_code}: {detail}", []
+
+    # \u2500\u2500 Main entry point \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    def chat(self, messages: list, tool_defs: list, temperature: float = 0.7) -> tuple[str, list]:
+        """Run a chat completion, auto-selecting the right path.
+
+        - Native tools supported  \u2192 send tools schema, parse tool_calls
+        - No native tools         \u2192 text-based tool instructions + text parsing
+        - No tools needed         \u2192 plain chat
+        """
+        caps = self._get_capabilities()
+
+        if tool_defs and caps["tools"]:
+            return self._chat_native(messages, tool_defs, temperature)
+        elif tool_defs:
+            return self._chat_text_tools(messages, tool_defs, temperature)
+        else:
+            return self._chat_simple(messages, temperature)
 
 
 # ---------------------------------------------------------------------------
@@ -253,11 +621,11 @@ class OpenCodeZenProvider(OpenAICompatibleProvider):
         proxy_rotations_done = 0
         retries = self.MAX_RETRIES
 
-        content_chunks: list[str] = []
-        reasoning_chunks: list[str] = []
-        current_tool_calls: dict = {}
-
         for attempt in range(retries):
+            # Reset accumulators for each attempt
+            content_chunks: list[str] = []
+            reasoning_chunks: list[str] = []
+            current_tool_calls: dict = {}
             transport = proxy_manager.get_transport()
             try:
                 client_kwargs = {"timeout": 300}
@@ -287,10 +655,31 @@ class OpenCodeZenProvider(OpenAICompatibleProvider):
                                 err_body = resp.read().decode("utf-8", errors="replace")
                             except Exception:
                                 err_body = f"HTTP {resp.status_code}"
-                            if resp.status_code in (401, 403) and "Free promotion" in err_body:
+
+                            # ── Retryable auth errors: switch model & proxy ──
+                            retryable = (
+                                "free promotion" in err_body.lower()
+                                or "governor" in err_body.lower()
+                                or "authentication fails" in err_body.lower()
+                                or "rate limit" in err_body.lower()
+                                or "too many requests" in err_body.lower()
+                            )
+                            if resp.status_code in (401, 403, 429) and retryable:
                                 body["model"] = self._next_model()
+                                proxy_manager.rotate()
+                                proxy_rotations_done = 0
+                                time.sleep(2 ** attempt)
                                 continue
-                            yield {"type": "error", "data": f"{resp.status_code}: {err_body[:500]}"}
+
+                            # ── Non-retryable error ──────────────────
+                            hint = ""
+                            if "governor" in err_body.lower() or "authentication fails" in err_body.lower():
+                                hint = (
+                                    "\n\n💡 OpenCode Zen is blocking this request.\n"
+                                    "   Try: /provider → switch to 'deepseek' (needs API key)\n"
+                                    "   Or:   /provider → switch to 'ollama' (local models)"
+                                )
+                            yield {"type": "error", "data": f"{resp.status_code}: {err_body[:500]}{hint}"}
                             return
 
                         # Read stream
@@ -605,17 +994,35 @@ def estimate_turn_cost(model: str, input_tokens: int = 500,
             output_tokens / 1_000_000 * out_price)
 
 
+_DEFAULT_BASE_URLS = {
+    "deepseek": "https://api.deepseek.com",
+    "openai": "https://api.openai.com/v1",
+    "ollama": "http://localhost:11434",
+    "opencode-zen": "https://opencode.ai/zen/v1",
+    "opencode": "https://opencode.ai/zen/v1",
+}
+
+
 def create_provider(cfg: dict) -> Provider:
     p = cfg.get("provider", {})
     # Load from config with dynamic fallbacks
     name = p.get("name") or cfg.get("default_provider", "opencode-zen")
     model = p.get("model") or cfg.get("default_model", "deepseek-v4-flash-free")
-    base_url = p.get("base_url") or cfg.get("default_base_url", "https://opencode.ai/zen/v1")
+    # Use provider-specific default base_url, fall back to config, then opencode
+    base_url = (
+        p.get("base_url")
+        or cfg.get("default_base_url")
+        or _DEFAULT_BASE_URLS.get(name, "https://opencode.ai/zen/v1")
+    )
     # Update the fallback model for proxy & cache (dynamic)
     set_fallback_model(model)
 
     # Prefer key from env / keychain; fall back to config (for legacy compat)
-    api_key = get_key(name) or p.get("api_key", "public")
+    # Only opencode-zen uses "public" as default; other providers need real keys
+    if name in ("opencode-zen", "opencode"):
+        api_key = get_key(name) or p.get("api_key", "public")
+    else:
+        api_key = get_key(name) or p.get("api_key", "")
     if name == "ollama":
         return OllamaProvider(name, model, base_url, api_key)
     if name in ("opencode-zen", "opencode"):

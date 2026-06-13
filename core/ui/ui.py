@@ -184,50 +184,56 @@ def print_system_msg(text):
 
 
 def print_tool_msg(name, result):
-    header = Text()
-    header.append(f" {name} ", style="bold #f5a623 on #1a0f00")
     ts = datetime.now().strftime("%H:%M")
-    header.append(f" {ts}", style="dim")
+    success = not result.startswith("Error") and "Failed" not in result and "[Tool error:" not in result
+    color = "#10b981" if success else "#ef4444"
+    title = f" [bold {color}]✓ {name} Output[/] [dim]({ts})[/]"
+    preview = result[:1500]
+    if len(result) > 1500:
+        preview += "\n... [truncated]"
     console.print()
-    console.print(header)
-    preview = result[:1000]
-    if len(result) > 1000:
-        preview += "\n...[truncated]"
-    console.print(Panel(Text(preview, style="#f5a623"), border_style="#f5a623", padding=(0, 1)))
+    console.print(Panel(
+        Text(preview, style=color),
+        border_style=color,
+        title=title,
+        title_align="left",
+        padding=(1, 2)
+    ))
 
 
 def print_tool_call(name, args_json):
     """Show what tool the AI wants to call, before execution."""
     console.print()
-    console.print(Text(f"  \U0001f6e0  {name}", style="bold #f5a623"))
-    # Pretty-print JSON if possible
     try:
         parsed = json.loads(args_json)
         formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
     except (json.JSONDecodeError, ValueError):
         formatted = args_json
+    title = f" [bold #0ea5e9]🛠️ Calling Tool:[/] [bold #38bdf8]{name}[/]"
     console.print(Panel(
-        Text(formatted, style="bold #f5a623"),
-        border_style="#f5a623",
-        padding=(0, 1),
+        Syntax(formatted, "json", theme="monokai", word_wrap=True, background_color="default"),
+        border_style="#0ea5e9",
+        title=title,
+        title_align="left",
+        padding=(1, 2),
     ))
 
 
 def print_reasoning(text):
     """Show thinking process — always collapsed to save space."""
     console.print()
-    summary = text[:197] + "..." if len(text) > 197 else text
+    summary = text[:300] + "..." if len(text) > 300 else text
     n_lines = text.count("\n") + 1
-    title = f"[dim]  \U0001f9e0 thinking  ({n_lines} lines)[/]"
+    title = f" [bold #a78bfa]🧠 Thinking Process[/] [dim]({n_lines} lines)[/]"
     console.print(Panel(
-        Text.from_markup(f"[dim]{summary}[/]\n" if len(text) > 197 else f"[dim]{text}[/]\n"),
-        border_style="dim",
+        Text(summary, style="italic #c084fc"),
+        border_style="#6d28d9",
         title=title,
         title_align="left",
-        padding=(0, 1),
+        padding=(0, 2),
     ))
-    if len(text) > 197:
-        console.print(Text(f"     /reasoning to expand", style="italic #888888"))
+    if len(text) > 300:
+        console.print(Text(f"     💡 Type /reasoning to expand the full thinking chain", style="italic #8b5cf6"))
 
 
 def show_thinking():

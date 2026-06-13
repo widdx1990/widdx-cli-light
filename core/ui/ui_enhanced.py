@@ -52,16 +52,7 @@ try:
 except ImportError:
     _HAS_PYGMENTS = False
 
-# Detect prompt_toolkit for enhanced input
-try:
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.styles import Style as PTStyle
-    from prompt_toolkit.formatted_text import HTML
-    from prompt_toolkit.history import FileHistory
-    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-    _PROMPT_TOOLKIT_OK = True
-except Exception:
-    _PROMPT_TOOLKIT_OK = False
+from .ui import _PROMPT_TOOLKIT_OK  # shared prompt_toolkit detection
 
 console = Console(highlight=False, force_terminal=True)
 _session = None
@@ -210,24 +201,19 @@ def print_ai_stream_enhanced():
 def print_tool_call_enhanced(name: str, args_json: str):
     """Show tool call with enhanced visualization."""
     console.print()
-    
-    # Header
-    header = Text()
-    header.append("  🛠️  ", style=f"bold {COLORS['accent']}")
-    header.append(f"Calling: {name}", style=f"bold {COLORS['accent']}")
-    console.print(header)
-    
-    # Arguments
     try:
         parsed = json.loads(args_json)
         formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
     except (json.JSONDecodeError, ValueError):
         formatted = args_json
     
+    title = f" [bold #0ea5e9]🛠️ Running Tool:[/] [bold #38bdf8]{name}[/]"
     console.print(Panel(
-        Text(formatted, style=f"{COLORS['accent']}"),
-        border_style=COLORS['accent'],
-        padding=(0, 1),
+        Syntax(formatted, "json", theme="monokai", word_wrap=True, background_color="default"),
+        border_style="#0284c7",
+        title=title,
+        title_align="left",
+        padding=(1, 2),
         box=ROUNDED,
     ))
 
@@ -235,23 +221,14 @@ def print_tool_call_enhanced(name: str, args_json: str):
 def print_tool_result_enhanced(name: str, result: str, success: bool = True):
     """Show tool result with status indicator."""
     console.print()
-    
-    # Determine styling based on success
     icon = "✅" if success else "❌"
-    color = COLORS['success'] if success else COLORS['error']
-    
-    # Header
-    header = Text()
-    header.append(f"  {icon}  ", style=f"bold {color}")
-    header.append(f"Result: {name}", style=f"bold {color}")
+    color = "#10b981" if success else "#ef4444"
     ts = datetime.now().strftime("%H:%M")
-    header.append(f" {ts}", style=f"{COLORS['dim']}")
-    console.print(header)
     
-    # Result preview
+    title = f" [bold {color}]{icon} {name} Output[/] [dim]({ts})[/]"
     preview = result[:1500]
     if len(result) > 1500:
-        preview += "\n[...truncated...]"
+        preview += "\n... [truncated]"
     
     console.print(Panel(
         Text(preview, style=color),
@@ -269,23 +246,23 @@ def print_reasoning_enhanced(text: str):
     """Show thinking process in a collapsible panel."""
     console.print()
     
-    summary = text[:200] + "..." if len(text) > 200 else text
+    summary = text[:300] + "..." if len(text) > 300 else text
     n_lines = text.count("\n") + 1
     
-    title = f"[{COLORS['dim']}]  🧠 Thinking  ({n_lines} lines)[/]"
+    title = f" [bold #a78bfa]🧠 Deep Thinking Chain[/] [dim]({n_lines} lines)[/]"
     
     console.print(Panel(
-        Text.from_markup(f"[{COLORS['dim']}]{summary}[/]"),
-        border_style=COLORS['dim'],
+        Text(summary, style="italic #c084fc"),
+        border_style="#8b5cf6",
         title=title,
         title_align="left",
-        padding=(0, 1),
+        padding=(1, 2),
         box=ROUNDED,
     ))
     
-    if len(text) > 200:
-        console.print(Text(f"     [italic {COLORS['dim']}]Type /reasoning to expand[/]", 
-                          style=f"italic {COLORS['dim']}"))
+    if len(text) > 300:
+        console.print(Text(f"     💡 Type /reasoning to expand the full thinking chain", 
+                          style="italic #8b5cf6"))
 
 
 # ─────────────────────────────────────────────────────────────────

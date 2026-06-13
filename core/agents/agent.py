@@ -1,6 +1,6 @@
 """Real autonomous agent — AI-driven tool-calling loop with full control."""
 
-import json
+import json, uuid
 from typing import Any, Optional
 
 from rich.panel import Panel
@@ -13,6 +13,13 @@ from ..ui import (
     print_reasoning, print_ai_stream, print_agent_done,
 )
 from ..providers.providers import estimate_turn_cost
+
+
+def _vid(tc_id) -> str:
+    """Ensure tool_call_id is a non-empty string."""
+    if not tc_id or not isinstance(tc_id, str) or not tc_id.strip():
+        return f"call_{uuid.uuid4().hex[:12]}"
+    return tc_id
 from datetime import datetime
 
 
@@ -99,6 +106,12 @@ class AutonomousAgent:
         print_system_msg("Starting autonomous execution...")
 
         for iteration in range(max_iter):
+            # Check cancel flag (set by TUI escape key)
+            cancel = self.cfg.get("_cancel_flag")
+            if cancel and cancel():
+                print_system_msg("🛑 Agent cancelled by user")
+                break
+
             iter_num = iteration + 1
 
             # Call provider (streaming preferred, fallback to chat)
@@ -121,7 +134,7 @@ class AutonomousAgent:
                 # CRITICAL: Append assistant message with tool_calls FIRST
                 # (API requires tool results to follow a tool_calls message)
                 tc_list = [
-                    {"id": tc.id, "type": "function",
+                    {"id": _vid(tc.id), "type": "function",
                      "function": {"name": tc.name,
                                   "arguments": json.dumps(tc.args, ensure_ascii=False)}}
                     for tc in tool_calls
@@ -139,7 +152,7 @@ class AutonomousAgent:
                     # Append tool result to messages for context
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": tc.id,
+                        "tool_call_id": _vid(tc.id),
                         "name": tc.name,
                         "content": result,
                     })

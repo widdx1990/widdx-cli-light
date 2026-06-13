@@ -1,7 +1,7 @@
 """Memory CRUD — Create, Read, Update, Delete persistent memories."""
 
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Static, Input, Button, Label, Select, RichLog
+from textual.widgets import Static, Input, Button, Label, Select, RichLog, TextArea
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.binding import Binding
 from rich.table import Table
@@ -154,14 +154,14 @@ class MemoryEditScreen(ModalScreen):
                 yield Label("Type:")
                 yield Select([(l, v) for v, l in MEMORY_TYPES], value=self._meta.get("type", "user"), id="mem-edit-type")
                 yield Label("Content:")
-                yield Input(value=self._content[:200], id="mem-edit-content", placeholder="Enter memory content...")
+                yield TextArea(self._content, id="mem-edit-content")
             with Horizontal(classes="dialog-actions"):
                 yield Button("  💾 Save (Ctrl+S)  ", id="mem-save", variant="primary")
                 yield Button("  Cancel (Esc)  ", id="mem-cancel")
 
     def action_save(self):
         name = self.query_one("#mem-edit-name", Input).value.strip()
-        content = self.query_one("#mem-edit-content", Input).value.strip()
+        content = self.query_one("#mem-edit-content", TextArea).text.strip()
         mtype = self.query_one("#mem-edit-type", Select).value
         if not name or not content:
             return
