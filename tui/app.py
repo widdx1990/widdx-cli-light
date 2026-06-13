@@ -11,7 +11,7 @@ if ROOT not in sys.path:
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import RichLog, Input, Static, Button, Label
+from textual.widgets import RichLog, Input, Static, Button, Label, Select
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.screen import Screen
 from textual.message import Message
@@ -144,6 +144,9 @@ class MainScreen(Screen):
                 # Brand header
                 yield Static("[bold #6366f1]◈  W I D D X  C O R T E X[/]\n[dim #475569]by Muhammad Muslih  •  widdx[/]", id="sidebar-brand")
                 yield Static(classes="sidebar-divider")
+                # Quick provider switcher
+                yield Select(options=[], id="quick-provider", classes="provider-switch")
+                yield Static(classes="sidebar-divider")
                 yield Static("NAVIGATE", classes="sidebar-group")
                 for bid, icon, label, _, _ in self.NAV_BUTTONS:
                     yield Button(f"{icon}  {label}", id=bid, classes="sidebar-btn")
@@ -177,7 +180,22 @@ class MainScreen(Screen):
         self._update_header()
         self._update_status()
         self._refresh_sidebar_badges()
+        self._init_quick_provider()
         self.query_one("#input", Input).focus()
+
+    def _init_quick_provider(self):
+        """Populate the quick provider switcher in the sidebar."""
+        prov_select = self.query_one("#quick-provider", Select)
+        pname = self._state.get("_provider_name", "") or self._state.get("model", "").split("/")[0]
+        providers = [
+            ("🌐 OpenCode Zen", "opencode-zen"),
+            ("🔵 DeepSeek", "deepseek"),
+            ("⚪ OpenAI", "openai"),
+            ("🟠 Ollama", "ollama"),
+        ]
+        prov_select.set_options(providers)
+        if pname in dict(providers):
+            prov_select.value = pname
 
     # ── UI logging helpers ──────────────────────
 
@@ -728,6 +746,37 @@ class MainScreen(Screen):
         if cmd:
             self.run_worker(self._cmd(cmd))
 
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle quick provider switcher in sidebar."""
+        if (event.select.id or "") == "quick-provider":
+            if event.value and event.value != Select.BLANK:
+                new_provider = str(event.value)
+                self._switch_provider(new_provider)
+
+    def _switch_provider(self, new_provider: str) -> None:
+        """Switch to a different provider, saving config and rebuilding."""
+        try:
+            cfg = config.load()
+            cfg["provider"] = {
+                "name": new_provider,
+                "model": cfg.get("provider", {}).get("model", "deepseek-v4-flash-free"),
+                "base_url": cfg.get("provider", {}).get("base_url", ""),
+            }
+            config.save(cfg)
+            self._provider = create_provider(config.load())
+            pname = self._provider.name
+            model = self._provider.model
+            self._state["model"] = f"{pname}/{model}"
+            self._state["_provider_name"] = pname
+            self._update_header()
+            self._show_toast(f"Switched to {pname} / {model}", kind="success")
+            if pname in ("opencode-zen", "opencode"):
+                proxy_manager.force_refresh()
+            elif pname == "ollama":
+                fetch_ollama_models(force_refresh=True)
+        except Exception as e:
+            self._show_toast(f"Switch failed: {e}", kind="error")
+
     # ── Input ───────────────────────────
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -767,6 +816,54 @@ class MainScreen(Screen):
             await self._do_action("memories")
         elif cmd == "/settings":
             await self._do_action("settings")
+        elif cmd == "/provider" and len(parts) > 1:
+            prov_name = parts[1].strip().lower()
+            from .screens.settings import PROVIDER_LIST
+            p_ids = [p["id"] for p in PROVIDER_LIST]
+            if prov_name in p_ids:
+                try:
+                    cfg = config.load()
+                    ap = cfg.get("all_providers", {}).get(prov_name, {})
+                    pi_active = next((p for p in PROVIDER_LIST if p["id"] == prov_name), {})
+                    
+                    cfg["provider"] = {
+                        "name":     prov_name,
+                        "model":    ap.get("model") or pi_active.get("default_models", [""])[0],
+                        "base_url": ap.get("base_url") or pi_active.get("default_url", ""),
+                        "api_key":  ap.get("api_key", "public"),
+                    }
+                    config.save(cfg)
+                    
+                    self._provider = create_provider(cfg)
+                    self._state["model"] = f"{prov_name}/{self._provider.model}"
+                    self._state["_provider_name"] = prov_name
+                    self._update_header()
+                    self._show_toast(f"Provider switched to {prov_name}", kind="success")
+                except Exception as e:
+                    self._show_toast(f"Failed to switch provider: {e}", kind="error")
+            else:
+                self._show_toast(f"Unknown provider: {prov_name}. Available: {', '.join(p_ids)}", kind="warn")
+        elif cmd == "/model" and len(parts) > 1:
+            model_name = parts[1].strip()
+            try:
+                cfg = config.load()
+                prov_name = cfg.get("provider", {}).get("name", "opencode-zen")
+                
+                cfg["provider"]["model"] = model_name
+                if "all_providers" not in cfg:
+                    cfg["all_providers"] = {}
+                if prov_name not in cfg["all_providers"]:
+                    cfg["all_providers"][prov_name] = {}
+                cfg["all_providers"][prov_name]["model"] = model_name
+                
+                config.save(cfg)
+                
+                self._provider = create_provider(cfg)
+                self._state["model"] = f"{prov_name}/{model_name}"
+                self._update_header()
+                self._show_toast(f"Model switched to {model_name}", kind="success")
+            except Exception as e:
+                self._show_toast(f"Failed to switch model: {e}", kind="error")
         elif cmd == "/doctor":
             await self._do_action("doctor")
         elif cmd == "/save":

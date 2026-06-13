@@ -513,9 +513,12 @@ class SettingsScreen(Screen):
                 except Exception:
                     url = pi["default_url"]
 
-                # API key from keychain
+                # API key
                 try:
-                    from core.config.keychain import get_key
+                    from core.config.keychain import set_key, get_key
+                    key_input = self.query_one(f"#key-{pid}", Input).value.strip()
+                    if key_input and not key_input.startswith("•"):
+                        set_key(pid, key_input)
                     key = get_key(pid) or ("public" if not pi["needs_key"] else "")
                 except Exception:
                     key = "public" if not pi["needs_key"] else ""
