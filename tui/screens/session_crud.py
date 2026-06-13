@@ -64,52 +64,115 @@ class SessionListScreen(Screen):
         self._state = state or {}
         self._messages = messages or []
         self._sessions: list[dict] = []
+        self._selected_idx: int = -1
 
     def compose(self):
         yield Static("  📦  Session Manager", classes="list-title")
         yield Static("", classes="list-status")
         with Horizontal(classes="list-toolbar"):
-            yield Button("  💾 Save Now (S)  ", id="sess-save", variant="primary")
+            yield Button("  💾 Save Current (S)  ", id="sess-save", variant="primary")
+            yield Button("  📂 Load (L)  ", id="sess-load")
+            yield Button("  ✏️ Rename (R)  ", id="sess-rename")
+            yield Button("  🗑️ Delete (D)  ", id="sess-delete")
             yield Button("  📤 Export MD (E)  ", id="sess-export")
             yield Button("  🔄 Refresh (R)  ", id="sess-refresh")
             yield Button("  🔙 Back (Esc)  ", id="sess-back")
-        yield RichLog(highlight=True, markup=True, classes="list-content", id="sess-list")
+        with Horizontal(id="sess-container"):
+            yield ScrollableContainer(id="sess-sidebar")
+            yield RichLog(id="sess-preview", highlight=True, markup=True, wrap=True)
         with Horizontal(classes="list-footer"):
-            yield Static("  [dim][S]ave  [L]oad  [R]ename  [D]elete  [E]xport MD  [/]", classes="list-footer-text")
+            yield Static("  [dim][S]ave Current  [L]oad  [R]ename  [D]elete  [E]xport MD  [/]", classes="list-footer-text")
 
-    def on_mount(self): self._load_sessions()
+    def on_mount(self):
+        self._load_sessions()
 
     def _load_sessions(self):
-        log = self.query_one("#sess-list", RichLog)
-        log.clear()
+        sidebar = self.query_one("#sess-sidebar", ScrollableContainer)
+        sidebar.remove_children()
+        
         self._sessions = _find_sessions()
         self.query_one(".list-status", Static).update(
             f"  [dim]{len(self._sessions)} session(s) ({sum(1 for s in self._sessions if s.get('is_auto'))} auto)[/]"
         )
+        
+        preview = self.query_one("#sess-preview", RichLog)
+        preview.clear()
+        
         if not self._sessions:
-            log.write(Panel(
+            preview.write(Panel(
                 Text.from_markup("[dim]No saved sessions found.\n\nPress [bold #0891b2]S[/] to save the current session.[/]"),
                 border_style="dim", padding=(2, 4),
             ))
+            self._selected_idx = -1
             return
-        table = Table(border_style="#0891b2", header_style="bold #818cf8", padding=(0, 1))
-        table.add_column("#", style="dim", width=3)
-        table.add_column("Name", style="bold #0891b2", width=34)
-        table.add_column("Size", style="#64748b", width=8)
-        table.add_column("Modified", style="#64748b", width=16)
-        table.add_column("Actions", style="#f5a623", width=14)
-        for i, s in enumerate(self._sessions, 1):
+            
+        for i, s in enumerate(self._sessions):
             tag = "🟢 " if s.get("is_auto") else ""
-            table.add_row(str(i), f"{tag}{s['name']}", s["size_str"], s.get("modified", ""),
-                          "[L]oad [D]el" if not s.get("is_auto") else "—")
-        log.write(table)
+            btn = Button(f"{tag}{s['name']}\n[dim]{s['size_str']}  |  {s.get('modified', '')}[/]", id=f"sess-item-{i}", classes="sess-btn")
+            sidebar.mount(btn)
+            
+        # Select first session by default
+        self._selected_idx = 0
+        self.call_later(self._preview_session, 0)
+
+    def _preview_session(self, idx: int) -> None:
+        if idx < 0 or idx >= len(self._sessions):
+            return
+        self._selected_idx = idx
+        preview = self.query_one("#sess-preview", RichLog)
+        preview.clear()
+        
+        for i in range(len(self._sessions)):
+            try:
+                btn = self.query_one(f"#sess-item-{i}", Button)
+                btn.set_class(i == idx, "active")
+            except Exception:
+                pass
+
+        try:
+            s = self._sessions[idx]
+            path = Path(s["path"])
+            preview.write(f"[bold #6366f1]Previewing: {s['name']}[/]\n")
+            preview.write(f"[dim]Modified: {s.get('modified', '')}  |  Size: {s['size_str']}[/]\n")
+            preview.write("─" * 60 + "\n")
+            
+            if s["type"] == "json":
+                data = json.loads(path.read_text(encoding="utf-8"))
+                msgs = data.get("messages", [])
+                
+                role_colors = {"user": "#6366f1", "assistant": "#10b981", "system": "#f5a623", "tool": "#0ea5e9"}
+                role_icons = {"user": "👤", "assistant": "🤖", "system": "⚙️", "tool": "🛠️"}
+                
+                for m in msgs:
+                    role = m.get("role", "?")
+                    content = m.get("content", "")
+                    color = role_colors.get(role, "#cbd5e1")
+                    icon = role_icons.get(role, "•")
+                    
+                    preview_text = content[:600] + "\n[dim]… (truncated for preview)[/dim]" if len(content) > 600 else content
+                    preview.write(f"[{color}]{icon} {role.upper()}[/]\n{preview_text}\n")
+                    preview.write("─" * 60 + "\n")
+            else:
+                content = path.read_text(encoding="utf-8")
+                preview.write(content[:2000] + "\n[dim]… (truncated for preview)[/dim]" if len(content) > 2000 else content)
+        except Exception as e:
+            preview.write(f"[bold #ef4444]Error reading session: {e}[/]")
+
+    def on_descendant_focus(self, event) -> None:
+        widget = event.widget
+        if widget and widget.id and widget.id.startswith("sess-item-"):
+            try:
+                idx = int(widget.id.split("-")[-1])
+                self._preview_session(idx)
+            except Exception:
+                pass
 
     def action_go_back(self): self.dismiss()
     def action_refresh(self): self._load_sessions()
 
     def action_save_now(self):
         if not self._messages:
-            self.query_one("#sess-list", RichLog).write(Panel(
+            self.query_one("#sess-preview", RichLog).write(Panel(
                 Text.from_markup("[bold #ef4444]No messages to save.[/]"), border_style="#ef4444", padding=(1, 2),
             ))
             return
@@ -135,33 +198,36 @@ class SessionListScreen(Screen):
             logger.debug("Export MD failed: %s", e)
 
     def action_load(self):
-        non = [s for s in self._sessions if not s.get("is_auto")]
-        if non: self.app.push_screen(SessionPickerScreen([s["name"] for s in non], "load"), self._on_picker_result)
+        if self._selected_idx < 0 or self._selected_idx >= len(self._sessions):
+            return
+        s = self._sessions[self._selected_idx]
+        if s.get("is_auto"):
+            return
+        path = Path(s["path"])
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            msgs = data.get("messages", [])
+            self._state["_messages"] = msgs
+            self._state["turns"] = len(msgs)
+            self.dismiss(("loaded", msgs))
+        except Exception as e:
+            self._show_error(f"Load failed: {e}")
 
     def action_rename(self):
-        non = [s for s in self._sessions if not s.get("is_auto")]
-        if non: self.app.push_screen(SessionPickerScreen([s["name"] for s in non], "rename"), self._on_picker_result)
+        if self._selected_idx < 0 or self._selected_idx >= len(self._sessions):
+            return
+        s = self._sessions[self._selected_idx]
+        if s.get("is_auto"):
+            return
+        self.app.push_screen(SessionRenameScreen(s["name"]), self._on_rename_result)
 
     def action_delete(self):
-        non = [s for s in self._sessions if not s.get("is_auto")]
-        if non: self.app.push_screen(SessionPickerScreen([s["name"] for s in non], "delete"), self._on_picker_result)
-
-    def _on_picker_result(self, result: tuple | None):
-        if not result: return
-        name, action = result
-        path = SESSION_DIR / name
-        if action == "load":
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                msgs = data.get("messages", [])
-                self._state["_messages"] = msgs
-                self._state["turns"] = len(msgs)
-                self.dismiss(("loaded", msgs))
-            except Exception as e: self._show_error(f"Load failed: {e}")
-        elif action == "rename":
-            self.app.push_screen(SessionRenameScreen(name), self._on_rename_result)
-        elif action == "delete":
-            self.app.push_screen(SessionDeleteScreen(name), self._on_delete_result)
+        if self._selected_idx < 0 or self._selected_idx >= len(self._sessions):
+            return
+        s = self._sessions[self._selected_idx]
+        if s.get("is_auto"):
+            return
+        self.app.push_screen(SessionDeleteScreen(s["name"]), self._on_delete_result)
 
     def _on_rename_result(self, r):
         if r:
@@ -175,15 +241,34 @@ class SessionListScreen(Screen):
         if r: self._load_sessions()
 
     def _show_error(self, msg):
-        self.query_one("#sess-list", RichLog).write(Panel(
+        self.query_one("#sess-preview", RichLog).write(Panel(
             Text.from_markup(f"[bold #ef4444]{msg}[/]"), border_style="#ef4444", padding=(1, 2),
         ))
 
     def on_button_pressed(self, event: Button.Pressed):
-        return {
-            "sess-save": self.action_save_now, "sess-export": self.action_export_md,
-            "sess-refresh": self.action_refresh, "sess-back": self.action_go_back,
-        }.get(event.button.id, lambda: None)()
+        bid = event.button.id
+        if not bid:
+            return
+            
+        if bid.startswith("sess-item-"):
+            try:
+                idx = int(bid.split("-")[-1])
+                self._preview_session(idx)
+            except Exception:
+                pass
+            return
+
+        handler = {
+            "sess-save": self.action_save_now,
+            "sess-load": self.action_load,
+            "sess-rename": self.action_rename,
+            "sess-delete": self.action_delete,
+            "sess-export": self.action_export_md,
+            "sess-refresh": self.action_refresh,
+            "sess-back": self.action_go_back,
+        }.get(bid)
+        if handler:
+            handler()
 
 
 # ── Session Picker (modal) ────────────────────

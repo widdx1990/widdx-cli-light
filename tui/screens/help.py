@@ -1,74 +1,100 @@
-"""Help screen modal — commands, shortcuts, and navigation reference."""
+"""Help screen modal — commands, shortcuts, and quick-action buttons."""
 
 from textual.screen import ModalScreen
 from textual.widgets import Static, RichLog, Button, Label
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.binding import Binding
 from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
+from textual.message import Message
 
 
 class HelpScreen(ModalScreen):
-    """Shows available commands and shortcuts in a centered modal dialog."""
+    """Commands, shortcuts, and one-click quick actions."""
 
     BINDINGS = [
         Binding("escape", "dismiss", "Back"),
-        Binding("q", "dismiss", "Dismiss"),
+        Binding("q",      "dismiss", "Dismiss"),
+    ]
+
+    # Commands shown as clickable quick-action buttons
+    QUICK_ACTIONS = [
+        ("/tools",    "🛠  Tools",    "info"),
+        ("/skills",   "🎯  Skills",   "info"),
+        ("/memories", "💾  Memories", "info"),
+        ("/history",  "📋  History",  "info"),
+        ("/settings", "⚙  Settings", "info"),
+        ("/doctor",   "🩺  Doctor",   "info"),
+        ("/save",     "💿  Save",     "success"),
+        ("/export",   "📤  Export",   "success"),
+        ("/clear",    "🧹  Clear",    "warn"),
     ]
 
     CATEGORIES = {
         "💬 Commands": [
-            ("/help", "This help screen"),
-            ("/clear", "Clear chat history"),
-            ("/tools", "Show available tools"),
-            ("/skills", "List & toggle skills"),
-            ("/history", "Review chat history"),
-            ("/version", "Show version"),
+            ("/help",           "This help screen"),
+            ("/clear",          "Clear chat history"),
+            ("/tools",          "Show available tools"),
+            ("/skills",         "List & toggle skills"),
+            ("/history",        "Review chat history"),
+            ("/version",        "Show version info"),
         ],
         "📦 Sessions & Memory": [
-            ("/save", "Save session as JSON"),
-            ("/export", "Export as Markdown"),
-            ("/memories", "Manage saved memories"),
+            ("/save",           "Save session as JSON"),
+            ("/export",         "Export as Markdown"),
+            ("/memories",       "Manage saved memories"),
             ("/remember <msg>", "Save a quick memory"),
         ],
-        "⚙️ Settings": [
-            ("/settings", "Open settings panel"),
-            ("/model", "Change AI model"),
-            ("/provider", "Switch provider"),
-            ("/doctor", "Run system diagnostics"),
+        "⚙️  Settings": [
+            ("/settings",       "Open settings panel"),
+            ("/doctor",         "Run system diagnostics"),
+            ("/agent <task>",   "Run autonomous agent"),
         ],
         "⌨️  Shortcuts": [
-            ("Ctrl+Q", "Quit application"),
-            ("Ctrl+L", "Clear chat"),
-            ("Ctrl+P", "Open this help"),
-            ("Esc", "Close modals / Back"),
-            ("!name", "Activate skill  (!off to stop)"),
-        ],
-        "🧭 Navigation": [
-            ("Sidebar buttons", "Chat / Tools / Skills / History"),
-            ("Sidebar buttons", "Memories / Sessions / Settings"),
-            ("Sidebar buttons", "Doctor / Save / Export / Clear"),
+            ("Ctrl+Q",          "Quit application"),
+            ("Ctrl+L",          "Clear chat"),
+            ("Ctrl+P",          "Open this help"),
+            ("Esc",             "Close modals / Back"),
+            ("!skill_name",     "Activate skill"),
+            ("!off",            "Deactivate skill"),
         ],
     }
+
+    class CommandSelected(Message):
+        """Posted when user clicks a quick-action button."""
+        def __init__(self, command: str):
+            self.command = command
+            super().__init__()
 
     def compose(self):
         with Vertical(id="help-dialog", classes="dialog-box"):
             yield Static("❓  Help & Reference", classes="dialog-title")
-            yield Label("All available commands grouped by category:", classes="dialog-subtitle")
-            yield RichLog(highlight=True, markup=True, classes="dialog-body")
+            yield Static(
+                "  [dim]Quick actions — click to run, or type in the input bar[/]",
+                classes="dialog-subtitle"
+            )
+
+            # ── Quick-action buttons ──────────────────────
+            with Horizontal(id="help-quick-row"):
+                for cmd, label, _ in self.QUICK_ACTIONS:
+                    yield Button(label, id=f"qa-{cmd.lstrip('/').replace(' ', '-')}", classes="help-qa-btn")
+
+            # ── Reference table ───────────────────────────
+            yield RichLog(highlight=True, markup=True, classes="dialog-body", id="help-log")
+
             with Horizontal(classes="dialog-actions"):
                 yield Button("  Close (Esc)  ", id="btn-close", variant="primary")
 
     def on_mount(self):
-        log = self.query_one(RichLog)
+        log = self.query_one("#help-log", RichLog)
         log.write(Panel(
             Text.from_markup(
-                "[bold #818cf8]◈  WIDDX Terminal AI[/]\n"
-                "[dim]Type /command or click sidebar buttons[/]"
+                "[bold #818cf8]◈  WIDDX Cortex  —  Terminal AI[/]\n"
+                "[dim]by Muhammad Muslih  •  widdx[/]"
             ),
             border_style="#6366f1",
-            padding=(1, 2),
+            padding=(0, 2),
         ))
         for category, cmds in self.CATEGORIES.items():
             log.write("")
@@ -80,21 +106,29 @@ class HelpScreen(ModalScreen):
                 padding=(0, 2),
                 box=None,
             )
-            table.add_column("Command", style="bold #0891b2", width=18)
-            table.add_column("Description", style="#cbd5e1")
+            table.add_column("Command / Key", style="bold #0891b2", width=22)
+            table.add_column("Description",   style="#cbd5e1")
             for cmd, desc in cmds:
                 table.add_row(cmd, desc)
             log.write(table)
         log.write("")
         log.write(Panel(
             Text.from_markup(
-                "[dim]Press [bold #0891b2]Esc[/] or [bold #0891b2]q[/] to close  |  "
-                "[/][dim]Type any command in the input bar[/]"
+                "[dim]Press [bold #0891b2]Esc[/] or [bold #0891b2]q[/] to close  │  "
+                "Click a button above to run a command instantly[/]"
             ),
             border_style="dim",
             padding=(0, 1),
         ))
 
     def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "btn-close":
-            self.dismiss()
+        bid = event.button.id or ""
+        if bid == "btn-close":
+            self.dismiss(None)
+            return
+        # Quick-action buttons — map id back to command
+        for cmd, label, _ in self.QUICK_ACTIONS:
+            expected = f"qa-{cmd.lstrip('/').replace(' ', '-')}"
+            if bid == expected:
+                self.dismiss(cmd)
+                return
