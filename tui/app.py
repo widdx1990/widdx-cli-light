@@ -164,6 +164,10 @@ class MainScreen(Screen):
                 # Quick provider switcher
                 yield Select(options=[], id="quick-provider", classes="provider-switch")
                 yield Static(classes="sidebar-divider")
+                # Branch switcher
+                yield Static("SESSION BRANCH", classes="sidebar-group")
+                yield Select(options=[], id="quick-branch", classes="provider-switch")
+                yield Static(classes="sidebar-divider")
                 yield Static("NAVIGATE", classes="sidebar-group")
                 for bid, icon, label, _, _ in self.NAV_BUTTONS:
                     yield Button(f"{icon}  {label}", id=bid, classes="sidebar-btn")
@@ -198,7 +202,19 @@ class MainScreen(Screen):
         self._update_status()
         self._refresh_sidebar_badges()
         self._init_quick_provider()
+        self._init_quick_branch()
         self.query_one("#input", Input).focus()
+        
+    def _init_quick_branch(self):
+        """Populate and init the quick branch switcher in sidebar."""
+        from core.project.state import list_branches, get_current_branch
+        branch_select = self.query_one("#quick-branch", Select)
+        current = get_current_branch()
+        branches = list_branches()
+        branch_options = [(f"🌿 {b}", b) for b in branches]
+        branch_select.set_options(branch_options)
+        if current in dict(branch_options):
+            branch_select.value = current
 
     def _init_quick_provider(self):
         """Populate the quick provider switcher in the sidebar."""
@@ -769,11 +785,37 @@ class MainScreen(Screen):
             self.run_worker(self._cmd(cmd))
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        """Handle quick provider switcher in sidebar."""
+        """Handle quick provider or branch switcher in sidebar."""
         if (event.select.id or "") == "quick-provider":
             if event.value and event.value != Select.BLANK:
                 new_provider = str(event.value)
                 self._switch_provider(new_provider)
+        elif (event.select.id or "") == "quick-branch":
+            if event.value and event.value != Select.BLANK:
+                new_branch = str(event.value)
+                self._switch_branch(new_branch)
+                
+    def _switch_branch(self, new_branch: str) -> None:
+        """Switch to a different session branch."""
+        try:
+            from core.project.state import set_current_branch, load_session
+            ok = set_current_branch(new_branch)
+            if ok:
+                # Reload session
+                session_data = load_session()
+                self._state["_messages"] = []
+                self._state["model"] = session_data.get("state", {}).get("model", self._state["model"])
+                self._state["cost"] = session_data.get("state", {}).get("cost", 0.0)
+                self._state["turns"] = session_data.get("state", {}).get("turns", 0)
+                # Clear chat log and reload messages
+                self._chat_log.clear()
+                self._print_history()
+                self._update_header()
+                self._toast(f"Switched to branch '{new_branch}'!")
+            else:
+                self._toast(f"Failed to switch branch!")
+        except Exception as e:
+            self._log_message("system", f"Failed to switch branch: {e}")
 
     def _switch_provider(self, new_provider: str) -> None:
         """Switch to a different provider, saving config and rebuilding."""
@@ -909,6 +951,31 @@ class MainScreen(Screen):
             self._log_message("system", "WIDDX v3.0 — Terminal AI Chat Tool")
         elif cmd == "/agent" and len(parts) > 1:
             self._chat_agent(parts[1])
+        elif cmd == "/branch":
+            from core.project.state import list_branches, get_current_branch, set_current_branch, create_branch
+            sub = parts[1].strip() if len(parts) > 1 else "list"
+            if sub == "list":
+                current = get_current_branch()
+                branches = list_branches()
+                self._log_message("system", f"Available branches (current: {current}):")
+                for b in branches:
+                    prefix = "  * " if b == current else "    "
+                    self._log_message("system", f"{prefix}{b}")
+            elif sub.startswith("create"):
+                new_name = sub[7:].strip() if len(sub) > 7 else ""
+                if new_name:
+                    ok = create_branch(new_name)
+                    if ok:
+                        self._toast(f"Branch '{new_name}' created!")
+                        self._init_quick_branch()
+                    else:
+                        self._log_message("system", "Failed to create branch.")
+            elif sub.startswith("switch"):
+                target = sub[7:].strip() if len(sub) > 7 else ""
+                if target:
+                    self._switch_branch(target)
+            else:
+                self._log_message("system", "Unknown branch command. Use /branch list, /branch create <name>, /branch switch <name>")
         else:
             self._log_message("system", f"✗ Unknown command: {cmd}. Click Help in sidebar or type /help")
 
@@ -1421,6 +1488,16 @@ class MainScreen(Screen):
                         self._log_message("system", f"Memory: [{m['type']}] {m['content'][:60]}")
         except Exception as e:
             logger.debug("Memory extraction skipped: %s", e)
+            
+        # Feature 5: Self-Reflection (TUI, every 4 turns)
+        try:
+            if self._state.get("turns", 0) % 4 == 0 and self._state.get("turns", 0) > 0:
+                from core.self_reflection import reflect_on_last_turn
+                msgs = self._state.get("_messages", [])
+                reflect_on_last_turn(self._provider, msgs, self._state)
+                self._log_message("system", "💭 Completed self-reflection and saved lessons!")
+        except Exception as e:
+            logger.debug("Self-reflection skipped: %s", e)
 
         # Feature 3: Proactive suggestions (TUI)
         try:
