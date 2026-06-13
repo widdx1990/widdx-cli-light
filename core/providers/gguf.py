@@ -88,58 +88,59 @@ _ARCH_TEMPLATE_MAP = {
 
 # ── GGUF Header Reader ─────────────────────────────────────
 
-def _read_string(data: bytes, offset: int) -> tuple[str, int]:
-    """Read a GGUF string at offset. Returns (value, new_offset)."""
-    length = struct.unpack_from("<Q", data, offset)[0]  # uint64 length
-    offset += 8
-    val = data[offset:offset + length].decode("utf-8", errors="replace")
-    offset += length
-    return val, offset
+def _read_bytes(f, n: int) -> bytes:
+    b = f.read(n)
+    if len(b) < n:
+        raise ValueError(f"Unexpected EOF reading GGUF: expected {n} bytes, got {len(b)}")
+    return b
 
 
-def _read_value(data: bytes, offset: int, vtype: int):
-    """Read a single GGUF typed value. Returns (python_value, new_offset)."""
+def _read_string(f) -> str:
+    """Read a GGUF string from file stream."""
+    length = struct.unpack("<Q", _read_bytes(f, 8))[0]  # uint64 length
+    return _read_bytes(f, length).decode("utf-8", errors="replace")
+
+
+def _read_value(f, vtype: int):
+    """Read a single GGUF typed value from file stream."""
     if vtype == 0:   # uint8
-        return data[offset], offset + 1
+        return _read_bytes(f, 1)[0]
     elif vtype == 1:  # int8
-        return struct.unpack_from("<b", data, offset)[0], offset + 1
+        return struct.unpack("<b", _read_bytes(f, 1))[0]
     elif vtype == 2:  # uint16
-        return struct.unpack_from("<H", data, offset)[0], offset + 2
+        return struct.unpack("<H", _read_bytes(f, 2))[0]
     elif vtype == 3:  # int16
-        return struct.unpack_from("<h", data, offset)[0], offset + 2
+        return struct.unpack("<h", _read_bytes(f, 2))[0]
     elif vtype == 4:  # uint32
-        return struct.unpack_from("<I", data, offset)[0], offset + 4
+        return struct.unpack("<I", _read_bytes(f, 4))[0]
     elif vtype == 5:  # int32
-        return struct.unpack_from("<i", data, offset)[0], offset + 4
+        return struct.unpack("<i", _read_bytes(f, 4))[0]
     elif vtype == 6:  # float32
-        return struct.unpack_from("<f", data, offset)[0], offset + 4
+        return struct.unpack("<f", _read_bytes(f, 4))[0]
     elif vtype == 7:  # bool
-        return struct.unpack_from("<B", data, offset)[0] != 0, offset + 1
+        return struct.unpack("<B", _read_bytes(f, 1))[0] != 0
     elif vtype == 8:  # string
-        return _read_string(data, offset)
+        return _read_string(f)
     elif vtype == 9:  # array
         # Array: element_type (uint32) + count (uint64) + values
-        etype = struct.unpack_from("<I", data, offset)[0]
-        offset += 4
-        count = struct.unpack_from("<Q", data, offset)[0]
-        offset += 8
+        etype = struct.unpack("<I", _read_bytes(f, 4))[0]
+        count = struct.unpack("<Q", _read_bytes(f, 8))[0]
         values = []
         for _ in range(count):
-            val, offset = _read_value(data, offset, etype)
-            values.append(val)
-        return values, offset
+            values.append(_read_value(f, etype))
+        return values
     elif vtype == 10:  # uint64
-        return struct.unpack_from("<Q", data, offset)[0], offset + 8
+        return struct.unpack("<Q", _read_bytes(f, 8))[0]
     elif vtype == 11:  # int64
-        return struct.unpack_from("<q", data, offset)[0], offset + 8
+        return struct.unpack("<q", _read_bytes(f, 8))[0]
     elif vtype == 12:  # float64
-        return struct.unpack_from("<d", data, offset)[0], offset + 8
+        return struct.unpack("<d", _read_bytes(f, 8))[0]
     else:
         raise ValueError(f"Unknown GGUF type: {vtype}")
 
 
 def read_gguf_metadata(filepath: str | Path) -> dict:
-    """Read GGUF header metadata without loading tensors.
+    """Read GGUF header metadata sequentially without loading tensors or crashing on large data.
 
     Returns a dict with keys:
       - architecture, name, description, chat_template
@@ -173,42 +174,54 @@ def read_gguf_metadata(filepath: str | Path) -> dict:
     }
 
     with open(path, "rb") as f:
-        header = f.read(256 * 1024)  # Read first 256KB (enough for all metadata)
+        magic = _read_bytes(f, 4)
+        if magic != GGUF_MAGIC:
+            raise ValueError("Not a valid GGUF file (missing GGUF magic)")
 
-    if header[:4] != GGUF_MAGIC:
-        raise ValueError("Not a valid GGUF file (missing GGUF magic)")
+        version = struct.unpack("<I", _read_bytes(f, 4))[0]
+        tensor_count = struct.unpack("<Q", _read_bytes(f, 8))[0]
+        meta_count = struct.unpack("<Q", _read_bytes(f, 8))[0]
 
-    offset = 4
-    version = struct.unpack_from("<I", header, offset)[0]
-    offset += 4
-    tensor_count = struct.unpack_from("<Q", header, offset)[0]
-    offset += 8
-    meta_count = struct.unpack_from("<Q", header, offset)[0]
-    offset += 8
+        result["gguf_version"] = version
+        result["tensor_count"] = tensor_count
 
-    result["gguf_version"] = version
-    result["tensor_count"] = tensor_count
+        # Read metadata key-value pairs
+        for _ in range(meta_count):
+            key = _read_string(f)
+            vtype = struct.unpack("<I", _read_bytes(f, 4))[0]
 
-    # Read metadata key-value pairs
-    for _ in range(meta_count):
-        key, offset = _read_string(header, offset)
-        vtype = struct.unpack_from("<I", header, offset)[0]
-        offset += 4
-        value, offset = _read_value(header, offset, vtype)
+            # Optimization: skip large tokenizer metadata to save time and memory
+            if key in (
+                "tokenizer.ggml.tokens",
+                "tokenizer.ggml.scores",
+                "tokenizer.ggml.token_type",
+                "tokenizer.ggml.merges",
+            ):
+                if vtype == 9:  # array
+                    etype = struct.unpack("<I", _read_bytes(f, 4))[0]
+                    count = struct.unpack("<Q", _read_bytes(f, 8))[0]
+                    # Skip items sequentially
+                    for _ in range(count):
+                        _read_value(f, etype)
+                    value = f"[Skipped large array of {count} items]"
+                else:
+                    value = _read_value(f, vtype)
+            else:
+                value = _read_value(f, vtype)
 
-        result["all_metadata"][key] = value
+            result["all_metadata"][key] = value
 
-        # Extract known useful fields
-        if key == "general.architecture":
-            result["architecture"] = str(value)
-        elif key == "general.name":
-            result["name"] = str(value)
-        elif key == "general.description":
-            result["description"] = str(value)[:200]
-        elif key == "tokenizer.chat_template":
-            result["chat_template"] = str(value)
+            # Extract known useful fields
+            if key == "general.architecture":
+                result["architecture"] = str(value)
+            elif key == "general.name":
+                result["name"] = str(value)
+            elif key == "general.description":
+                result["description"] = str(value)[:200]
+            elif key == "tokenizer.chat_template":
+                result["chat_template"] = str(value)
 
-    result["header_size"] = offset
+        result["header_size"] = f.tell()
 
     # ── Context length from architecture-specific key ──────
     arch = result["architecture"]

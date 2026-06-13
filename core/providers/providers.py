@@ -776,7 +776,9 @@ class DeepSeekProvider(OpenAICompatibleProvider):
             "max_tokens": _DEFAULT_MAX_TOKENS,
             "stream": True,
         }
-        if self._thinking_enabled:
+        # Official DeepSeek API does not support thinking/reasoning_effort request parameters (throws 400).
+        # We only add them if we are using a third-party proxy that supports it.
+        if self._thinking_enabled and "api.deepseek.com" not in self.base_url:
             body["thinking"] = {"type": "enabled"}
             body["reasoning_effort"] = "high"
         if schema:
