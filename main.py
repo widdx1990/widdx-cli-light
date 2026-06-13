@@ -157,13 +157,17 @@ def run():
     project_instructions = proj_config.get("project_instructions", "")
     extra_ignore = proj_config.get("exclude_from_index", [])
 
-    project_ctx = project_state.build_project_context()
+    # ── Feature 1: Fresh project context via ProjectScanner ──────
+    from core.project.scanner import ProjectScanner
+    scanner = ProjectScanner()
+    project_ctx = scanner.build_context_block(extra_ignore=extra_ignore)
     if project_ctx and not session_data:
         messages.append({
             "role": "system",
-            "content": f"[PROJECT CONTEXT — loaded from .widdx/]\n{project_ctx}",
+            "content": project_ctx,
+            "_project_context": True,
         })
-        print_system_msg("Project context loaded from .widdx/")
+        print_system_msg("Project context loaded")
 
     if project_instructions:
         messages.append({
@@ -391,6 +395,28 @@ def run():
             continue
         # ── normal message → UIL Central Brain handles everything ──
         messages.append({"role": "user", "content": user_input})
+
+        # Feature 1: Refresh project context if project changed
+        try:
+            if scanner.quick_check():
+                ctx = scanner.build_context_block(extra_ignore=extra_ignore)
+                if ctx:
+                    messages = [m for m in messages if not m.get("_project_context")]
+                    messages.insert(0, {"role": "system", "content": ctx, "_project_context": True})
+        except Exception:
+            pass
+
+        # Feature 2: Load relevant memories for this turn
+        try:
+            from core.memory_learner import MemoryLearner
+            learner = MemoryLearner(provider=provider)
+            mem_ctx = learner.load_relevant(user_input)
+            if mem_ctx:
+                messages = [m for m in messages if not m.get("_memory_context")]
+                messages.insert(0, {"role": "system", "content": mem_ctx, "_memory_context": True})
+        except Exception:
+            pass
+
         show_thinking()
 
         tool_defs = list(tools.TOOL_DEFINITIONS)
@@ -547,6 +573,32 @@ def run():
                 print_system_msg(f"Conversation summarized ({old_len} -> {len(messages)} messages)")
         except Exception as exc:
             print_system_msg(f"[dim]Conversation summary failed: {exc}[/]")
+
+        # Feature 2: Auto-extract memories from this turn
+        try:
+            from core.utils import get_last_turn
+            last = get_last_turn(messages)
+            if last and state.get("turns", 0) % 2 == 0:  # every other turn
+                from core.memory_learner import MemoryLearner
+                ml = MemoryLearner(provider=provider)
+                tools_used = list(state.get("tools_used", []))
+                memories = ml.extract_from_turn(last["user"], last["assistant"], tools_used)
+                if memories:
+                    ml.store_memories(memories)
+                    for m in memories:
+                        print_system_msg(f"[dim]Learned: [{m['type']}] {m['content'][:60]}[/]")
+        except Exception as exc:
+            pass  # non-critical
+
+        # Feature 3: Proactive suggestions
+        try:
+            from core.suggester import ProjectSuggester
+            ps = ProjectSuggester()
+            suggestions = ps.suggest()
+            for s in suggestions[:2]:
+                print_system_msg(f"[dim]{s.icon}  Suggestion: {s.title}[/]")
+        except Exception as exc:
+            pass  # non-critical
 
     console.print(Rule(style="dim"))
     cost_str = "$%.4f" % state["cost"]

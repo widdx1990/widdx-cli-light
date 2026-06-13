@@ -70,3 +70,24 @@ def to_slug(name: str, max_len: int = 80) -> str:
     slug = re.sub(r'\s+', '-', slug)
     slug = re.sub(r'-+', '-', slug)
     return slug[:max_len]
+
+
+def get_last_turn(messages: list) -> dict | None:
+    """Extract the last user+assistant exchange from messages.
+
+    Used by MemoryLearner and other modules that need the most
+    recent turn for analysis or extraction.
+    """
+    last_user = None
+    last_assistant = None
+    for m in reversed(messages):
+        if m.get("role") == "assistant" and last_assistant is None:
+            content = (m.get("content") or "").strip()
+            if content and not content.startswith("[Agent completed"):
+                last_assistant = content
+        elif m.get("role") == "user":
+            last_user = m.get("content")
+            break
+    if last_user and last_assistant:
+        return {"user": last_user, "assistant": last_assistant}
+    return None
