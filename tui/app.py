@@ -1021,6 +1021,16 @@ class MainScreen(Screen):
             return
         self._show_chat()
         try:
+            # ── Auto-Skill Suggestion (TUI) ───────────────────────────
+            if not text.startswith("!") and not text.startswith("/") and not skill_manager.active:
+                suggested_skills = skill_manager.suggest_skills(text)
+                if suggested_skills:
+                    icons = [s.icon for s in suggested_skills if s.icon]
+                    names = [s.name for s in suggested_skills]
+                    msg = f"💡 Suggested skills: {', '.join([f'{icon} {name}' for icon, name in zip(icons, names)])}"
+                    self._log_message("system", msg)
+                    self._log_message("system", f"   Activate with: !{suggested_skills[0].name}")
+            
             self._processing = True
             self._log_message("user", text)
             self.query_one("#input", Input).disabled = True
