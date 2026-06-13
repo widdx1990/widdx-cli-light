@@ -652,6 +652,25 @@ def handle_gguf(cmd: str, provider, state):
             table.add_row(str(i), entry["model_name"], arch, size_str, date_str, status)
         console.print(table)
 
+    elif action == "scan":
+        print_system_msg("🔍 Scanning your computer for .gguf files...")
+        from core.providers.gguf import scan_gguf_files
+        found = scan_gguf_files(force_refresh=True)
+        if not found:
+            print_system_msg("No .gguf files found. Try /gguf import <path> instead.")
+            return
+        table = Table(title=f"Found {len(found)} GGUF files on your computer",
+                      border_style="dim", header_style="bold #f5a623")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("File", style="bold white")
+        table.add_column("Size", style="#f5a623")
+        table.add_column("Path", style="dim")
+        for i, f in enumerate(found, 1):
+            size_str = f"{f['size_gb']:.1f} GB" if f["size_gb"] >= 1 else f"{f['size_mb']:.0f} MB"
+            table.add_row(str(i), f["name"], size_str, f["path"])
+        console.print(table)
+        print_system_msg(f"Use /gguf import <path> to import any of these files")
+
     elif action == "remove":
         rest = parts[1] if len(parts) > 1 else ""
         name = rest.strip() if rest else ""
@@ -680,8 +699,9 @@ def handle_gguf(cmd: str, provider, state):
         console.print(Text(
             "Usage:\n"
             "  /gguf import <path.gguf> [--name X] [--template X] [--context N]\n"
-            "  /gguf list\n"
-            "  /gguf remove <model-name>\n\n"
+            "  /gguf scan      — auto-discover .gguf files on your computer\n"
+            "  /gguf list       — list imported models\n"
+            "  /gguf remove <name>\n\n"
             "Available --template values: " + ", ".join(_CHAT_TEMPLATES.keys()),
         ))
         print_system_msg("See /gguf import --help for details")
