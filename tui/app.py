@@ -1018,8 +1018,8 @@ class MainScreen(Screen):
                 from core.uil import UnifiedIntelligenceLayer, ExecutionMode
                 uil = UnifiedIntelligenceLayer(provider=pv)
                 uil.set_tool_defs(td)
-                decision, _ = uil.process(text)
-                mode = decision.mode if decision else ExecutionMode.SIMPLE_CHAT
+                result, decision = uil.process(text)
+                mode = decision.plan.mode if decision else ExecutionMode.SIMPLE_CHAT
             except Exception:
                 mode = None  # fallback to simple chat
 
