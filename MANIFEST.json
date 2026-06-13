@@ -1,22 +1,14 @@
 {
-  "project": "WIDDX - Terminal AI Chat Tool",
+  "project": "WIDDX Cortex",
   "language": "Python 3.12",
   "files": [
     {
-      "path": "config.json",
-      "description": "User configuration — provider, model, system prompt, and settings."
+      "path": "conftest.py",
+      "description": "Pytest configuration — ensures clean KnowledgeBase before each test."
     },
     {
-      "path": "requirements.txt",
-      "description": "Python dependencies for the WIDDX chat tool."
-    },
-    {
-      "path": "core/__init__.py",
-      "description": "Core package root — exports core modules."
-    },
-    {
-      "path": "core/agents/__init__.py",
-      "description": "Agents subpackage — exports Agent and ExpertTeam."
+      "path": "core/__main__.py",
+      "description": "CLI launcher for `python -m core` and `widdx` command."
     },
     {
       "path": "core/agents/agent.py",
@@ -31,12 +23,12 @@
       "description": "Conversation loop and tool processing for WIDDX."
     },
     {
-      "path": "core/commands.py",
-      "description": "Command handlers for WIDDX slash commands."
+      "path": "core/cli.py",
+      "description": "CLI entry point for the `widdx` command."
     },
     {
-      "path": "core/config/__init__.py",
-      "description": "Config subpackage — exports settings and keychain."
+      "path": "core/commands.py",
+      "description": "Command handlers for WIDDX slash commands."
     },
     {
       "path": "core/config/keychain.py",
@@ -47,16 +39,16 @@
       "description": "Configuration loader / saver — JSON config file with automatic secret stripping."
     },
     {
-      "path": "core/mcp/__init__.py",
-      "description": "MCP subpackage — exports MCP client."
-    },
-    {
       "path": "core/mcp/client.py",
       "description": "MCP (Model Context Protocol) client — connect to MCP servers and expose their tools."
     },
     {
-      "path": "core/project/__init__.py",
-      "description": "Project subpackage — exports git, manifest, and state."
+      "path": "core/memory.py",
+      "description": "Persistent Memory System for WIDDX."
+    },
+    {
+      "path": "core/permissions.py",
+      "description": "Permission system for WIDDX — controls which tools the AI can call."
     },
     {
       "path": "core/project/git.py",
@@ -71,16 +63,16 @@
       "description": "Project state management — session persistence, auto-indexing, and context recovery."
     },
     {
-      "path": "core/providers/__init__.py",
-      "description": "Providers subpackage — exports all AI providers."
+      "path": "core/providers/gguf.py",
+      "description": "GGUF model import — read metadata, build Modelfile, register in Ollama."
     },
     {
       "path": "core/providers/providers.py",
-      "description": "AI providers — OpenCode Zen, Ollama, OpenAI-compatible, with proxy rotation."
+      "description": "—"
     },
     {
       "path": "core/proxy.py",
-      "description": "Proxy manager — fetches, tests, and rotates free HTTP proxies."
+      "description": "—"
     },
     {
       "path": "core/skills.py",
@@ -88,51 +80,55 @@
     },
     {
       "path": "core/tools.py",
-      "description": "7 tool implementations — read, write, edit, glob, grep, bash, web_fetch."
-    },
-    {
-      "path": "core/ui/__init__.py",
-      "description": "UI subpackage — exports rendering functions."
+      "description": "Built-in tool definitions and execution for WIDDX."
     },
     {
       "path": "core/ui/ui.py",
       "description": "UI rendering functions for the WIDDX terminal chat tool."
     },
     {
-      "path": "core/uil/__init__.py",
-      "description": "Unified Intelligence Layer package — exports all UIL components."
-    },
-    {
-      "path": "core/uil/contract.py",
-      "description": "Data contracts for the UIL — ClassificationResult, RoutingDecision, ExecutionResult, ExecutionContext, Plan, etc."
+      "path": "core/ui/ui_enhanced.py",
+      "description": "Enhanced UI rendering functions for WIDDX — Premium CLI Experience."
     },
     {
       "path": "core/uil/analyzer.py",
-      "description": "Task analyzer — 13 classifiers that classify user input by TaskType and Domain."
-    },
-    {
-      "path": "core/uil/router.py",
-      "description": "Decision router — maps ClassificationResult to ExecutionPlan + filtered tool list."
-    },
-    {
-      "path": "core/uil/planner.py",
-      "description": "Optional task planner — decomposes complex tasks into multi-step plans with dependency tracking."
+      "description": "Task Analyzer — classifies user input into actionable task types."
     },
     {
       "path": "core/uil/brain.py",
-      "description": "UIL orchestrator — analyze → route → plan → execute → feedback → knowledge pipeline."
+      "description": "Unified Intelligence Layer — orchestrator only."
+    },
+    {
+      "path": "core/uil/contract.py",
+      "description": "UIL Data Contracts — core types for the Unified Intelligence Layer."
     },
     {
       "path": "core/uil/knowledge.py",
-      "description": "In-memory execution knowledge base — records outcomes, suggests mode overrides based on historical performance."
+      "description": "Knowledge — Execution Record Keeper with persistence."
     },
     {
-      "path": "doc/FREE_MODELS_API.md",
-      "description": "Guide to using the free OpenCode Zen API for AI models."
+      "path": "core/uil/planner.py",
+      "description": "Task Planner — Execution Decomposition Layer."
+    },
+    {
+      "path": "core/uil/router.py",
+      "description": "Decision Router — maps ClassificationResult to ExecutionPlan."
+    },
+    {
+      "path": "core/utils.py",
+      "description": "Shared utilities used across the WIDDX codebase."
+    },
+    {
+      "path": "core/workflow.py",
+      "description": "Workflow Engine — spawn sub-agents in parallel/pipeline."
     },
     {
       "path": "main.py",
       "description": "WIDDX — Terminal AI Chat Tool (entry point)."
+    },
+    {
+      "path": "run_textual.py",
+      "description": "Entry point to run WIDDX with Textual TUI."
     },
     {
       "path": "test_features.py",
@@ -140,23 +136,23 @@
     },
     {
       "path": "test_uil_knowledge.py",
-      "description": "UIL Phase 2 tests — knowledge base + knowledge-informed routing."
+      "description": "Phase 2 — Knowledge Base Tests (Phase 1.5 stable, knowledge.py first)."
     },
     {
       "path": "test_uil_p12.py",
-      "description": "UIL Phase 1.2 tests — router + brain orchestration."
+      "description": "Phase 1.2 verification: router.py + brain.py"
     },
     {
       "path": "test_uil_p13.py",
-      "description": "UIL Phase 1.3 tests — UIL integration with main.py."
+      "description": "Phase 1.3 Integration Test: main.py UIL Wiring."
     },
     {
       "path": "test_uil_p15.py",
-      "description": "UIL Phase 1.5 tests — feedback layer + plan consumption layer."
+      "description": "Phase 1.5 — Execution Feedback Layer + Plan Consumption Tests."
     },
     {
       "path": "test_uil_planner.py",
-      "description": "UIL Phase 1.4 tests — task planner decomposition."
+      "description": "Phase 1.4 — Planner Layer Tests."
     }
   ],
   "skills": [
@@ -183,6 +179,10 @@
     {
       "name": "refactor",
       "description": "Refactor code for better design, performance, and maintainability"
+    },
+    {
+      "name": "tui-builder",
+      "description": "Build professional Textual TUI interfaces for WIDDX — complete, fast, error-free"
     }
   ]
 }
