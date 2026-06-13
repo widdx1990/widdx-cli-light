@@ -418,6 +418,45 @@ def run():
                 table.add_row(m["name"], m.get("description", "")[:80], m.get("type", ""))
             console.print(table)
             continue
+        elif cmd == "/branch":
+            from core.project.state import list_branches, get_current_branch, set_current_branch, create_branch
+            sub = parts[1].strip() if len(parts) > 1 else "list"
+            if sub == "list":
+                current = get_current_branch()
+                branches = list_branches()
+                print_system_msg(f"Available branches (current: {current}):")
+                for b in branches:
+                    prefix = "  * " if b == current else "    "
+                    print_system_msg(f"{prefix}{b}")
+            elif sub.startswith("create "):
+                new_name = sub[7:].strip()
+                if new_name:
+                    ok = create_branch(new_name)
+                    if ok:
+                        print_system_msg(f"Branch '{new_name}' created!")
+                    else:
+                        print_system_msg("Failed to create branch.")
+            elif sub.startswith("switch "):
+                target = sub[7:].strip()
+                if target:
+                    ok = set_current_branch(target)
+                    if ok:
+                        # Reload session
+                        session_data = load_session()
+                        messages = [{"role": "system", "content": system_prompt}]
+                        if session_data:
+                            saved_msgs = session_data.get("messages", [])
+                            state["model"] = session_data.get("state", {}).get("model", state["model"])
+                            state["cost"] = session_data.get("state", {}).get("cost", 0.0)
+                            state["turns"] = session_data.get("state", {}).get("turns", 0)
+                            if saved_msgs:
+                                messages.extend(saved_msgs)
+                        print_system_msg(f"Switched to branch '{target}'!")
+                    else:
+                        print_system_msg("Failed to switch branches.")
+            else:
+                print_system_msg("Unknown branch command. Use /branch list, /branch create <name>, /branch switch <name>")
+            continue
         # ── normal message → UIL Central Brain handles everything ──
         messages.append({"role": "user", "content": user_input})
 
@@ -614,6 +653,15 @@ def run():
                         print_system_msg(f"[dim]Learned: [{m['type']}] {m['content'][:60]}[/]")
         except Exception as exc:
             pass  # non-critical
+            
+        # Feature 5: Self-Reflection (every 4 turns)
+        try:
+            if state.get("turns", 0) % 4 == 0 and state.get("turns", 0) > 0:
+                from core.self_reflection import reflect_on_last_turn
+                reflect_on_last_turn(provider, messages, state)
+                print_system_msg("💭 Completed self-reflection and saved lessons!")
+        except Exception as exc:
+            pass
 
         # Feature 3: Proactive suggestions
         try:

@@ -27,8 +27,98 @@ def _widdx_dir(project_dir: str | Path) -> Path:
     return p
 
 
-def _session_path(project_dir: str | Path) -> Path:
-    return _widdx_dir(project_dir) / "session.json"
+def _session_path(project_dir: str | Path, branch_name: str = "main") -> Path:
+    safe_name = "".join(c if c.isalnum() or c in ("_", "-") else "_" for c in branch_name)
+    return _widdx_dir(project_dir) / f"session_{safe_name}.json"
+
+
+def _branches_path(project_dir: str | Path) -> Path:
+    return _widdx_dir(project_dir) / "branches.json"
+
+
+def list_branches(project_dir: str | Path | None = None) -> list[str]:
+    """List all available session branches."""
+    if project_dir is None:
+        project_dir = Path().resolve()
+    branches_path = _branches_path(project_dir)
+    if not branches_path.exists():
+        return ["main"]
+    try:
+        import json
+        data = json.loads(branches_path.read_text(encoding="utf-8"))
+        return data.get("branches", ["main"])
+    except Exception as e:
+        logger.warning("Failed to list branches: %s", e)
+        return ["main"]
+
+
+def get_current_branch(project_dir: str | Path | None = None) -> str:
+    """Get the name of the currently active branch."""
+    if project_dir is None:
+        project_dir = Path().resolve()
+    branches_path = _branches_path(project_dir)
+    if not branches_path.exists():
+        return "main"
+    try:
+        import json
+        data = json.loads(branches_path.read_text(encoding="utf-8"))
+        return data.get("current", "main")
+    except Exception as e:
+        logger.warning("Failed to get current branch: %s", e)
+        return "main"
+
+
+def set_current_branch(branch_name: str, project_dir: str | Path | None = None) -> bool:
+    """Switch to a different branch. Returns True on success."""
+    if project_dir is None:
+        project_dir = Path().resolve()
+    branches_path = _branches_path(project_dir)
+    existing = list_branches(project_dir)
+    if branch_name not in existing:
+        logger.warning("Branch %s does not exist", branch_name)
+        return False
+    try:
+        import json
+        if branches_path.exists():
+            data = json.loads(branches_path.read_text(encoding="utf-8"))
+        else:
+            data = {"branches": existing, "current": "main"}
+        data["current"] = branch_name
+        branches_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.warning("Failed to switch branches: %s", e)
+        return False
+
+
+def create_branch(new_branch: str, from_branch: str = "main", project_dir: str | Path | None = None) -> bool:
+    """Create a new branch as a copy of an existing one. Returns True on success."""
+    if project_dir is None:
+        project_dir = Path().resolve()
+    existing = list_branches(project_dir)
+    if new_branch in existing:
+        logger.warning("Branch %s already exists", new_branch)
+        return False
+    # Copy from branch
+    src_path = _session_path(project_dir, from_branch)
+    dest_path = _session_path(project_dir, new_branch)
+    try:
+        if src_path.exists():
+            dest_path.write_bytes(src_path.read_bytes())
+        # Update branches list
+        import json
+        branches_path = _branches_path(project_dir)
+        if branches_path.exists():
+            data = json.loads(branches_path.read_text(encoding="utf-8"))
+        else:
+            data = {"branches": ["main"], "current": "main"}
+        if new_branch not in data["branches"]:
+            data["branches"].append(new_branch)
+        branches_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.warning("Failed to create branch: %s", e)
+        return False
 
 
 def _index_path(project_dir: str | Path) -> Path:
@@ -68,10 +158,12 @@ def save_project_config(config: dict, project_dir: str | Path | None = None):
 
 # ── session persistence ──────────────────────────────────────────────────
 
-def save_session(messages: list, state: dict, project_dir: str | Path | None = None):
-    """Save conversation messages + runtime state to .widdx/session.json."""
+def save_session(messages: list, state: dict, project_dir: str | Path | None = None, branch: str | None = None):
+    """Save conversation messages + runtime state to .widdx/session_<branch>.json."""
     if project_dir is None:
         project_dir = Path().resolve()
+    if branch is None:
+        branch = get_current_branch(project_dir)
     data = {
         "messages": _serializable_messages(messages),
         "state": {
@@ -80,15 +172,17 @@ def save_session(messages: list, state: dict, project_dir: str | Path | None = N
             "turns": state.get("turns", 0),
         },
     }
-    path = _session_path(project_dir)
+    path = _session_path(project_dir, branch)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def load_session(project_dir: str | Path | None = None) -> dict | None:
+def load_session(project_dir: str | Path | None = None, branch: str | None = None) -> dict | None:
     """Load previous session. Returns None if no session exists."""
     if project_dir is None:
         project_dir = Path().resolve()
-    path = _session_path(project_dir)
+    if branch is None:
+        branch = get_current_branch(project_dir)
+    path = _session_path(project_dir, branch)
     if not path.exists():
         return None
     try:
@@ -291,10 +385,11 @@ def build_project_context(project_dir: str | Path | None = None) -> str | None:
 
 # ── conversation summarizer — sliding window ────────────────────────────
 
-SUMMARY_THRESHOLD = 40   # messages — summarize if above this
-KEEP_LAST = 10           # full messages to keep at the end
-HEAD_CHARS = 500         # chars to keep from the start of each old message
-TAIL_CHARS = 200         # chars to keep from the end of each old message
+SUMMARY_THRESHOLD_MSGS = 40  # messages — summarize if above this
+SUMMARY_THRESHOLD_TOKENS = 8000  # tokens — summarize if we hit this first
+KEEP_LAST = 15           # full messages to keep at the end
+HEAD_CHARS = 600         # chars to keep from the start of each old message
+TAIL_CHARS = 300         # chars to keep from the end of each old message
 
 
 def _summarize_message(content: str) -> str:
@@ -318,18 +413,28 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def summarize_conversation(messages: list, keep_last: int = 10) -> list:
-    """Compress old messages with a sliding window.
+def _count_conversation_tokens(messages: list) -> int:
+    """Count approximate total tokens in the conversation."""
+    total = 0
+    for m in messages:
+        content = m.get("content", "")
+        if content and isinstance(content, str):
+            total += _estimate_tokens(content)
+    return total
+
+
+def summarize_conversation(messages: list, keep_last: int = 15) -> list:
+    """Compress old messages with a sliding window, using both message count AND token count.
 
     Strategy:
       - Keep the last `keep_last` user/assistant/tool messages FULL.
       - Compress older messages by keeping head + tail of each.
       - Preserve ALL system messages (skill prompts, config, instructions).
-      - Return the new list only if compression actually saved messages.
-
-    This preserves far more context than the old 150-char truncation.
+      - Returns new list if compression saved space.
+      - Triggered by either message count or token count thresholds.
     """
-    if len(messages) <= SUMMARY_THRESHOLD:
+    total_tokens = _count_conversation_tokens(messages)
+    if len(messages) <= SUMMARY_THRESHOLD_MSGS and total_tokens <= SUMMARY_THRESHOLD_TOKENS:
         return messages
 
     system_msgs = [m for m in messages if m.get("role") == "system"]
