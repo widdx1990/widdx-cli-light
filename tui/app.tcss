@@ -36,6 +36,8 @@ Screen { layout: vertical; background: $bg; color: $text; }
 /* ── Sidebar ────────────────────────────── */
 #sidebar { width: 28; height: 100%; background: $sidebar; border-right: solid $border; padding: 0; overflow-y: auto; }
 #sidebar-brand { height: 5; content-align: center middle; color: $primary; text-style: bold; background: #080d17; border-bottom: solid $border; padding: 0 1; }
+#quick-provider { margin: 1 1; background: #0b0f19; color: $text; border: solid $border; }
+#quick-provider:focus { border: solid $primary; }
 #sidebar .sidebar-group { color: $muted; text-style: bold; padding: 1 2 0 2; height: 2; }
 #sidebar .sidebar-divider { height: 1; background: $border; margin: 1 0; }
 #sidebar Button.sidebar-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; border-left: solid transparent; content-align: left middle; padding: 0 2; margin: 0; transition: background 120ms, color 120ms, border 120ms; }
