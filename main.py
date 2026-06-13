@@ -53,6 +53,7 @@ When a task matches a skill's purpose, call `use_skill` to activate it. After ac
 _last_index_hash: str | None = None
 _last_index_check: float = 0.0
 _INDEX_THROTTLE_SECONDS = 30  # minimum seconds between full scans
+_MAX_FILES_TO_SCAN = 10000  # maximum files to scan to avoid memory exhaustion
 
 IGNORE_DIRS = {".git", "__pycache__", ".pytest_cache", ".widdx",
                "node_modules", ".venv", "venv", "env",
@@ -75,6 +76,7 @@ def _project_changed(project_dir: Path, extra_ignore: list) -> bool:
     ignore = set(IGNORE_DIRS)
     ignore.update(extra_ignore)
     entries = []
+    file_count = 0
     try:
         for f in sorted(root.rglob("*")):
             try:
@@ -85,6 +87,10 @@ def _project_changed(project_dir: Path, extra_ignore: list) -> bool:
                         continue
                     st = f.stat()
                     entries.append(f"{rel}:{st.st_size}:{st.st_mtime_ns}")
+                    file_count += 1
+                    if file_count > _MAX_FILES_TO_SCAN:
+                        # Stop scanning to avoid memory issues
+                        break
             except (PermissionError, OSError):
                 continue  # skip inaccessible files/dirs
     except OSError:

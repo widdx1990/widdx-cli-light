@@ -56,6 +56,16 @@ PROVIDER_LIST = [
         "needs_key": False,
         "badge": "[bold #f5a623]LOCAL[/]",
     },
+    {
+        "id": "gguf",
+        "label": "📦 GGUF Models",
+        "tab":   "gguf",
+        "desc":  "Imported .gguf files — runs locally via Ollama",
+        "default_url": "http://localhost:11434",
+        "default_models": [],  # filled dynamically from import log
+        "needs_key": False,
+        "badge": "[bold #c084fc]GGUF[/]",
+    },
 ]
 
 
@@ -166,8 +176,12 @@ class ProviderTab(ScrollableContainer):
             self._preselectmodel(select, opts)
             return  # static list, no network needed
 
-        # For opencode-zen + ollama: show defaults first, then fetch in bg
-        if pi:
+        # For opencode-zen + ollama + gguf: show defaults first, then fetch in bg
+        if pid == "gguf":
+            # GGUF: start with empty list, fetch from import log
+            opts = [("⟳ Loading GGUF models…", "")]
+            select.set_options(opts)
+        elif pi:
             opts = [(m, m) for m in pi["default_models"]]
             select.set_options(opts)
             self._preselectmodel(select, opts)
@@ -207,6 +221,9 @@ class ProviderTab(ScrollableContainer):
                         url = pi["default_url"]
                     installed = fetch_ollama_models(base_url=url, force_refresh=force_refresh)
                     models = [m["name"] for m in installed]
+                elif pid == "gguf":
+                    from core.providers.providers import fetch_gguf_models
+                    models = fetch_gguf_models()
                 else:
                     models = []
             except Exception:

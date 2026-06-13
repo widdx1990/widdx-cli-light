@@ -320,10 +320,9 @@ def _bash(command: str, description: str | None = None) -> str:
 
 def _web_fetch(url: str, format: str = "markdown") -> str:
     try:
-        import urllib.request
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
+        resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        resp.raise_for_status()
+        html = resp.text
 
         # Strip script, style, and other non-content blocks first
         import re as _re
