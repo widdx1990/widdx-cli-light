@@ -98,6 +98,9 @@ class StreamEndMsg(Message):
         super().__init__()
 
 
+from .screens.ubuntu_grid import UbuntuGrid
+
+
 # ── View panel (Tools, Skills, etc.) ──
 
 class ViewPanel(ScrollableContainer):
@@ -154,35 +157,11 @@ class MainScreen(Screen):
         self._current_tools = []
 
     def compose(self) -> ComposeResult:
-        yield Static(id="header")
+        with Horizontal(id="header"):
+            yield Button("☰", id="btn-grid", classes="header-btn")
+            yield Static(id="header-info")
         yield Static("[bold #0b0f19]⚡  Thinking and executing tools  —  please wait...[/]", id="processing")
         with Horizontal(id="body"):
-            with Vertical(id="sidebar"):
-                # Brand header
-                yield Static("[bold #6366f1]◈  W I D D X  C O R T E X[/]\n[dim #475569]by Muhammad Muslih  •  widdx[/]", id="sidebar-brand")
-                yield Static(classes="sidebar-divider")
-                # Quick provider switcher
-                yield Select(options=[], id="quick-provider", classes="provider-switch")
-                yield Static(classes="sidebar-divider")
-                # Branch switcher
-                yield Static("SESSION BRANCH", classes="sidebar-group")
-                yield Select(options=[], id="quick-branch", classes="provider-switch")
-                yield Static(classes="sidebar-divider")
-                yield Static("NAVIGATE", classes="sidebar-group")
-                for bid, icon, label, _, _ in self.NAV_BUTTONS:
-                    yield Button(f"{icon}  {label}", id=bid, classes="sidebar-btn")
-                yield Static(classes="sidebar-divider")
-                yield Static("ACTIONS", classes="sidebar-group")
-                for bid, icon, label, _, shortcut in self.ACT_BUTTONS:
-                    text = f"{icon}  {label}" + (f"  [dim]{shortcut}[/]" if shortcut else "")
-                    yield Button(text, id=bid, classes="sidebar-btn")
-                yield Static(classes="sidebar-divider")
-                yield Static("HELP", classes="sidebar-group")
-                for bid, icon, label, _, shortcut in self.HELP_BUTTONS:
-                    text = f"{icon}  {label}" + (f"  [dim]{shortcut}[/]" if shortcut else "")
-                    yield Button(text, id=bid, classes="sidebar-btn")
-                # Sidebar footer with model info
-                yield Static(id="sidebar-footer")
             yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True, max_lines=5000)
             yield Static(id="stream-output")
             yield ViewPanel(id="view-panel")
@@ -200,36 +179,8 @@ class MainScreen(Screen):
         self._print_history()
         self._update_header()
         self._update_status()
-        self._refresh_sidebar_badges()
-        self._init_quick_provider()
-        self._init_quick_branch()
+        self._refresh_badges()
         self.query_one("#input", Input).focus()
-        
-    def _init_quick_branch(self):
-        """Populate and init the quick branch switcher in sidebar."""
-        from core.project.state import list_branches, get_current_branch
-        branch_select = self.query_one("#quick-branch", Select)
-        current = get_current_branch()
-        branches = list_branches()
-        branch_options = [(f"🌿 {b}", b) for b in branches]
-        branch_select.set_options(branch_options)
-        if current in dict(branch_options):
-            branch_select.value = current
-
-    def _init_quick_provider(self):
-        """Populate the quick provider switcher in the sidebar."""
-        prov_select = self.query_one("#quick-provider", Select)
-        pname = self._state.get("_provider_name", "") or self._state.get("model", "").split("/")[0]
-        providers = [
-            ("🌐 OpenCode Zen", "opencode-zen"),
-            ("🔵 DeepSeek", "deepseek"),
-            ("⚪ OpenAI", "openai"),
-            ("🟠 Ollama", "ollama"),
-            ("📦 GGUF (Local)", "gguf"),
-        ]
-        prov_select.set_options(providers)
-        if pname in dict(providers):
-            prov_select.value = pname
 
     # ── UI logging helpers ──────────────────────
 
@@ -381,13 +332,12 @@ class MainScreen(Screen):
         # Skill badge
         sk = f"  [dim]│[/]  [bold #f5a623]⚡ !{skill_manager.active.name}[/]" if skill_manager.active else ""
 
-        self.query_one("#header", Static).update(
+        self.query_one("#header-info", Static).update(
             f"  [bold #6366f1]◈[/]  {prov_badge}  [dim]│[/]  "
             f"[dim]{model_short}[/]  [dim]│[/]  "
             f"[{cost_color}]${c:.4f}[/]  [dim]│[/]  [dim]{t} turns[/]"
             f"{proxy_part}{sk}"
         )
-        self._update_sidebar_footer(model_short)
 
     def _update_status(self) -> None:
         self.query_one("#status", Static).update(
@@ -397,25 +347,6 @@ class MainScreen(Screen):
             "[bold #f5a623]/agent[/] [dim]Auto[/]   "
             "[bold #0891b2]Ctrl+Q[/] [dim]Quit[/]"
         )
-
-    def _update_sidebar_footer(self, model: str) -> None:
-        """Update the sidebar footer with model and connection info."""
-        model_short = model.split("/")[-1][:18] if "/" in model else model[:18]
-        is_opencode = self._state.get("_provider_name", "") in ("opencode-zen", "opencode")
-        if is_opencode:
-            proxy_status = proxy_manager.status()[:14]
-            connected = not proxy_manager.current_proxy()
-            conn_icon  = "[#10b981]🟢[/]" if connected else "[#f5a623]🔒[/]"
-            conn_label = "[dim]Direct[/]" if connected else f"[dim]{proxy_status}[/]"
-        else:
-            conn_icon = "[#10b981]🟢[/]"
-            conn_label = "[dim]Direct API[/]"
-        try:
-            self.query_one("#sidebar-footer", Static).update(
-                f"{conn_icon} [dim]{model_short}[/]\n{conn_label}"
-            )
-        except Exception as e:
-            logger.debug("UI update skipped: %s", e)
 
     # ── Character counter ───────────────────────
 
@@ -470,37 +401,11 @@ class MainScreen(Screen):
         except Exception:
             pass
 
-    # ── Sidebar badges ──────────────────────────
+    # ── Badge updates (simplified) ──────────────
 
-    def _refresh_sidebar_badges(self) -> None:
-        """Update memory and session count badges in the sidebar."""
-        import threading
-
-        def _count():
-            try:
-                mem_count = MemoryStore().total()
-            except Exception:
-                mem_count = 0
-            try:
-                sess_count = len(_find_sessions_count())
-            except Exception:
-                sess_count = 0
-
-            def _apply():
-                try:
-                    for bid, icon, label, _, _ in self.NAV_BUTTONS:
-                        if bid == "nav-memories":
-                            badge = f" [dim #10b981]{mem_count}[/]" if mem_count > 0 else ""
-                            self.query_one(f"#{bid}", Button).label = f"{icon}  {label}{badge}"
-                        elif bid == "nav-sessions":
-                            badge = f" [dim #0891b2]{sess_count}[/]" if sess_count > 0 else ""
-                            self.query_one(f"#{bid}", Button).label = f"{icon}  {label}{badge}"
-                except Exception:
-                    pass
-
-            self.call_from_thread(_apply)
-
-        threading.Thread(target=_count, daemon=True).start()
+    def _refresh_badges(self) -> None:
+        """No longer needed — sidebar removed."""
+        pass
 
 
     def _show_chat(self) -> None:
@@ -508,10 +413,6 @@ class MainScreen(Screen):
         panel = self.query_one("#view-panel", ViewPanel)
         panel.display = False
         panel.set_class(False, "active")
-        # Update nav active state
-        for bid, *_ in self.NAV_BUTTONS + self.ACT_BUTTONS:
-            self.query_one(f"#{bid}").set_class(False, "active")
-        self.query_one("#nav-chat").set_class(True, "active")
 
     def _show_view(self, title: str) -> None:
         self.query_one("#chat-log", RichLog).display = False
@@ -519,9 +420,6 @@ class MainScreen(Screen):
         panel.display = True
         panel.set_class(True, "active")
         panel.set_title(title)
-        # Update nav active state
-        for bid, *_ in self.NAV_BUTTONS:
-            self.query_one(f"#{bid}").set_class(bid == f"nav-{title.lower()}", "active")
 
     async def action_clear_chat(self) -> None:
         await self._do_action("clear")
@@ -557,7 +455,17 @@ class MainScreen(Screen):
         bid = event.button.id
         if not bid:
             return
-        # Navigation buttons (chat, tools, skills, ...)
+        
+        # ── Grid button → open Ubuntu-style launcher ───────
+        if bid == "btn-grid":
+            self.app.push_screen(UbuntuGrid(
+                nav_buttons=self.NAV_BUTTONS,
+                act_buttons=self.ACT_BUTTONS,
+                help_buttons=self.HELP_BUTTONS,
+            ), self._on_grid_result)
+            return
+        
+        # ── Navigation buttons (chat, tools, skills, ...) ──
         action = self.NAV_MAP.get(bid)
         if action:
             await self._do_action(action)
@@ -569,6 +477,24 @@ class MainScreen(Screen):
                 if handler:
                     await handler(bid)
                 return
+
+    def _on_grid_result(self, result: str | None) -> None:
+        """Handle result from UbuntuGrid launcher."""
+        if not result:
+            return
+        if result.startswith("provider:"):
+            # Switch provider
+            new_provider = result[9:]
+            self._switch_provider(new_provider)
+        elif result.startswith("branch:"):
+            # Switch branch
+            new_branch = result[7:]
+            self._switch_branch(new_branch)
+        elif result == "clear":
+            self._do_clear_chat()
+        else:
+            # It's a nav action (chat, tools, skills, etc.)
+            self.run_worker(self._do_action(result))
 
     async def _on_sk_btn(self, bid: str) -> None:
         self._do_skill(bid[3:])
@@ -647,7 +573,7 @@ class MainScreen(Screen):
                 vlist.mount(Button(f"  {icon}  [{role}]  {preview}", id=f"hist-{i}"))
         elif action == "memories":
             from .screens.memory_crud import MemoryListScreen
-            self.app.push_screen(MemoryListScreen(state=self._state), callback=lambda _: self._refresh_sidebar_badges())
+            self.app.push_screen(MemoryListScreen(state=self._state), callback=lambda _: self._refresh_badges())
         elif action == "sessions":
             from .screens.session_crud import SessionListScreen
             msgs = list(self._state.get("_messages", []))
@@ -671,7 +597,7 @@ class MainScreen(Screen):
                 try:
                     p.write_text(json.dumps({"messages": msgs}, indent=2))
                     self._show_toast(f"Session saved → {p.name}  ({p.stat().st_size // 1024 or 1}KB)", kind="success")
-                    self._refresh_sidebar_badges()
+                    self._refresh_badges()
                 except (OSError, PermissionError) as e:
                     self._show_toast(f"Save failed: {e}", kind="error")
             else:
@@ -693,6 +619,7 @@ class MainScreen(Screen):
                     self._show_toast(f"Export failed: {e}", kind="error")
             self._show_chat()
         elif action == "clear":
+            self._state["_messages"] = []
             if self._chat_log:
                 self._chat_log.clear()
             self._show_chat()
@@ -777,7 +704,7 @@ class MainScreen(Screen):
             self._log_message("system", f"✓ Session loaded ({len(msgs)} messages)")
             self._print_history()
             self._update_header()
-        self._refresh_sidebar_badges()
+        self._refresh_badges()
 
     def _on_help_result(self, cmd: str | None) -> None:
         """Handle quick action command from HelpScreen."""
@@ -785,15 +712,8 @@ class MainScreen(Screen):
             self.run_worker(self._cmd(cmd))
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        """Handle quick provider or branch switcher in sidebar."""
-        if (event.select.id or "") == "quick-provider":
-            if event.value and event.value != Select.BLANK:
-                new_provider = str(event.value)
-                self._switch_provider(new_provider)
-        elif (event.select.id or "") == "quick-branch":
-            if event.value and event.value != Select.BLANK:
-                new_branch = str(event.value)
-                self._switch_branch(new_branch)
+        """Legacy — no longer used after UbuntuGrid migration."""
+        pass
                 
     def _switch_branch(self, new_branch: str) -> None:
         """Switch to a different session branch."""
@@ -804,9 +724,14 @@ class MainScreen(Screen):
                 # Reload session
                 session_data = load_session()
                 self._state["_messages"] = []
-                self._state["model"] = session_data.get("state", {}).get("model", self._state["model"])
-                self._state["cost"] = session_data.get("state", {}).get("cost", 0.0)
-                self._state["turns"] = session_data.get("state", {}).get("turns", 0)
+                if session_data:
+                    s = session_data.get("state", {})
+                    self._state["model"] = s.get("model", self._state["model"])
+                    self._state["cost"] = s.get("cost", 0.0)
+                    self._state["turns"] = s.get("turns", 0)
+                    saved_msgs = session_data.get("messages", [])
+                    if saved_msgs:
+                        self._state["_messages"] = list(saved_msgs)
                 # Clear chat log and reload messages
                 self._chat_log.clear()
                 self._print_history()
@@ -949,8 +874,6 @@ class MainScreen(Screen):
             self._do_skill(parts[1].strip().lstrip("!"))
         elif cmd == "/version":
             self._log_message("system", "WIDDX v3.0 — Terminal AI Chat Tool")
-        elif cmd == "/agent" and len(parts) > 1:
-            self._chat_agent(parts[1])
         elif cmd == "/branch":
             from core.project.state import list_branches, get_current_branch, set_current_branch, create_branch
             sub = parts[1].strip() if len(parts) > 1 else "list"
@@ -967,7 +890,6 @@ class MainScreen(Screen):
                     ok = create_branch(new_name)
                     if ok:
                         self._toast(f"Branch '{new_name}' created!")
-                        self._init_quick_branch()
                     else:
                         self._log_message("system", "Failed to create branch.")
             elif sub.startswith("switch"):
@@ -1483,7 +1405,7 @@ class MainScreen(Screen):
                 memories = ml.extract_from_turn(last["user"], last["assistant"], tools_used)
                 if memories:
                     ml.store_memories(memories)
-                    self._refresh_sidebar_badges()
+                    self._refresh_badges()
                     for m in memories:
                         self._log_message("system", f"Memory: [{m['type']}] {m['content'][:60]}")
         except Exception as e:
