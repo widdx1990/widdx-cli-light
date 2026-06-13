@@ -38,7 +38,7 @@ Screen { layout: vertical; background: $bg; color: $text; }
 #sidebar-brand { height: 5; content-align: center middle; color: $primary; text-style: bold; background: #080d17; border-bottom: solid $border; padding: 0 1; }
 #sidebar .sidebar-group { color: $muted; text-style: bold; padding: 1 2 0 2; height: 2; }
 #sidebar .sidebar-divider { height: 1; background: $border; margin: 1 0; }
-#sidebar Button.sidebar-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; border-left: solid transparent; content-align: left middle; padding: 0 2; margin: 0; }
+#sidebar Button.sidebar-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; border-left: solid transparent; content-align: left middle; padding: 0 2; margin: 0; transition: background 120ms, color 120ms, border 120ms; }
 #sidebar Button.sidebar-btn:hover { background: #1e293b; color: $phover; border-left: solid $primary; }
 #sidebar Button.sidebar-btn.active { background: #1e1b4b; color: $phover; border-left: solid $primary; text-style: bold; }
 #sidebar Button.sidebar-btn:focus { background: #1e293b; color: $phover; }
@@ -47,8 +47,9 @@ Screen { layout: vertical; background: $bg; color: $text; }
 /* ── Input & Status ─────────────────────── */
 #input-container { height: auto; min-height: 3; background: $sidebar; border-top: solid $primary; padding: 0 2; dock: bottom; align: left middle; }
 #input-container #prompt-label { width: 2; color: $primary; text-style: bold; content-align: center middle; margin-right: 1; }
-#input { height: 100%; background: transparent; color: $text; border: none; padding: 0; }
+#input { width: 1fr; height: 100%; background: transparent; color: $text; border: none; padding: 0; }
 #input:focus { border: none; }
+#char-count { width: 8; content-align: right middle; color: $muted; padding-right: 1; }
 #status { height: 1; background: $sidebar; border-top: solid $border; color: $muted; padding: 0 2; dock: bottom; }
 .doctor-title { margin-bottom: 1; border-bottom: solid $border; padding-bottom: 1; color: $primary; text-style: bold; }
 #doctor-running { height: 1; color: $phover; text-style: bold; }
@@ -70,7 +71,7 @@ ModalScreen {
     height: auto;
     max-height: 85%;
     background: $sidebar;
-    border: tall $primary;
+    border: solid $primary;
     padding: 1 2;
 }
 
@@ -133,7 +134,7 @@ ModalScreen {
 }
 
 /* ── Delete confirmation (red variant) ──── */
-.delete-dialog { border: tall $err; }
+.delete-dialog { border: solid $err; }
 .delete-title { color: $err; }
 
 /* Delete action bar (centered buttons) */
@@ -141,10 +142,10 @@ ModalScreen {
 .dialog-actions-center Button { margin: 0 1; min-width: 16; height: 3; }
 
 /* ── Picker dialog (narrow, for selection lists) ── */
-.picker-dialog { width: 60%; max-width: 50; height: auto; max-height: 60%; background: $sidebar; border: tall $secondary; padding: 1 2; }
+.picker-dialog { width: 60%; max-width: 50; height: auto; max-height: 60%; background: $sidebar; border: solid $secondary; padding: 1 2; }
 .picker-title { height: 3; content-align: center middle; color: $secondary; text-style: bold; border-bottom: solid $border; margin-bottom: 1; }
 .picker-list { height: 1fr; padding: 0; }
-.pick-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; content-align: left middle; padding: 0 2; }
+.pick-btn { height: 3; width: 100%; background: transparent; color: #cbd5e1; border: none; content-align: left middle; padding: 0 2; transition: background 120ms, color 120ms; }
 .pick-btn:hover { background: #1e293b; color: $phover; }
 .picker-actions { height: 3; margin-top: 1; align: right middle; border-top: solid $border; padding-top: 1; }
 
@@ -391,6 +392,7 @@ Switch.-on > .switch--slider {
 
 Button {
     background: transparent; border: none; padding: 0 2; color: #cbd5e1;
+    transition: background 120ms, color 120ms;
 }
 Button:hover { color: $phover; }
 Button.primary { background: $primary; color: #0b0f19; text-style: bold; }
@@ -407,6 +409,82 @@ Select:focus { border: solid $primary; }
 TextArea { background: #0b0f19; color: $text; border: solid $border; }
 TextArea:focus { border: solid $primary; }
 
-Scrollbar { background: transparent; }
-Scrollbar > .scrollbar--slider { background: $border; }
-Scrollbar > .scrollbar--slider:hover { background: $phover; }
+/* ── Toast notification ──────────────────── */
+#toast {
+    dock: bottom;
+    height: 1;
+    content-align: center middle;
+    color: $text;
+    background: #1e1b4b;
+    border-top: solid $primary;
+    text-style: bold;
+}
+.toast-hidden { display: none; }
+.toast-visible { display: block; }
+
+Scrollbar { width: 1; background: transparent; }
+Scrollbar > .scrollbar--track { background: transparent; }
+Scrollbar > .scrollbar--slider { background: #1e293b; }
+Scrollbar > .scrollbar--slider:hover { background: $primary; }
+
+/* ── Help Quick Actions Grid ── */
+#help-quick-row {
+    height: auto;
+    layout: grid;
+    grid-size: 5;
+    grid-gutter: 1;
+    margin-bottom: 1;
+    padding: 0 1;
+}
+.help-qa-btn {
+    height: 3;
+    background: $sidebar;
+    border: solid $border;
+    color: $text;
+    content-align: center middle;
+    transition: background 120ms, color 120ms, border 120ms;
+}
+.help-qa-btn:hover {
+    background: $border;
+    color: $phover;
+    border: solid $primary;
+}
+
+/* ── Split Sessions Screen ── */
+#sess-container {
+    height: 1fr;
+    background: $bg;
+}
+#sess-sidebar {
+    width: 38;
+    height: 100%;
+    background: $sidebar;
+    border-right: solid $border;
+    padding: 1 1;
+}
+#sess-preview {
+    height: 100%;
+    background: $bg;
+    padding: 1 2;
+}
+.sess-btn {
+    height: 4;
+    width: 100%;
+    background: transparent;
+    border: solid $border;
+    margin-bottom: 1;
+    content-align: left middle;
+    padding: 0 1;
+    transition: background 120ms, color 120ms, border 120ms;
+}
+.sess-btn:hover {
+    background: #1e293b;
+    border: solid $primary;
+    color: $phover;
+}
+.sess-btn:focus, .sess-btn.active {
+    background: #1e1b4b;
+    border: solid $primary;
+    color: $phover;
+    text-style: bold;
+}

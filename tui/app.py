@@ -26,6 +26,19 @@ from core.memory import MemoryStore
 from core.project import state as project_state
 from core.chat import _valid_tool_call_id, _build_tc_list, _sanitize_tool_call_ids
 
+
+def _find_sessions_count() -> list:
+    """Quick count of saved session files (no heavy imports)."""
+    from pathlib import Path
+    cwd = Path.cwd().resolve()
+    sessions = []
+    for pattern in ["chat_*.json", "chat_export_*.md"]:
+        sessions.extend(cwd.glob(pattern))
+    ws = cwd / ".widdx" / "session.json"
+    if ws.exists():
+        sessions.append(ws)
+    return sessions
+
 logger = logging.getLogger("widdx.tui")
 
 _THINK_START = "[thinking]"
@@ -151,8 +164,11 @@ class MainScreen(Screen):
             yield ViewPanel(id="view-panel")
         with Horizontal(id="input-container"):
             yield Label("❯", id="prompt-label")
-            yield Input(placeholder="Type a message...  (/help for commands)", id="input")
+            yield Input(placeholder="Type a message…  (/help for commands)", id="input")
+            yield Static("", id="char-count")
         yield Static(id="status")
+        # Toast notification overlay (hidden by default)
+        yield Static("", id="toast", classes="toast-hidden")
 
     def on_mount(self) -> None:
         self._chat_log = self.query_one("#chat-log", RichLog)
@@ -160,6 +176,7 @@ class MainScreen(Screen):
         self._print_history()
         self._update_header()
         self._update_status()
+        self._refresh_sidebar_badges()
         self.query_one("#input", Input).focus()
 
     # ── UI logging helpers ──────────────────────
@@ -212,13 +229,25 @@ class MainScreen(Screen):
         model_short = self._state.get("model", "?").split("/")[-1][:24]
         pname = self._state.get("_provider_name", "") or self._state.get("model", "").split("/")[0]
         skill_count = len(skill_manager.list_all())
+
+        # Connection status check
+        is_opencode = pname in ("opencode-zen", "opencode")
+        if is_opencode:
+            connected = not proxy_manager.current_proxy()
+            conn_status = "Direct" if connected else proxy_manager.status()[:16]
+            conn_color = "#10b981" if connected else "#f5a623"
+        else:
+            conn_status = "Direct API"
+            conn_color = "#10b981"
+
         welcome_text = Text.assemble(
             ("\n◈  WIDDX Cortex  v3.0\n", "bold #6366f1"),
             ("  by Muhammad Muslih  •  widdx\n", "dim #475569"),
             ("─" * 44 + "\n\n", "dim #374151"),
             ("  Provider:  ", "dim"), (pname or "?", "bold #00c896"),
             ("   Model:  ", "dim"), (model_short, "bold #818cf8"),
-            (f"   Skills:  ", "dim"), (str(skill_count), "bold #f5a623"), (" available\n\n", "dim"),
+            ("   Status:  ", "dim"), (conn_status, f"bold {conn_color}\n"),
+            ("  Skills:    ", "dim"), (str(skill_count), "bold #f5a623"), (" available\n\n", "dim"),
             ("  ", ""), ("Ctrl+P", "bold #0891b2 on #0c1a2e"), ("  Help    ", "dim"),
             ("Ctrl+L", "bold #0891b2 on #0c1a2e"), ("  Clear    ", "dim"),
             ("Ctrl+Q", "bold #0891b2 on #0c1a2e"), ("  Quit\n\n", "dim"),
@@ -234,7 +263,7 @@ class MainScreen(Screen):
             padding=(1, 4),
             title="[bold #6366f1]  W I D D X  [/]",
             title_align="center",
-            subtitle="[dim #10b981]● Ready[/]",
+            subtitle=f"[dim]● Ready  │  [/][bold {conn_color}]{conn_status}[/]",
             subtitle_align="right",
         )
         self._chat_log.write(panel)
@@ -331,6 +360,92 @@ class MainScreen(Screen):
             )
         except Exception as e:
             logger.debug("UI update skipped: %s", e)
+
+    # ── Character counter ───────────────────────
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Update character count display as user types."""
+        if (event.input.id or "") != "input":
+            return
+        try:
+            n = len(event.value)
+            counter = self.query_one("#char-count", Static)
+            if n == 0:
+                counter.update("")
+            elif n > 2000:
+                counter.update(f"[bold #ef4444]{n}[/]")
+            elif n > 500:
+                counter.update(f"[#f5a623]{n}[/]")
+            else:
+                counter.update(f"[dim]{n}[/]")
+        except Exception:
+            pass
+
+    # ── Toast notification system ───────────────
+
+    _toast_timer = None
+
+    def _show_toast(self, msg: str, kind: str = "info", duration: float = 3.0) -> None:
+        """Show a short-lived toast notification at the bottom of the screen."""
+        try:
+            toast = self.query_one("#toast", Static)
+            colors = {"info": "#0891b2", "success": "#10b981", "warn": "#f5a623", "error": "#ef4444"}
+            icons  = {"info": "ℹ", "success": "✓", "warn": "⚠", "error": "✕"}
+            c = colors.get(kind, "#0891b2")
+            i = icons.get(kind, "ℹ")
+            toast.update(f"  [{c}]{i}[/]  {msg}  ")
+            toast.set_class(False, "toast-hidden")
+            toast.set_class(True, "toast-visible")
+            # Cancel previous timer
+            if self._toast_timer:
+                try:
+                    self._toast_timer.cancel()
+                except Exception:
+                    pass
+            self._toast_timer = self.set_timer(duration, self._hide_toast)
+        except Exception as e:
+            logger.debug("Toast skipped: %s", e)
+
+    def _hide_toast(self) -> None:
+        try:
+            toast = self.query_one("#toast", Static)
+            toast.set_class(False, "toast-visible")
+            toast.set_class(True, "toast-hidden")
+        except Exception:
+            pass
+
+    # ── Sidebar badges ──────────────────────────
+
+    def _refresh_sidebar_badges(self) -> None:
+        """Update memory and session count badges in the sidebar."""
+        import threading
+
+        def _count():
+            try:
+                mem_count = MemoryStore().total()
+            except Exception:
+                mem_count = 0
+            try:
+                sess_count = len(_find_sessions_count())
+            except Exception:
+                sess_count = 0
+
+            def _apply():
+                try:
+                    for bid, icon, label, _, _ in self.NAV_BUTTONS:
+                        if bid == "nav-memories":
+                            badge = f" [dim #10b981]{mem_count}[/]" if mem_count > 0 else ""
+                            self.query_one(f"#{bid}", Button).label = f"{icon}  {label}{badge}"
+                        elif bid == "nav-sessions":
+                            badge = f" [dim #0891b2]{sess_count}[/]" if sess_count > 0 else ""
+                            self.query_one(f"#{bid}", Button).label = f"{icon}  {label}{badge}"
+                except Exception:
+                    pass
+
+            self.call_from_thread(_apply)
+
+        threading.Thread(target=_count, daemon=True).start()
+
 
     def _show_chat(self) -> None:
         self.query_one("#chat-log", RichLog).display = True
@@ -435,7 +550,7 @@ class MainScreen(Screen):
             self._show_chat()
         elif action == "help":
             from .screens.help import HelpScreen
-            self.app.push_screen(HelpScreen())
+            self.app.push_screen(HelpScreen(), self._on_help_result)
         elif action == "tools":
             self._show_view("Tools")
             vlist = self.query_one("#view-list", ScrollableContainer)
@@ -476,7 +591,7 @@ class MainScreen(Screen):
                 vlist.mount(Button(f"  {icon}  [{role}]  {preview}", id=f"hist-{i}"))
         elif action == "memories":
             from .screens.memory_crud import MemoryListScreen
-            self.app.push_screen(MemoryListScreen(state=self._state))
+            self.app.push_screen(MemoryListScreen(state=self._state), callback=lambda _: self._refresh_sidebar_badges())
         elif action == "sessions":
             from .screens.session_crud import SessionListScreen
             msgs = list(self._state.get("_messages", []))
@@ -499,9 +614,12 @@ class MainScreen(Screen):
                 p = Path(ROOT) / f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 try:
                     p.write_text(json.dumps({"messages": msgs}, indent=2))
-                    self._log_message("system", f"✓ Saved session to {p.name} ({p.stat().st_size}B)")
+                    self._show_toast(f"Session saved → {p.name}  ({p.stat().st_size // 1024 or 1}KB)", kind="success")
+                    self._refresh_sidebar_badges()
                 except (OSError, PermissionError) as e:
-                    self._log_message("system", f"✗ Save failed: {e}")
+                    self._show_toast(f"Save failed: {e}", kind="error")
+            else:
+                self._show_toast("Nothing to save yet", kind="warn")
             self._show_chat()
         elif action == "export":
             msgs = self._state.get("_messages", [])
@@ -514,9 +632,9 @@ class MainScreen(Screen):
                         content = m.get("content") or ""
                         lines.append(f"## {role}\n\n{content}\n\n---\n")
                     p.write_text("\n".join(lines))
-                    self._log_message("system", f"✓ Exported session to {p.name}")
+                    self._show_toast(f"Exported session to {p.name}", kind="success")
                 except (OSError, PermissionError) as e:
-                    self._log_message("system", f"✗ Export failed: {e}")
+                    self._show_toast(f"Export failed: {e}", kind="error")
             self._show_chat()
         elif action == "clear":
             if self._chat_log:
@@ -583,10 +701,8 @@ class MainScreen(Screen):
                 self._state["model"] = f"{pname}/{model}"
                 self._state["_provider_name"] = pname
                 self._update_header()
-                self._log_message(
-                    "system",
-                    f"✓ Provider switched → {pname}/{model}"
-                )
+                # Toast instead of cluttering the chat log
+                self._show_toast(f"Provider switched → {pname} / {model}", kind="success")
                 # Provider-specific post-switch actions
                 if pname in ("opencode-zen", "opencode"):
                     from core.proxy import proxy_manager
@@ -594,7 +710,7 @@ class MainScreen(Screen):
                 elif pname == "ollama":
                     fetch_ollama_models(force_refresh=True)
             except Exception as e:
-                self._log_message("system", f"✗ Settings error: {e}")
+                self._show_toast(f"Settings error: {e}", kind="error")
         # User cancelled — no action needed
 
     def _on_session_result(self, result: tuple | None) -> None:
@@ -605,6 +721,12 @@ class MainScreen(Screen):
             self._log_message("system", f"✓ Session loaded ({len(msgs)} messages)")
             self._print_history()
             self._update_header()
+        self._refresh_sidebar_badges()
+
+    def _on_help_result(self, cmd: str | None) -> None:
+        """Handle quick action command from HelpScreen."""
+        if cmd:
+            self.run_worker(self._cmd(cmd))
 
     # ── Input ───────────────────────────
 
