@@ -1,14 +1,14 @@
 [project]
-name = "widdx-chat"
+name = "widdx-cortex"
 version = "3.0.0"
-description = "WIDDX — Terminal AI Chat Tool with UIL Cognitive Architecture"
+description = "WIDDX Cortex — Terminal AI Workspace with UIL Cognitive Architecture"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 keywords = ["ai", "chat", "cli", "tui", "terminal"]
 
 authors = [
-    {name = "widdx", email = "widdx@users.noreply.github.com"},
+    {name = "MUHAMMAD MUSLIH (widdx)", email = "widdx@users.noreply.github.com"},
 ]
 
 classifiers = [
