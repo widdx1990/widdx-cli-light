@@ -14,12 +14,33 @@ from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
 
+# Import Session V2
+from core.session_v2 import SessionV2, create_new_session, load_session as load_v2_session
+
 
 SESSION_DIR = Path.cwd().resolve()
 
 
 def _find_sessions() -> list[dict]:
     sessions = []
+    # First add SQLite sessions
+    try:
+        for sess in SessionV2.list_sessions():
+            created_at = datetime.fromtimestamp(sess["created_at"]) if "created_at" in sess else datetime.now()
+            modified_at = datetime.fromtimestamp(sess["updated_at"]) if "updated_at" in sess else created_at
+            sessions.append({
+                "type": "sqlite",
+                "id": sess["id"],
+                "name": sess["name"],
+                "branch": sess.get("branch", "main"),
+                "size_str": "DB",
+                "modified": modified_at.strftime("%Y-%m-%d %H:%M"),
+                "msg_count": len(SessionV2(sess["id"]).messages),
+            })
+    except Exception as e:
+        logger.debug("Failed to load SQLite sessions: %s", e)
+
+    # Now add legacy JSON sessions
     for pattern in ["chat_*.json", "chat_export_*.md"]:
         for f in sorted(SESSION_DIR.glob(pattern), reverse=True):
             try:
@@ -57,6 +78,7 @@ class SessionListScreen(Screen):
         Binding("r", "refresh", "Refresh", show=False),
         Binding("s", "save_now", "Save Now", show=False),
         Binding("e", "export_md", "Export MD", show=False),
+        Binding("n", "new_session", "New Session", show=False),
     ]
 
     def __init__(self, state: dict | None = None, messages: list | None = None):
@@ -70,6 +92,7 @@ class SessionListScreen(Screen):
         yield Static("  📦  Session Manager", classes="list-title")
         yield Static("", classes="list-status")
         with Horizontal(classes="list-toolbar"):
+            yield Button("  ✨ New Session (N)  ", id="sess-new", variant="success")
             yield Button("  💾 Save Current (S)  ", id="sess-save", variant="primary")
             yield Button("  📂 Load (L)  ", id="sess-load")
             yield Button("  ✏️ Rename (R)  ", id="sess-rename")
@@ -87,33 +110,37 @@ class SessionListScreen(Screen):
         self._load_sessions()
 
     def _load_sessions(self):
-        sidebar = self.query_one("#sess-sidebar", ScrollableContainer)
-        sidebar.remove_children()
-        
-        self._sessions = _find_sessions()
-        self.query_one(".list-status", Static).update(
-            f"  [dim]{len(self._sessions)} session(s) ({sum(1 for s in self._sessions if s.get('is_auto'))} auto)[/]"
-        )
-        
-        preview = self.query_one("#sess-preview", RichLog)
-        preview.clear()
-        
-        if not self._sessions:
-            preview.write(Panel(
-                Text.from_markup("[dim]No saved sessions found.\n\nPress [bold #0891b2]S[/] to save the current session.[/]"),
-                border_style="dim", padding=(2, 4),
-            ))
-            self._selected_idx = -1
-            return
+        try:
+            sidebar = self.query_one("#sess-sidebar", ScrollableContainer)
+            sidebar.remove_children()
             
-        for i, s in enumerate(self._sessions):
-            tag = "🟢 " if s.get("is_auto") else ""
-            btn = Button(f"{tag}{s['name']}\n[dim]{s['size_str']}  |  {s.get('modified', '')}[/]", id=f"sess-item-{i}", classes="sess-btn")
-            sidebar.mount(btn)
+            self._sessions = _find_sessions()
+            self.query_one(".list-status", Static).update(
+                f"  [dim]{len(self._sessions)} session(s) ({sum(1 for s in self._sessions if s.get('is_auto'))} auto)[/]"
+            )
             
-        # Select first session by default
-        self._selected_idx = 0
-        self.call_later(self._preview_session, 0)
+            preview = self.query_one("#sess-preview", RichLog)
+            preview.clear()
+            
+            if not self._sessions:
+                preview.write(Panel(
+                    Text.from_markup("[dim]No saved sessions found.\n\nPress [bold #0891b2]S[/] to save the current session.[/]"),
+                    border_style="dim", padding=(2, 4),
+                ))
+                self._selected_idx = -1
+                return
+                
+            for i, s in enumerate(self._sessions):
+                tag = "🟢 " if s.get("is_auto") else ""
+                btn = Button(f"{tag}{s['name']}\n[dim]{s['size_str']}  |  {s.get('modified', '')}[/]", id=f"sess-item-{i}", classes="sess-btn")
+                sidebar.mount(btn)
+                
+            # Select first session by default
+            self._selected_idx = 0
+            self.call_later(self._preview_session, 0)
+        except Exception as e:
+            logger.exception("Error loading sessions: %s", e)
+            self._show_error(f"Failed to load sessions: {e}")
 
     def _preview_session(self, idx: int) -> None:
         if idx < 0 or idx >= len(self._sessions):
@@ -131,12 +158,32 @@ class SessionListScreen(Screen):
 
         try:
             s = self._sessions[idx]
-            path = Path(s["path"])
             preview.write(f"[bold #6366f1]Previewing: {s['name']}[/]\n")
-            preview.write(f"[dim]Modified: {s.get('modified', '')}  |  Size: {s['size_str']}[/]\n")
+            preview.write(f"[dim]Modified: {s.get('modified', '')}  |  Size: {s.get('size_str', '')}[/]\n")
             preview.write("─" * 60 + "\n")
             
-            if s["type"] == "json":
+            if s["type"] == "sqlite":
+                sess = SessionV2(s["id"])
+                msgs = sess.messages
+                
+                role_colors = {"user": "#6366f1", "assistant": "#10b981", "system": "#f5a623", "tool": "#0ea5e9"}
+                role_icons = {"user": "👤", "assistant": "🤖", "system": "⚙️", "tool": "🛠️"}
+                
+                preview.write(f"[dim]Branch: {s.get('branch', 'main')}[/]\n")
+                preview.write(f"[dim]{len(msgs)} message(s)[/]\n")
+                preview.write("─" * 60 + "\n")
+                
+                for m in msgs:
+                    role = m.get("role", "?")
+                    content = m.get("content", "")
+                    color = role_colors.get(role, "#cbd5e1")
+                    icon = role_icons.get(role, "•")
+                    
+                    preview_text = content[:600] + "\n[dim]… (truncated for preview)[/dim]" if len(content) > 600 else content
+                    preview.write(f"[{color}]{icon} {role.upper()}[/]\n{preview_text}\n")
+                    preview.write("─" * 60 + "\n")
+            elif s["type"] == "json":
+                path = Path(s["path"])
                 data = json.loads(path.read_text(encoding="utf-8"))
                 msgs = data.get("messages", [])
                 
@@ -153,6 +200,7 @@ class SessionListScreen(Screen):
                     preview.write(f"[{color}]{icon} {role.upper()}[/]\n{preview_text}\n")
                     preview.write("─" * 60 + "\n")
             else:
+                path = Path(s["path"])
                 content = path.read_text(encoding="utf-8")
                 preview.write(content[:2000] + "\n[dim]… (truncated for preview)[/dim]" if len(content) > 2000 else content)
         except Exception as e:
@@ -169,6 +217,8 @@ class SessionListScreen(Screen):
 
     def action_go_back(self): self.dismiss()
     def action_refresh(self): self._load_sessions()
+    def action_new_session(self):
+        self.app.push_screen(SessionRenameScreen("New Session"), self._on_new_session_result)
 
     def action_save_now(self):
         if not self._messages:
@@ -203,13 +253,20 @@ class SessionListScreen(Screen):
         s = self._sessions[self._selected_idx]
         if s.get("is_auto"):
             return
-        path = Path(s["path"])
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            msgs = data.get("messages", [])
-            self._state["_messages"] = msgs
-            self._state["turns"] = len(msgs)
-            self.dismiss(("loaded", msgs))
+            if s["type"] == "sqlite":
+                sess = SessionV2(s["id"])
+                msgs = sess.messages
+                self._state["_messages"] = msgs
+                self._state["turns"] = len(msgs)
+                self.dismiss(("loaded", msgs))
+            else:
+                path = Path(s["path"])
+                data = json.loads(path.read_text(encoding="utf-8"))
+                msgs = data.get("messages", [])
+                self._state["_messages"] = msgs
+                self._state["turns"] = len(msgs)
+                self.dismiss(("loaded", msgs))
         except Exception as e:
             self._show_error(f"Load failed: {e}")
 
@@ -219,7 +276,10 @@ class SessionListScreen(Screen):
         s = self._sessions[self._selected_idx]
         if s.get("is_auto"):
             return
-        self.app.push_screen(SessionRenameScreen(s["name"]), self._on_rename_result)
+        if s["type"] == "sqlite":
+            self.app.push_screen(SessionRenameScreen(s["name"]), lambda r: self._on_sqlite_rename_result(r, s["id"]))
+        else:
+            self.app.push_screen(SessionRenameScreen(s["name"]), self._on_rename_result)
 
     def action_delete(self):
         if self._selected_idx < 0 or self._selected_idx >= len(self._sessions):
@@ -227,7 +287,10 @@ class SessionListScreen(Screen):
         s = self._sessions[self._selected_idx]
         if s.get("is_auto"):
             return
-        self.app.push_screen(SessionDeleteScreen(s["name"]), self._on_delete_result)
+        if s["type"] == "sqlite":
+            self.app.push_screen(SessionDeleteScreen(s["name"]), lambda r: self._on_sqlite_delete_result(r, s["id"]))
+        else:
+            self.app.push_screen(SessionDeleteScreen(s["name"]), self._on_delete_result)
 
     def _on_rename_result(self, r):
         if r:
@@ -236,9 +299,35 @@ class SessionListScreen(Screen):
                 (SESSION_DIR / old).rename(SESSION_DIR / new)
                 self._load_sessions()
             except Exception as e: self._show_error(f"Rename failed: {e}")
+    
+    def _on_sqlite_rename_result(self, r, session_id):
+        if r:
+            _, new = r
+            try:
+                sess = SessionV2(session_id)
+                sess.rename(new)
+                self._load_sessions()
+            except Exception as e: self._show_error(f"Rename failed: {e}")
 
     def _on_delete_result(self, r):
         if r: self._load_sessions()
+    
+    def _on_sqlite_delete_result(self, r, session_id):
+        if r:
+            try:
+                SessionV2.delete(session_id)
+                self._load_sessions()
+            except Exception as e: self._show_error(f"Delete failed: {e}")
+    
+    def _on_new_session_result(self, r):
+        if r:
+            _, name = r
+            try:
+                sess = create_new_session(name=name)
+                self._state["_messages"] = []
+                self._state["turns"] = 0
+                self.dismiss(("new", sess))
+            except Exception as e: self._show_error(f"Create failed: {e}")
 
     def _show_error(self, msg):
         self.query_one("#sess-preview", RichLog).write(Panel(
@@ -259,6 +348,7 @@ class SessionListScreen(Screen):
             return
 
         handler = {
+            "sess-new": self.action_new_session,
             "sess-save": self.action_save_now,
             "sess-load": self.action_load,
             "sess-rename": self.action_rename,

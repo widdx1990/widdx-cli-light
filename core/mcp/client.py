@@ -4,7 +4,7 @@ Uses direct subprocess-based JSON-RPC communication over stdio (no asyncio).
 
 Phase 3 enhancements:
   - Dynamic loading: add/remove servers at runtime
-  - Auto-discovery: scan npm/uvx + .claude/mcp.json
+  - Auto-discovery: scan npm/uvx + .widdx/mcp.json
   - OAuth token storage for authenticated servers
   - Auto-reconnect with exponential backoff
 """
@@ -501,7 +501,7 @@ def discover_mcp_servers(force_refresh: bool = False) -> list[dict]:
     Sources:
       1. .widdx/mcp_servers.json (project config)
       2. config.json mcp_servers (global config)
-      3. ~/.claude/mcp_servers.json (Claude Code config)
+      3. ~/.widdx/mcp_servers.json (WIDDX config)
       4. npm global packages matching @modelcontextprotocol/*
       5. uvx available tools (mcp-server-*)
 
@@ -532,14 +532,14 @@ def discover_mcp_servers(force_refresh: bool = False) -> list[dict]:
     except Exception:
         pass
 
-    # 3. Claude Code config
-    for claude_config in [
-        Path(USER_HOME) / ".claude" / "mcp_servers.json",
+    # 3. WIDDX config
+    for widdx_config in [
+        Path(USER_HOME) / ".widdx" / "mcp_servers.json",
         Path(USER_HOME) / ".codex" / "mcp.json",
     ]:
         try:
-            if claude_config.exists():
-                raw = json.loads(claude_config.read_text())
+            if widdx_config.exists():
+                raw = json.loads(widdx_config.read_text())
                 for name, config in raw.items():
                     cmd = config.get("command", "")
                     args = config.get("args", [])
