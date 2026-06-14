@@ -23,3 +23,9 @@ package-lock.json
 # WIDDX local data
 .widdx/
 .qoder/
+
+# Temporary files
+widdx-tui.log
+.coverage
+auto_backup_*.json
+chat_*.json
