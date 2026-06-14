@@ -1295,6 +1295,14 @@ _DEFAULT_BASE_URLS = {
     "opencode": "https://opencode.ai/zen/v1",
 }
 
+_DEFAULT_MODELS = {
+    "opencode-zen": ["deepseek-v4-flash-free", "gemini-3.5-flash", "gpt-4o-mini"],
+    "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
+    "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
+    "ollama": ["llama3.2", "llama3.1", "mistral", "codellama"],
+    "gguf": [],
+}
+
 
 def create_provider(cfg: dict) -> Provider:
     p = cfg.get("provider", {})
@@ -1341,3 +1349,18 @@ def fetch_gguf_models() -> list[str]:
         return [e["model_name"] for e in imports if e.get("model_name")]
     except Exception:
         return []
+
+
+def get_available_models(provider_name: str, base_url: str | None = None, force_refresh: bool = False) -> list[str]:
+    """Get available models for a given provider (fetching dynamically where possible)."""
+    if provider_name in ("opencode-zen", "opencode"):
+        return fetch_free_models(force_refresh=force_refresh)
+    elif provider_name == "ollama":
+        installed = fetch_ollama_models(base_url=base_url, force_refresh=force_refresh)
+        if installed:
+            return [m["name"] for m in installed]
+        return _DEFAULT_MODELS.get(provider_name, [])
+    elif provider_name == "gguf":
+        return fetch_gguf_models()
+    else:  # deepseek, openai: use static default lists
+        return _DEFAULT_MODELS.get(provider_name, [])
