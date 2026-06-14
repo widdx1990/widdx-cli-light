@@ -1,6 +1,6 @@
 """Persistent Memory System for WIDDX.
 
-Inspired by Claude Code's memory architecture.
+Inspired by WIDDX's memory architecture.
 
 Each memory is a markdown file in CWD/.widdx/memory/ with frontmatter:
   ---

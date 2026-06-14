@@ -22,7 +22,7 @@ PROVIDER_LIST = [
         "tab":   "opencode-zen",
         "desc":  "Free tier — no API key needed, rotating models & proxies",
         "default_url": "https://opencode.ai/zen/v1",
-        "default_models": ["deepseek-v4-flash-free", "gemini-3.5-flash", "claude-sonnet-4-6"],
+        "default_models": ["deepseek-v4-flash-free", "gemini-3.5-flash", "gpt-4o-mini"],
         "needs_key": False,
         "badge": "[bold #10b981]FREE[/]",
     },
@@ -298,27 +298,26 @@ class ProviderTab(ScrollableContainer):
     def on_button_pressed(self, event: Button.Pressed):
         bid = event.button.id or ""
         pid = self._pid
+        event.stop()
 
         if bid == f"btn-key-{pid}":
             k = self.query_one(f"#key-{pid}", Input).value.strip()
             if k:
                 set_key(pid, k)
                 self._fill_key_status()
-            event.stop()
             return
 
         if bid == f"btn-forget-{pid}":
             forget_key(pid)
             self._fill_key_status()
-            event.stop()
             return
 
         if bid == f"btn-refresh-{pid}":
             self._fill_models(force_refresh=True)
-            event.stop()
             return
 
     def on_select_changed(self, event: Select.Changed):
+        event.stop()
         if event.select.id == "model-ollama":
             self._update_ollama_caps()
 
@@ -348,15 +347,13 @@ class GGUFTab(ScrollableContainer):
 
     def on_button_pressed(self, event: Button.Pressed):
         bid = event.button.id or ""
+        event.stop()
         if bid == "btn-gguf-import":
             self._do_import()
-            event.stop()
         elif bid == "btn-gguf-scan":
             self._do_scan()
-            event.stop()
         elif bid == "btn-gguf-list":
             self._do_list()
-            event.stop()
 
     def _do_scan(self):
         status = self.query_one("#gguf-status", Static)
@@ -400,8 +397,7 @@ class GGUFTab(ScrollableContainer):
             meta = read_gguf_metadata(path)
             name = suggest_model_name(path, meta)
             status.update(f"[dim]Importing as '{name}'… (may take minutes)[/]")
-            import asyncio
-            asyncio.create_task(self._async_import(path, name, meta, status))
+            self.run_worker(self._async_import(path, name, meta, status))
         except Exception as e:
             status.update(f"[bold #e74c3c]❌ {e}[/]")
 
@@ -459,14 +455,14 @@ class SettingsScreen(Screen):
         self._saved = False
 
     def compose(self):
-        # ── Header ──────────────────────────────────────
-        yield Static(
-            "  ⚙️  [bold]Settings[/]  —  [dim]Configure providers & models[/]",
-            id="settings-header"
-        )
-
-        # ── Active provider selector (compact, above tabs) ──
-        with Horizontal(id="active-prov-row"):
+        # ── Title ──────────────────────────────────────
+        yield Static("  ⚙️  Settings", classes="list-title")
+        
+        # ── Status ──────────────────────────────────────
+        yield Static("", classes="list-status")
+        
+        # ── Active provider selector (toolbar) ──
+        with Horizontal(id="active-prov-row", classes="list-toolbar"):
             yield Static("  Active Provider:", id="active-prov-label")
             yield Select(
                 options=[(pi["label"], pi["id"]) for pi in PROVIDER_LIST],
@@ -481,7 +477,7 @@ class SettingsScreen(Screen):
                 pid = pi["id"]
                 is_active = (pid == self._active_provider)
                 current_model = self._current_model if is_active else ""
-                current_url   = self._current_url   if is_active else ""
+                current_url = self._current_url if is_active else ""
                 with TabPane(pi["label"], id=f"tab-{pid}"):
                     if pid == "gguf":
                         yield GGUFTab()
@@ -489,9 +485,9 @@ class SettingsScreen(Screen):
                         yield ProviderTab(pi, current_model, current_url, is_active)
 
         # ── Footer ──────────────────────────────────────
-        with Horizontal(id="settings-footer"):
+        with Horizontal(id="settings-footer", classes="list-footer"):
             from core.config import get_config_path
-            yield Static(f"  Config: [dim]{get_config_path()}[/]", id="footer-path")
+            yield Static(f"  Config: [dim]{get_config_path()}[/]", id="footer-path", classes="list-footer-text")
             yield Button("  💾 Save & Switch  ", id="btn-save", variant="primary")
             yield Button("  ✕ Cancel  ", id="btn-close")
 
@@ -506,6 +502,7 @@ class SettingsScreen(Screen):
     # ── Events ─────────────────────────────────────────
 
     def on_select_changed(self, event: Select.Changed):
+        event.stop()
         if (event.select.id or "") == "active-provider":
             if event.value and event.value != Select.BLANK:
                 self._active_provider = str(event.value)
@@ -527,6 +524,7 @@ class SettingsScreen(Screen):
 
     def on_button_pressed(self, event: Button.Pressed):
         bid = event.button.id or ""
+        event.stop()
         if bid == "btn-save":
             self._do_save()
         elif bid == "btn-close":

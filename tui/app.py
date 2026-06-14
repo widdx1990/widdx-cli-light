@@ -33,6 +33,7 @@ from textual.containers import Horizontal, ScrollableContainer
 from textual.screen import Screen
 from textual.message import Message
 from textual import work
+from rich.console import Console
 
 from core import config, tools
 from core.providers.providers import create_provider, estimate_turn_cost, fetch_ollama_models
@@ -42,6 +43,8 @@ from core.mcp.client import get_mcp_manager
 from core.memory import MemoryStore
 from core.project import state as project_state
 from core.chat import _valid_tool_call_id, _build_tc_list, _sanitize_tool_call_ids
+from core.workflow import WorkflowEngine
+from core.session_v2 import SessionV2, get_current_session, set_current_session, create_new_session
 
 
 def _find_sessions_count() -> list:
@@ -57,6 +60,26 @@ def _find_sessions_count() -> list:
     return sessions
 
 logger = logging.getLogger("widdx.tui")
+logger.setLevel(logging.DEBUG)
+logger.propagate = False
+
+# Create log format
+log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Avoid adding duplicate handlers
+if not logger.handlers:
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_format)
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
+
+    # File handler
+    log_file = Path(ROOT) / "widdx-tui.log"
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(log_format)
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
 
 _THINK_START = "[thinking]"
 _THINK_END = "[/thinking]"
@@ -99,6 +122,7 @@ class StreamEndMsg(Message):
 
 
 from .screens.ubuntu_grid import UbuntuGrid
+from .widgets import HeaderWidget
 
 
 # ── View panel (Tools, Skills, etc.) ──
@@ -123,6 +147,11 @@ class MainScreen(Screen):
         Binding("escape", "cancel_or_focus", "Cancel/Focus", show=False),
         Binding("ctrl+l", "clear_chat", "Clear", show=False),
         Binding("ctrl+p", "show_help", "Help", show=False),
+        Binding("ctrl+t", "toggle_thinking", "Toggle Thinking Panels", show=False),
+        Binding("ctrl+up", "history_prev", "Previous Command", show=False),
+        Binding("ctrl+down", "history_next", "Next Command", show=False),
+        Binding("alt+up", "msg_prev", "Previous Message", show=False),
+        Binding("alt+down", "msg_next", "Next Message", show=False),
     ]
 
     NAV_BUTTONS = [
@@ -155,11 +184,29 @@ class MainScreen(Screen):
         self._processing = False
         self._cancel_requested = False
         self._current_tools = []
+        self._stream_buffer = ""
+        self._show_thinking = True
+        self._live_response_renderable = None  # Track last live response in RichLog
+        self._command_history = []  # Command history for autocomplete
+        self._history_index = -1  # Current position in history
+        self._message_index = -1  # Current position in message navigation
+        self._important_messages = set()  # Track important message indices
+        self._compact_mode = False  # Compact mode for long messages
+        self._user_patterns = {}  # Track user patterns/preferences
+        self._response_cache = {}  # Cache responses to prevent data loss
+        self._silent_mode = False  # Silent mode (no sounds)
+        self._backup_timer = None  # Periodic backup timer
+        self._show_quick_reply = False  # Toggle quick reply mode
+        # Initialize Session V2
+        self._session = get_current_session()
+        if not self._session:
+            self._session = create_new_session(name="Default Session")
+        # Sync initial messages
+        if not self._state.get("_messages"):
+            self._state["_messages"] = self._session.messages.copy()
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="header"):
-            yield Button("☰", id="btn-grid", classes="header-btn")
-            yield Static(id="header-info")
+        yield HeaderWidget()
         yield Static("[bold #0b0f19]⚡  Thinking and executing tools  —  please wait...[/]", id="processing")
         with Horizontal(id="body"):
             yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True, max_lines=5000)
@@ -169,6 +216,10 @@ class MainScreen(Screen):
             yield Label("❯", id="prompt-label")
             yield Input(placeholder="Type a message…  (/help for commands)", id="input")
             yield Static("", id="char-count")
+            # Quick reply buttons (shown when input is hidden)
+            yield Button("Yes", id="quick-yes", variant="default", classes="quick-reply")
+            yield Button("No", id="quick-no", variant="default", classes="quick-reply")
+            yield Button("Explain more", id="quick-explain", variant="default", classes="quick-reply")
         yield Static(id="status")
         # Toast notification overlay (hidden by default)
         yield Static("", id="toast", classes="toast-hidden")
@@ -180,13 +231,188 @@ class MainScreen(Screen):
         self._update_header()
         self._update_status()
         self._refresh_badges()
+        # Initialize provider in header
+        current_provider = self._state.get("model", "").split("/")[0]
+        header_widget = self.query_one(HeaderWidget)
+        header_widget.initialize_provider(current_provider)
         self.query_one("#input", Input).focus()
+        # Set initial display state for quick reply widgets
+        self._toggle_quick_reply(self._show_quick_reply)
+        # Preload models and resources
+        self._preload_resources()
+        # Start periodic backup timer (every 5 minutes)
+        self._backup_timer = self.set_timer(300, self._periodic_backup)
+    
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle provider/branch change from header or legacy."""
+        logger.info(f"[MainScreen] on_select_changed: {event.select.id} = {event.value}")
+        try:
+            event.stop()
+            sid = event.select.id or ""
+            value = event.value
+            if value is None or value == Select.BLANK:
+                return
+            
+            if sid == "header-provider":
+                logger.info(f"[MainScreen] Switching provider to {value}")
+                self._switch_provider(value)
+            elif sid == "header-branch":
+                logger.info(f"[MainScreen] Switching branch to {value}")
+                self._switch_branch(value)
+        except Exception as e:
+            logger.exception(f"[MainScreen] Error handling select change: {e}")
 
     # ── UI logging helpers ──────────────────────
 
     def _log(self, text: str) -> None:
         if self._chat_log:
             self._chat_log.write(text)
+
+    def _categorize_message(self, role: str, content: str) -> str:
+        """Auto-categorize message based on content."""
+        if role == "tool":
+            return "tool"
+        elif role == "system":
+            return "system"
+        
+        content_lower = content.lower()
+        
+        # Code-related
+        if any(kw in content_lower for kw in ["```", "def ", "class ", "function", "import ", "code", "programming"]):
+            return "code"
+        # Research-related
+        elif any(kw in content_lower for kw in ["research", "search", "find", "look up", "investigate"]):
+            return "research"
+        # Question-related
+        elif any(kw in content_lower for kw in ["?", "how", "what", "why", "explain", "tell me"]):
+            return "question"
+        # File-related
+        elif any(kw in content_lower for kw in ["file", "read", "write", "edit", "create", "delete"]):
+            return "file"
+        # Default
+        else:
+            return "chat"
+
+    def _process_mentions(self, text: str) -> str:
+        """Process @message_number mentions to reference previous messages."""
+        import re
+        msgs = self._state.get("_messages", [])
+        if not msgs:
+            return text
+        
+        # Find all @number patterns
+        mentions = re.findall(r'@(\d+)', text)
+        for mention in mentions:
+            try:
+                idx = int(mention) - 1  # Convert to 0-based index
+                if 0 <= idx < len(msgs):
+                    msg = msgs[idx]
+                    role = msg.get("role", "unknown")
+                    content = msg.get("content", "")[:200]
+                    # Replace @number with actual message reference
+                    text = text.replace(f"@{mention}", f"[Referring to message #{mention}: {role.upper()} - {content}...]")
+            except (ValueError, IndexError):
+                pass
+        return text
+
+    def _auto_correct(self, text: str) -> str:
+        """Auto-correct common command errors."""
+        # Common command typos
+        corrections = {
+            "/clea": "/clear",
+            "/clera": "/clear",
+            "/hepl": "/help",
+            "/hel": "/help",
+            "/sav": "/save",
+            "/exprot": "/export",
+            "/expot": "/export",
+            "/serach": "/search",
+            "/searhc": "/search",
+            "/doctro": "/doctor",
+            "/doctr": "/doctor",
+            "/previe": "/preview",
+            "/previw": "/preview",
+            "/sumary": "/summary",
+            "/sumamry": "/summary",
+            "/compac": "/compact",
+            "/compct": "/compact",
+        }
+        for typo, correction in corrections.items():
+            if text.startswith(typo):
+                self._show_toast(f"✏️ Auto-corrected: {typo} → {correction}", kind="info", duration=2.0)
+                return text.replace(typo, correction, 1)
+        return text
+
+    def _track_patterns(self, text: str) -> None:
+        """Track user patterns and preferences."""
+        # Track command usage
+        if text.startswith("/"):
+            cmd = text.split()[0]
+            self._user_patterns[cmd] = self._user_patterns.get(cmd, 0) + 1
+        # Track time of day patterns
+        from datetime import datetime
+        hour = datetime.now().hour
+        time_key = f"hour_{hour}"
+        self._user_patterns[time_key] = self._user_patterns.get(time_key, 0) + 1
+        # Track message length preference
+        msg_len = len(text)
+        if msg_len < 50:
+            self._user_patterns["short_msgs"] = self._user_patterns.get("short_msgs", 0) + 1
+        elif msg_len > 200:
+            self._user_patterns["long_msgs"] = self._user_patterns.get("long_msgs", 0) + 1
+
+    def _preload_resources(self) -> None:
+        """Preload models and resources for faster startup."""
+        try:
+            # Preload common modules
+            import importlib
+            modules_to_preload = ["rich", "textual", "pathlib"]
+            for module in modules_to_preload:
+                try:
+                    importlib.import_module(module)
+                except ImportError:
+                    pass
+            # Preload configuration
+            try:
+                from core import config
+                config.load()
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug("Preloading skipped: %s", e)
+
+    def _periodic_backup(self) -> None:
+        """Perform periodic backup of the session."""
+        try:
+            import json
+            msgs = self._state.get("_messages", [])
+            if not msgs:
+                # Restart timer if no messages
+                self._backup_timer = self.set_timer(300, self._periodic_backup)
+                return
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"auto_backup_{timestamp}.json"
+            
+            session_data = {
+                "timestamp": timestamp,
+                "model": self._state.get("model", "unknown"),
+                "turns": self._state.get("turns", 0),
+                "messages": msgs
+            }
+            
+            with open(filename, "w", encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+            
+            if not self._silent_mode:
+                self._log_message("system", f"💾 Auto-backup created: {filename}")
+            
+            # Restart timer for next backup
+            self._backup_timer = self.set_timer(300, self._periodic_backup)
+        except Exception as e:
+            logger.debug("Periodic backup failed: %s", e)
+            # Restart timer even on failure
+            self._backup_timer = self.set_timer(300, self._periodic_backup)
 
     def _log_message(self, role: str, content: str) -> None:
         if not self._chat_log:
@@ -200,29 +426,54 @@ class MainScreen(Screen):
         # Fix RTL text
         content = _fix_rtl(content)
 
+        # Auto-categorize message
+        category = self._categorize_message(role, content)
+
+        # Compact mode: trim long messages
+        if self._compact_mode and len(content) > 500:
+            content = content[:500] + "... [truncated in compact mode]"
+
+        # Smart formatting for code blocks
+        if "```" in content and not self._compact_mode:
+            # Preserve code blocks with better formatting
+            content = content.replace("```python", "```").replace("```javascript", "```").replace("```typescript", "```")
+
         if role == "user":
             title = f" 👤 You  [dim]{ts}[/dim] "
             border_style = "#6366f1"
             msg_text = Text(content, style="default")
-            panel = Panel(msg_text, title=title, title_align="left", border_style=border_style, padding=(0, 2))
+            panel = Panel(msg_text, title=title, title_align="left", border_style=border_style, padding=(1, 2))
         elif role == "assistant":
             title = f" 🤖 Assistant  [dim]{ts}[/dim] "
             border_style = "#10b981"
-            md = Markdown(content)
-            panel = Panel(md, title=title, title_align="left", border_style=border_style, padding=(0, 2))
+            md = Markdown(content, code_theme="monokai")
+            panel = Panel(md, title=title, title_align="left", border_style=border_style, padding=(1, 2))
         elif role == "system":
-            title = f" ⚙  [dim]{ts}[/dim] "
+            title = f" ⚙ System  [dim]{ts}[/dim] "
             border_style = "#f5a623"
-            panel = Panel(content, title=title, title_align="left", border_style=border_style, padding=(0, 1))
+            panel = Panel(content, title=title, title_align="left", border_style=border_style, padding=(1, 1))
         elif role == "tool":
-            title = f" 🛠  [dim]{ts}[/dim] "
+            title = f" 🛠 Tool  [dim]{ts}[/dim] "
             border_style = "#0ea5e9"
             preview = content[:600] + "\n[dim]…[/dim]" if len(content) > 600 else content
-            panel = Panel(preview, title=title, title_align="left", border_style=border_style, padding=(0, 1))
+            panel = Panel(preview, title=title, title_align="left", border_style=border_style, padding=(1, 1))
         else:
-            panel = Panel(content, border_style="dim", padding=(0, 1))
+            panel = Panel(content, border_style="dim", padding=(1, 1))
 
         self._chat_log.write(panel)
+        
+        # Sync message to Session V2 (don't save system/tool messages unless needed)
+        if self._session and role in ["user", "assistant"]:
+            try:
+                # Check if message is already in state (avoid duplicates)
+                msgs = self._state.get("_messages", [])
+                if len(msgs) > 0:
+                    last_msg = msgs[-1]
+                    if last_msg.get("role") == role and last_msg.get("content") == content:
+                        return  # already added
+                self._session.add_message(role, content)
+            except Exception as e:
+                logger.debug(f"Failed to sync message to session: {e}")
 
     def _log_welcome_message(self) -> None:
         if not self._chat_log:
@@ -230,7 +481,6 @@ class MainScreen(Screen):
         from rich.panel import Panel
         from rich.align import Align
         from rich.text import Text
-        from rich.rule import Rule
 
         model_short = self._state.get("model", "?").split("/")[-1][:24]
         pname = self._state.get("_provider_name", "") or self._state.get("model", "").split("/")[0]
@@ -374,6 +624,9 @@ class MainScreen(Screen):
 
     def _show_toast(self, msg: str, kind: str = "info", duration: float = 3.0) -> None:
         """Show a short-lived toast notification at the bottom of the screen."""
+        # Skip toast in silent mode (except for errors)
+        if self._silent_mode and kind != "error":
+            return
         try:
             toast = self.query_one("#toast", Static)
             colors = {"info": "#0891b2", "success": "#10b981", "warn": "#f5a623", "error": "#ef4444"}
@@ -410,12 +663,14 @@ class MainScreen(Screen):
 
     def _show_chat(self) -> None:
         self.query_one("#chat-log", RichLog).display = True
+        self.query_one("#stream-output", Static).display = False
         panel = self.query_one("#view-panel", ViewPanel)
         panel.display = False
         panel.set_class(False, "active")
 
     def _show_view(self, title: str) -> None:
         self.query_one("#chat-log", RichLog).display = False
+        self.query_one("#stream-output", Static).display = False
         panel = self.query_one("#view-panel", ViewPanel)
         panel.display = True
         panel.set_class(True, "active")
@@ -426,6 +681,25 @@ class MainScreen(Screen):
 
     async def action_show_help(self) -> None:
         await self._do_action("help")
+
+    def action_toggle_thinking(self) -> None:
+        """Toggle visibility of thinking panels."""
+        self._show_thinking = not self._show_thinking
+        # Show a toast notification
+        try:
+            toast = self.query_one("#toast", Static)
+            status = "shown" if self._show_thinking else "hidden"
+            toast.update(f"[bold]🧠 Thinking panels {status}[/]")
+            toast.remove_class("toast-hidden")
+            toast.add_class("toast-visible")
+            # Hide after 2 seconds
+            async def hide_toast():
+                await self.sleep(2)
+                toast.remove_class("toast-visible")
+                toast.add_class("toast-hidden")
+            self.run_async(hide_toast())
+        except Exception as e:
+            logger.debug("Toast error: %s", e)
 
     # ── Button & Interactive clicks ─────
 
@@ -453,16 +727,37 @@ class MainScreen(Screen):
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
+        logger.info(f"[MainScreen] on_button_pressed, button id: {bid}")
         if not bid:
+            return
+        
+        # Handle quick reply buttons first
+        if bid == "quick-yes":
+            self._chat("Yes")
+            self._toggle_quick_reply(False)
+            return
+        elif bid == "quick-no":
+            self._chat("No")
+            self._toggle_quick_reply(False)
+            return
+        elif bid == "quick-explain":
+            self._chat("Please explain this in more detail")
+            self._toggle_quick_reply(False)
             return
         
         # ── Grid button → open Ubuntu-style launcher ───────
         if bid == "btn-grid":
-            self.app.push_screen(UbuntuGrid(
-                nav_buttons=self.NAV_BUTTONS,
-                act_buttons=self.ACT_BUTTONS,
-                help_buttons=self.HELP_BUTTONS,
-            ), self._on_grid_result)
+            logger.info("[MainScreen] Pushing UbuntuGrid screen...")
+            event.stop()
+            try:
+                self.app.push_screen(UbuntuGrid(
+                    nav_buttons=self.NAV_BUTTONS,
+                    act_buttons=self.ACT_BUTTONS,
+                    help_buttons=self.HELP_BUTTONS,
+                ), self._on_grid_result)
+                logger.info("[MainScreen] UbuntuGrid screen pushed successfully")
+            except Exception as e:
+                logger.exception(f"[MainScreen] Error pushing UbuntuGrid screen: {e}")
             return
         
         # ── Navigation buttons (chat, tools, skills, ...) ──
@@ -480,21 +775,30 @@ class MainScreen(Screen):
 
     def _on_grid_result(self, result: str | None) -> None:
         """Handle result from UbuntuGrid launcher."""
-        if not result:
-            return
-        if result.startswith("provider:"):
-            # Switch provider
-            new_provider = result[9:]
-            self._switch_provider(new_provider)
-        elif result.startswith("branch:"):
-            # Switch branch
-            new_branch = result[7:]
-            self._switch_branch(new_branch)
-        elif result == "clear":
-            self._do_action("clear")
-        else:
-            # It's a nav action (chat, tools, skills, etc.)
-            self.run_worker(self._do_action(result))
+        logger.info(f"[UbuntuGrid Result]: Received result: {result}")
+        try:
+            if not result:
+                logger.info("[UbuntuGrid Result]: No result, returning")
+                return
+            if result.startswith("provider:"):
+                # Switch provider
+                new_provider = result[9:]
+                logger.info(f"[UbuntuGrid Result]: Switching provider to {new_provider}")
+                self._switch_provider(new_provider)
+            elif result.startswith("branch:"):
+                # Switch branch
+                new_branch = result[7:]
+                logger.info(f"[UbuntuGrid Result]: Switching branch to {new_branch}")
+                self._switch_branch(new_branch)
+            elif result == "clear":
+                logger.info("[UbuntuGrid Result]: Calling clear action")
+                self.run_worker(self._do_action("clear"))
+            else:
+                # It's a nav action (chat, tools, skills, etc.)
+                logger.info(f"[UbuntuGrid Result]: Calling action {result}")
+                self.run_worker(self._do_action(result))
+        except Exception as e:
+            logger.exception(f"[UbuntuGrid Result]: Error processing result: {e}")
 
     async def _on_sk_btn(self, bid: str) -> None:
         self._do_skill(bid[3:])
@@ -542,12 +846,20 @@ class MainScreen(Screen):
                 tl.extend(get_mcp_manager().get_all_tool_definitions())
             except Exception:
                 pass
+            # Add workflow tools if provider is available
+            if self._provider:
+                try:
+                    wf = WorkflowEngine(self._provider, tl, config.load(), self._state)
+                    tl.extend(wf.get_tool_definitions())
+                except Exception:
+                    pass
             self._current_tools = tl
             for i, td in enumerate(tl):
                 name = td["name"]
                 desc = (td.get("description", "") or "")[:75]
                 mcp_tag = "  [MCP]" if name.startswith("mcp__") else ""
-                vlist.mount(Button(f"  🛠️  {name}{mcp_tag}  —  {desc}", id=f"tool-{i}"))
+                wf_tag = "  [WORKFLOW]" if name in ("create_agent", "run_parallel") else ""
+                vlist.mount(Button(f"  🛠️  {name}{mcp_tag}{wf_tag}  —  {desc}", id=f"tool-{i}"))
         elif action == "skills":
             self._show_view("Skills")
             vlist = self.query_one("#view-list", ScrollableContainer)
@@ -698,22 +1010,27 @@ class MainScreen(Screen):
 
     def _on_session_result(self, result: tuple | None) -> None:
         """Handle session load result from SessionListScreen."""
-        if result and result[0] == "loaded":
-            _, msgs = result
-            self._state["_messages"] = msgs
-            self._log_message("system", f"✓ Session loaded ({len(msgs)} messages)")
-            self._print_history()
-            self._update_header()
+        if result:
+            if result[0] == "loaded":
+                _, msgs = result
+                self._state["_messages"] = msgs
+                self._log_message("system", f"✓ Session loaded ({len(msgs)} messages)")
+                self._print_history()
+                self._update_header()
+            elif result[0] == "new":
+                _, sess = result
+                self._session = sess
+                set_current_session(sess)
+                self._state["_messages"] = []
+                self._chat_log.clear()
+                self._log_welcome_message()
+                self._update_header()
         self._refresh_badges()
 
     def _on_help_result(self, cmd: str | None) -> None:
         """Handle quick action command from HelpScreen."""
         if cmd:
             self.run_worker(self._cmd(cmd))
-
-    def on_select_changed(self, event: Select.Changed) -> None:
-        """Legacy — no longer used after UbuntuGrid migration."""
-        pass
                 
     def _switch_branch(self, new_branch: str) -> None:
         """Switch to a different session branch."""
@@ -736,6 +1053,11 @@ class MainScreen(Screen):
                 self._chat_log.clear()
                 self._print_history()
                 self._update_header()
+                
+                # Update branch selector in header
+                header_widget = self.query_one(HeaderWidget)
+                header_widget.update_branch(new_branch)
+                
                 self._show_toast(f"Switched to branch '{new_branch}'!", kind="success")
             else:
                 self._show_toast("Failed to switch branch!", kind="error")
@@ -758,6 +1080,11 @@ class MainScreen(Screen):
             self._state["model"] = f"{pname}/{model}"
             self._state["_provider_name"] = pname
             self._update_header()
+            
+            # Update provider selector in header
+            header_widget = self.query_one(HeaderWidget)
+            header_widget.update_provider(pname)
+            
             self._show_toast(f"Switched to {pname} / {model}", kind="success")
             if pname in ("opencode-zen", "opencode"):
                 proxy_manager.force_refresh()
@@ -772,6 +1099,18 @@ class MainScreen(Screen):
         text = event.value.strip()
         if not text:
             return
+        # Auto-correct common errors
+        text = self._auto_correct(text)
+        # Process mentions (@message_number)
+        text = self._process_mentions(text)
+        # Track user patterns
+        self._track_patterns(text)
+        # Add to command history
+        if text and (not self._command_history or text != self._command_history[-1]):
+            self._command_history.append(text)
+            if len(self._command_history) > 100:  # Keep last 100 commands
+                self._command_history.pop(0)
+        self._history_index = -1  # Reset history index
         self.query_one("#input", Input).value = ""
         if text.startswith("/"):
             await self._cmd(text)
@@ -779,6 +1118,29 @@ class MainScreen(Screen):
             self._do_skill(text[1:])
         else:
             self._chat(text)
+
+
+
+    def _toggle_quick_reply(self, show: bool) -> None:
+        """Toggle quick reply mode."""
+        self._show_quick_reply = show
+        try:
+            input_field = self.query_one("#input", Input)
+            char_count = self.query_one("#char-count", Static)
+            quick_yes = self.query_one("#quick-yes", Button)
+            quick_no = self.query_one("#quick-no", Button)
+            quick_explain = self.query_one("#quick-explain", Button)
+            
+            input_field.display = not show
+            char_count.display = not show
+            quick_yes.display = show
+            quick_no.display = show
+            quick_explain.display = show
+            
+            if not show:
+                input_field.focus()
+        except Exception as e:
+            logger.debug("Toggle quick reply failed: %s", e)
 
     async def _cmd(self, text: str) -> None:
         parts = text.split(None, 1)
@@ -805,6 +1167,258 @@ class MainScreen(Screen):
             await self._do_action("memories")
         elif cmd == "/settings":
             await self._do_action("settings")
+        elif cmd == "/search" and len(parts) > 1:
+            query = parts[1].strip().lower()
+            msgs = self._state.get("_messages", [])
+            results = []
+            for i, msg in enumerate(msgs):
+                content = msg.get("content", "").lower()
+                if query in content:
+                    role = msg.get("role", "unknown")
+                    results.append(f"[{i+1}] {role.upper()}: {content[:100]}...")
+            if results:
+                self._log_message("system", f"🔍 Found {len(results)} matches for '{query}':")
+                for r in results[:10]:  # Show first 10 results
+                    self._log_message("system", r)
+                if len(results) > 10:
+                    self._log_message("system", f"... and {len(results) - 10} more")
+            else:
+                self._log_message("system", f"🔍 No matches found for '{query}'")
+        elif cmd == "/reply" and len(parts) > 1:
+            try:
+                msg_num = int(parts[1].strip())
+                msgs = self._state.get("_messages", [])
+                if 1 <= msg_num <= len(msgs):
+                    msg = msgs[msg_num - 1]
+                    role = msg.get("role", "unknown")
+                    content = msg.get("content", "")
+                    self._log_message("system", f"📝 Replying to message #{msg_num} ({role.upper()})")
+                    # Add context to next message
+                    self._state["_reply_context"] = f"[Replying to: {content[:200]}...]"
+                    self._show_toast(f"Replying to message #{msg_num}", kind="info", duration=2.0)
+                else:
+                    self._log_message("system", f"❌ Invalid message number: {msg_num}")
+            except ValueError:
+                self._log_message("system", "❌ Usage: /reply <message_number>")
+        elif cmd == "/mark" and len(parts) > 1:
+            try:
+                msg_num = int(parts[1].strip())
+                msgs = self._state.get("_messages", [])
+                if 1 <= msg_num <= len(msgs):
+                    if msg_num in self._important_messages:
+                        self._important_messages.remove(msg_num)
+                        self._log_message("system", f"⭐ Unmarked message #{msg_num}")
+                    else:
+                        self._important_messages.add(msg_num)
+                        self._log_message("system", f"⭐ Marked message #{msg_num} as important")
+                    self._show_toast(f"Message #{msg_num} marked", kind="info", duration=2.0)
+                else:
+                    self._log_message("system", f"❌ Invalid message number: {msg_num}")
+            except ValueError:
+                self._log_message("system", "❌ Usage: /mark <message_number>")
+        elif cmd == "/compact":
+            self._compact_mode = not self._compact_mode
+            status = "enabled" if self._compact_mode else "disabled"
+            self._log_message("system", f"📐 Compact mode {status}")
+            self._show_toast(f"Compact mode {status}", kind="info", duration=2.0)
+        elif cmd == "/silent":
+            self._silent_mode = not self._silent_mode
+            status = "enabled" if self._silent_mode else "disabled"
+            self._log_message("system", f"🔇 Silent mode {status}")
+            if not self._silent_mode:
+                self._show_toast(f"Silent mode {status}", kind="info", duration=2.0)
+        elif cmd == "/quickreply" or cmd == "/qr":
+            self._toggle_quick_reply(not self._show_quick_reply)
+            status = "enabled" if self._show_quick_reply else "disabled"
+            self._log_message("system", f"⚡ Quick reply mode {status}")
+            if not self._silent_mode:
+                self._show_toast(f"Quick reply {status}", kind="info", duration=2.0)
+        elif cmd == "/context":
+            try:
+                project_ctx = get_project_context()
+                ctx_summary = project_ctx.get_context_summary()
+                self._log_message("system", "📋 Project Context:")
+                self._log_message("system", ctx_summary)
+                self._show_toast("Project context loaded", kind="success", duration=2.0)
+            except Exception as e:
+                self._log_message("system", f"❌ Failed to load project context: {e}")
+        elif cmd == "/structure":
+            try:
+                analyzer = get_structure_analyzer()
+                structure_summary = analyzer.get_structure_summary()
+                self._log_message("system", "📁 Project Structure:")
+                self._log_message("system", structure_summary)
+                self._show_toast("Project structure loaded", kind="success", duration=2.0)
+            except Exception as e:
+                self._log_message("system", f"❌ Failed to load project structure: {e}")
+        elif cmd == "/git":
+            try:
+                project_ctx = get_project_context()
+                git = project_ctx.context.git
+                if git.is_git_repo:
+                    self._log_message("system", "📊 Git Info:")
+                    self._log_message("system", f"  Branch: {git.current_branch}")
+                    if git.remote_url:
+                        self._log_message("system", f"  Remote: {git.remote_url}")
+                    if git.last_commit:
+                        self._log_message("system", f"  Last Commit: {git.last_commit[:12]}")
+                        self._log_message("system", f"  Date: {git.last_commit_date}")
+                else:
+                    self._log_message("system", "📊 Not a git repository")
+                self._show_toast("Git info loaded", kind="success", duration=2.0)
+            except Exception as e:
+                self._log_message("system", f"❌ Failed to load git info: {e}")
+        elif cmd == "/preview" and len(parts) > 1:
+            filepath = parts[1].strip()
+            try:
+                from pathlib import Path
+                path = Path(filepath)
+                if path.exists() and path.is_file():
+                    content = path.read_text(encoding='utf-8', errors='ignore')
+                    preview = content[:1000] + "\n... [truncated]" if len(content) > 1000 else content
+                    self._log_message("system", f"📄 Preview of {filepath}:")
+                    self._log_message("tool", preview)
+                else:
+                    self._log_message("system", f"❌ File not found: {filepath}")
+            except Exception as e:
+                self._log_message("system", f"❌ Error previewing file: {e}")
+        elif cmd == "/summary":
+            try:
+                from core.project import project_state
+                msgs = self._state.get("_messages", [])
+                old_len = len(msgs)
+                if old_len < 5:
+                    self._log_message("system", "ℹ️ Conversation too short to summarize")
+                    return
+                msgs = project_state.summarize_conversation(msgs, keep_last=10)
+                if len(msgs) < old_len:
+                    self._state["_messages"] = msgs
+                    self._log_message("system", f"📝 Conversation summarized ({old_len} → {len(msgs)} messages)")
+                    self._show_toast("Conversation summarized", kind="success", duration=2.0)
+                else:
+                    self._log_message("system", "ℹ️ No summarization needed")
+            except Exception as e:
+                self._log_message("system", f"❌ Summarization failed: {e}")
+        elif cmd == "/export" and len(parts) > 1:
+            format_type = parts[1].strip().lower()
+            if format_type in ("html", "pdf", "markdown"):
+                try:
+                    msgs = self._state.get("_messages", [])
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"conversation_{timestamp}.{format_type}"
+                    
+                    if format_type == "markdown":
+                        content = "# Conversation Export\n\n"
+                        for i, msg in enumerate(msgs):
+                            role = msg.get("role", "unknown")
+                            content_text = msg.get("content", "")
+                            content += f"## {role.upper()} (Message {i+1})\n\n{content_text}\n\n"
+                        with open(filename, "w", encoding='utf-8') as f:
+                            f.write(content)
+                        self._log_message("system", f"📤 Exported conversation to {filename}")
+                    elif format_type == "html":
+                        content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Conversation Export</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }}
+        .user {{ background: #e3f2fd; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+        .assistant {{ background: #e8f5e9; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+        .system {{ background: #fff3e0; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+    </style>
+</head>
+<body>
+    <h1>Conversation Export</h1>
+"""
+                        for i, msg in enumerate(msgs):
+                            role = msg.get("role", "unknown")
+                            content_text = msg.get("content", "").replace("\n", "<br>")
+                            content += f"<div class=\"{role}\"><strong>{role.upper()} (Message {i+1}):</strong><br>{content_text}</div>"
+                        content += "</body></html>"
+                        with open(filename, "w", encoding='utf-8') as f:
+                            f.write(content)
+                        self._log_message("system", f"📤 Exported conversation to {filename}")
+                    elif format_type == "pdf":
+                        self._log_message("system", "⚠️ PDF export requires additional dependencies. Exporting as HTML instead.")
+                        # Fallback to HTML
+                        content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Conversation Export</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }}
+        .user {{ background: #e3f2fd; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+        .assistant {{ background: #e8f5e9; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+        .system {{ background: #fff3e0; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+    </style>
+</head>
+<body>
+    <h1>Conversation Export</h1>
+"""
+                        for i, msg in enumerate(msgs):
+                            role = msg.get("role", "unknown")
+                            content_text = msg.get("content", "").replace("\n", "<br>")
+                            content += f"<div class=\"{role}\"><strong>{role.upper()} (Message {i+1}):</strong><br>{content_text}</div>"
+                        content += "</body></html>"
+                        filename = f"conversation_{timestamp}.html"
+                        with open(filename, "w", encoding='utf-8') as f:
+                            f.write(content)
+                        self._log_message("system", f"📤 Exported conversation to {filename}")
+                    self._show_toast(f"Exported to {filename}", kind="success", duration=2.0)
+                except Exception as e:
+                    self._log_message("system", f"❌ Export failed: {e}")
+            else:
+                self._log_message("system", "❌ Usage: /export <html|pdf|markdown>")
+        elif cmd == "/share":
+            try:
+                import json
+                msgs = self._state.get("_messages", [])
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"session_share_{timestamp}.json"
+                
+                session_data = {
+                    "timestamp": timestamp,
+                    "model": self._state.get("model", "unknown"),
+                    "turns": self._state.get("turns", 0),
+                    "messages": msgs
+                }
+                
+                with open(filename, "w", encoding='utf-8') as f:
+                    json.dump(session_data, f, indent=2, ensure_ascii=False)
+                
+                self._log_message("system", f"🔗 Session saved to {filename}")
+                self._log_message("system", "💡 Share this file with others to restore the session")
+                self._show_toast(f"Session saved to {filename}", kind="success", duration=2.0)
+            except Exception as e:
+                self._log_message("system", f"❌ Share failed: {e}")
+        elif cmd == "/restore" and len(parts) > 1:
+            try:
+                import json
+                from pathlib import Path
+                filepath = parts[1].strip()
+                
+                if not Path(filepath).exists():
+                    self._log_message("system", f"❌ Backup file not found: {filepath}")
+                    return
+                
+                with open(filepath, "r", encoding='utf-8') as f:
+                    session_data = json.load(f)
+                
+                # Restore session data
+                self._state["_messages"] = session_data.get("messages", [])
+                self._state["turns"] = session_data.get("turns", 0)
+                self._state["model"] = session_data.get("model", "unknown")
+                
+                # Clear chat log and reprint
+                self._chat_log.clear()
+                self._print_history()
+                
+                self._log_message("system", f"✅ Session restored from {filepath}")
+                self._log_message("system", f"📊 Restored {len(session_data.get('messages', []))} messages")
+                self._show_toast("Session restored successfully", kind="success", duration=2.0)
+            except Exception as e:
+                self._log_message("system", f"❌ Restore failed: {e}")
         elif cmd == "/provider" and len(parts) > 1:
             prov_name = parts[1].strip().lower()
             from .screens.settings import PROVIDER_LIST
@@ -940,7 +1554,7 @@ class MainScreen(Screen):
             cfg = config.load()
             pv = self._provider or create_provider(cfg)
             td = list(self._tool_defs or tools.TOOL_DEFINITIONS)
-            # Add use_skill + skill tools + MCP
+            # Add use_skill + skill tools + MCP + Workflow
             use_skill_def = skill_manager.get_use_skill_tool_def()
             if use_skill_def:
                 td.append(use_skill_def)
@@ -949,6 +1563,12 @@ class MainScreen(Screen):
                 td.extend(skill_tools)
             try:
                 td.extend(get_mcp_manager().get_all_tool_definitions())
+            except Exception:
+                pass
+            # Add workflow tools
+            try:
+                wf = WorkflowEngine(pv, td, cfg, self._state)
+                td.extend(wf.get_tool_definitions())
             except Exception:
                 pass
             self._run_agent(pv, td, task, cfg)
@@ -1003,6 +1623,47 @@ class MainScreen(Screen):
             ui_mod.print_reasoning  = _orig_re
             ui_mod.print_ai_msg     = _orig_ai
 
+    @work(thread=True)
+    def _run_expert_team(self, pv, td, task, cfg_d):
+        """Run ExpertTeam in background thread with live TUI feedback."""
+        # ── Redirect ExpertTeam output to TUI chat log ────────────
+        import core.ui.ui as ui_mod
+        _orig_sys = ui_mod.print_system_msg
+        _orig_console = ui_mod.console
+
+        def _tui_sys(msg): self.post_message(ResultMsg(f"⚙️ {msg}"))
+        def _tui_phase(num, name, action):
+            self._log_message("system", f"👥 [{num}] {name} — {action}...")
+        def _tui_phase_done(action, message):
+            self._log_message("system", f"✓ {action}: {message}")
+        def _tui_summary():
+            self._log_message("system", "👥 Expert Team completed")
+
+        try:
+            ui_mod.print_system_msg = _tui_sys
+            ui_mod.console = type('obj', (object,), {'print': lambda *args, **kwargs: None})()
+
+            from core.agents.expert import ExpertTeam
+            cfg_d["_cancel_flag"] = lambda: self._cancel_requested
+            team = ExpertTeam(pv, td, cfg_d, self._state)
+
+            # Override print methods to use TUI
+            team._print_phase = _tui_phase
+            team._print_phase_done = _tui_phase_done
+            team._print_team_summary = _tui_summary
+
+            self._log_message("system", "👥 Expert Team activated - running specialized agents...")
+            result = team.run(task)
+            self._state.setdefault("turns", 0)
+            self._state["turns"] += len(team._log)
+            self.post_message(ResultMsg(result))
+        except Exception as e:
+            logger.warning("ExpertTeam execution error: %s", e)
+            self.post_message(ErrorMsg(str(e)))
+        finally:
+            ui_mod.print_system_msg = _orig_sys
+            ui_mod.console = _orig_console
+
     # ── Chat execution ──────────────────
 
     def _chat(self, text: str) -> None:
@@ -1036,6 +1697,12 @@ class MainScreen(Screen):
                 td.extend(skill_tools)
             try:
                 td.extend(get_mcp_manager().get_all_tool_definitions())
+            except Exception:
+                pass
+            # Add workflow tools
+            try:
+                wf = WorkflowEngine(pv, td, cfg, self._state)
+                td.extend(wf.get_tool_definitions())
             except Exception:
                 pass
 
@@ -1081,7 +1748,10 @@ class MainScreen(Screen):
                 pass
 
             # Route: complex tasks → agent, simple → single-loop chat
-            if mode and mode in (ExecutionMode.AUTONOMOUS, ExecutionMode.EXPERT_TEAM):
+            if mode and mode == ExecutionMode.EXPERT_TEAM:
+                self._log_message("system", f"🧠 UIL routed to {mode.value} agent")
+                self._run_expert_team(pv, td, text, cfg)
+            elif mode and mode == ExecutionMode.AUTONOMOUS:
                 self._log_message("system", f"🧠 UIL routed to {mode.value} agent")
                 self._run_agent(pv, td, text, cfg)
             else:
@@ -1246,18 +1916,31 @@ class MainScreen(Screen):
         self._show_chat()
         raw = msg.text
         display, reasoning = self._parse_thinking(raw)
-        if reasoning and self._chat_log:
+        # Cache response to prevent data loss
+        self._response_cache[f"response_{self._state.get('turns', 0)}"] = raw
+        if reasoning and self._chat_log and self._show_thinking:
             from rich.panel import Panel
             from rich.text import Text
+            from rich.console import Group
             reasoning = _fix_rtl(reasoning)
-            reasoning_summary = reasoning[:300] + "..." if len(reasoning) > 300 else reasoning
-            title = f" 🧠 Thinking Process ({reasoning.count('\n')+1} lines) "
+            # Enhanced thinking display with structure
+            lines = reasoning.split('\n')
+            structured_lines = []
+            for line in lines:
+                if line.strip().startswith('-') or line.strip().startswith('*'):
+                    structured_lines.append(f"  • {line.strip()[1:].strip()}")
+                elif line.strip().isdigit():
+                    structured_lines.append(f"  {line.strip()}.")
+                else:
+                    structured_lines.append(line.strip())
+            structured_reasoning = '\n'.join([l for l in structured_lines if l])
+            title = f" 🧠 Thinking Process ({len([l for l in lines if l.strip()])} steps) "
             reasoning_panel = Panel(
-                Text(reasoning_summary, style="italic #c084fc"),
+                Text(structured_reasoning, style="italic #c084fc"),
                 title=title,
                 title_align="left",
                 border_style="#8b5cf6",
-                padding=(0, 2),
+                padding=(1, 2),
             )
             self._chat_log.write(reasoning_panel)
         if msg.msgs:
@@ -1283,6 +1966,9 @@ class MainScreen(Screen):
             icon = tool_icons.get(msg.tool, "🛠")
             if msg.status == "pending":
                 bar.update(f"[bold #0b0f19]{icon}  Calling: [bold]{msg.tool}[/]  —  {msg.detail[:50]}[/]")
+                # Progress notification for long-running tools
+                if msg.tool in ("bash", "web_fetch"):
+                    self._show_toast(f"⏳ {msg.tool} running...", kind="info", duration=2.0)
             else:
                 bar.update(f"[bold #0b0f19]{icon}  Done: [bold]{msg.tool}[/]  ✓  please wait…[/]")
         except Exception:
@@ -1292,55 +1978,133 @@ class MainScreen(Screen):
             self._log_message("tool", f"🛠 {msg.tool}\n{msg.detail[:300]}")
 
     def on_stream_chunk_msg(self, msg: StreamChunkMsg) -> None:
-        """Live chunk from AI stream — update in-place Static widget."""
+        """Live chunk from AI stream — update last line in same chat area."""
         try:
-            stream_out = self.query_one("#stream-output", Static)
-            if not stream_out.display:
-                stream_out.display = True
-            current = str(stream_out.renderable or "")
-            # Bug#3 fix: cap accumulated text to prevent memory bloat
-            if len(current) > 10_000:
-                current = current[-8_000:]
-            stream_out.update(current + _fix_rtl(msg.chunk))
-            # Bug#2 fix: Static.scroll_visible() doesn't exist — scroll chat-log instead
-            try:
-                self.query_one("#chat-log", RichLog).scroll_end(animate=False)
-            except Exception:
-                pass
-        except Exception as e:
-            logger.debug("UI update skipped: %s", e)  # widget not available yet
-
-    def on_stream_end_msg(self, msg: StreamEndMsg) -> None:
-        """Stream completed — hide live widget, show formatted panel."""
-        try:
-            stream_out = self.query_one("#stream-output", Static)
-            stream_out.update("")
-            stream_out.display = False
-        except Exception as e:
-            logger.debug("UI update skipped: %s", e)
-        raw = msg.content
-        display, reasoning = self._parse_thinking(raw)
-        if reasoning and self._chat_log:
             from rich.panel import Panel
             from rich.text import Text
+            from rich.markdown import Markdown
+
+            chat_log = self.query_one("#chat-log", RichLog)
+            self._stream_buffer += _fix_rtl(msg.chunk)
+
+            # Cap buffer size
+            if len(self._stream_buffer) > 10_000:
+                self._stream_buffer = self._stream_buffer[-8_000:]
+
+            # Parse thinking and response
+            display_text, thinking_text = self._parse_thinking(self._stream_buffer)
+
+            # Build the live renderable (combined into a single Group)
+            from rich.console import Group
+            group_items = []
+            if thinking_text and self._show_thinking:
+                thinking_panel = Panel(
+                    Text(thinking_text, style="italic #c084fc"),
+                    title=" 🧠 Thinking Process ",
+                    title_align="left",
+                    border_style="#8b5cf6",
+                    padding=(1, 2),
+                )
+                group_items.append(thinking_panel)
+            if display_text:
+                response_panel = Panel(
+                    Markdown(display_text),
+                    title=" 🤖 Assistant ",
+                    title_align="left",
+                    border_style="#10b981",
+                    padding=(1, 2),
+                )
+                group_items.append(response_panel)
+            elif not thinking_text and self._stream_buffer:
+                # No thinking yet, just show raw buffer
+                response_panel = Panel(
+                    Text(self._stream_buffer, style="default"),
+                    title=" 🤖 Assistant ",
+                    title_align="left",
+                    border_style="#10b981",
+                    padding=(1, 2),
+                )
+                group_items.append(response_panel)
+
+            if group_items:
+                combined = Group(*group_items)
+                # Always try to remove old live renderable if it exists
+                if self._live_response_renderable is not None:
+                    try:
+                        # Try to remove by identity
+                        if self._live_response_renderable in chat_log.lines:
+                            chat_log.lines.remove(self._live_response_renderable)
+                        else:
+                            # If not found by identity, try to remove last panel to be safe
+                            if chat_log.lines and len(chat_log.lines) > 0:
+                                last_line = chat_log.lines[-1]
+                                # Check if it looks like a response panel (Group or Panel)
+                                if isinstance(last_line, (Panel, Group)):
+                                    chat_log.lines.pop()
+                    except Exception:
+                        pass
+                # Write the new combined renderable
+                chat_log.write(combined)
+                self._live_response_renderable = combined
+
+                # Scroll to end
+                try:
+                    chat_log.scroll_end(animate=False)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug("UI update skipped: %s", e)
+
+    def on_stream_end_msg(self, msg: StreamEndMsg) -> None:
+        """Stream completed — finalize live response: remove live renderable and write final one with _log_message."""
+        try:
+            chat_log = self.query_one("#chat-log", RichLog)
+            self._stream_buffer = ""
+            # Remove the live renderable if it's still in the chat log
+            if self._live_response_renderable is not None:
+                try:
+                    if self._live_response_renderable in chat_log.lines:
+                        chat_log.lines.remove(self._live_response_renderable)
+                except Exception:
+                    pass
+            self._live_response_renderable = None
+        except Exception as e:
+            logger.debug("UI update skipped: %s", e)
+
+        # Now write the final assistant response properly using _log_message
+        display, reasoning = self._parse_thinking(msg.content)
+        if reasoning and self._chat_log and self._show_thinking:
+            from rich.panel import Panel
+            from rich.text import Text
+            from rich.console import Group
             reasoning = _fix_rtl(reasoning)
-            reasoning_summary = reasoning[:300] + "..." if len(reasoning) > 300 else reasoning
-            title = f" 🧠 Thinking Process ({reasoning.count('\n')+1} lines) "
+            lines = reasoning.split('\n')
+            structured_lines = []
+            for line in lines:
+                if line.strip().startswith('-') or line.strip().startswith('*'):
+                    structured_lines.append(f"  • {line.strip()[1:].strip()}")
+                elif line.strip().isdigit():
+                    structured_lines.append(f"  {line.strip()}.")
+                else:
+                    structured_lines.append(line.strip())
+            structured_reasoning = '\n'.join([l for l in structured_lines if l])
+            title = f" 🧠 Thinking Process ({len([l for l in lines if l.strip()])} steps) "
             reasoning_panel = Panel(
-                Text(reasoning_summary, style="italic #c084fc"),
+                Text(structured_reasoning, style="italic #c084fc"),
                 title=title,
                 title_align="left",
                 border_style="#8b5cf6",
-                padding=(0, 2),
+                padding=(1, 2),
             )
             self._chat_log.write(reasoning_panel)
+        self._log_message("assistant", display)
+
         # Bug#4 fix: strip internal _tool_desc messages before saving to state
         # Bug#5 fix: _tool_desc added by OllamaProvider text-mode must not persist
         clean_msgs = [m for m in msg.msgs if not m.get("_tool_desc")]
-        clean_msgs.append({"role": "assistant", "content": raw})
+        clean_msgs.append({"role": "assistant", "content": msg.content})
         self._state["_messages"] = clean_msgs
         self._state["turns"] = self._state.get("turns", 0) + 1
-        self._log_message("assistant", display)
         self._finish()
 
     def on_error_msg(self, msg: ErrorMsg) -> None:
@@ -1354,6 +2118,54 @@ class MainScreen(Screen):
             self._log_message("system", "🛑 Cancel requested — finishing current step...")
         else:
             self.query_one("#input", Input).focus()
+
+    def action_history_prev(self) -> None:
+        """Navigate to previous command in history (Ctrl+Up)."""
+        if not self._command_history:
+            return
+        if self._history_index < len(self._command_history) - 1:
+            self._history_index += 1
+            cmd = self._command_history[-(self._history_index + 1)]
+            self.query_one("#input", Input).value = cmd
+
+    def action_history_next(self) -> None:
+        """Navigate to next command in history (Ctrl+Down)."""
+        if not self._command_history:
+            return
+        if self._history_index > 0:
+            self._history_index -= 1
+            cmd = self._command_history[-(self._history_index + 1)]
+            self.query_one("#input", Input).value = cmd
+        elif self._history_index == 0:
+            self._history_index = -1
+            self.query_one("#input", Input).value = ""
+
+    def action_msg_prev(self) -> None:
+        """Navigate to previous message in chat log (Alt+Up)."""
+        msgs = self._state.get("_messages", [])
+        if not msgs:
+            return
+        if self._message_index < len(msgs) - 1:
+            self._message_index += 1
+            msg = msgs[-(self._message_index + 1)]
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")[:200]
+            self._show_toast(f"📜 [{role.upper()}] {content}...", kind="info", duration=2.0)
+
+    def action_msg_next(self) -> None:
+        """Navigate to next message in chat log (Alt+Down)."""
+        msgs = self._state.get("_messages", [])
+        if not msgs:
+            return
+        if self._message_index > 0:
+            self._message_index -= 1
+            msg = msgs[-(self._message_index + 1)]
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")[:200]
+            self._show_toast(f"📜 [{role.upper()}] {content}...", kind="info", duration=2.0)
+        elif self._message_index == 0:
+            self._message_index = -1
+            self._show_toast("📜 End of messages", kind="info", duration=1.0)
 
     def _finish(self) -> None:
         if not self._processing:
@@ -1431,6 +2243,71 @@ class MainScreen(Screen):
         except Exception as e:
             logger.debug("Suggestions skipped: %s", e)
 
+        # Feature 4: Smart command suggestions based on context
+        try:
+            msgs = self._state.get("_messages", [])
+            turns = self._state.get("turns", 0)
+            # Suggest /save after long conversation
+            if turns >= 5 and turns % 5 == 0:
+                self._show_toast("💡 Tip: Use /save to save this session", kind="info", duration=3.0)
+            # Suggest /export after code changes
+            tools_used = self._state.get("tools_used", [])
+            if "write" in tools_used or "edit" in tools_used:
+                if len([m for m in msgs if m.get("role") == "assistant"]) >= 3:
+                    self._show_toast("💡 Tip: Use /export to export conversation", kind="info", duration=3.0)
+            # Suggest /memories after learning
+            if turns >= 10:
+                self._show_toast("💡 Tip: Use /memories to view learned memories", kind="info", duration=3.0)
+        except Exception as e:
+            logger.debug("Smart command suggestions skipped: %s", e)
+
+        # Feature 5: Intent prediction for next actions
+        try:
+            msgs = self._state.get("_messages", [])
+            if len(msgs) >= 2:
+                last_msg = msgs[-1].get("content", "").lower()
+                # Predict next action based on last message
+                if "error" in last_msg or "fix" in last_msg:
+                    self._show_toast("🎯 Suggestion: Try /doctor to diagnose issues", kind="info", duration=3.0)
+                elif "file" in last_msg or "read" in last_msg:
+                    self._show_toast("🎯 Suggestion: Use /preview <file> to view files", kind="info", duration=3.0)
+                elif "search" in last_msg or "find" in last_msg:
+                    self._show_toast("🎯 Suggestion: Use /search <query> to find in conversation", kind="info", duration=3.0)
+        except Exception as e:
+            logger.debug("Intent prediction skipped: %s", e)
+
+        # Feature 6: Context suggestions for relevant files
+        try:
+            msgs = self._state.get("_messages", [])
+            if len(msgs) >= 2:
+                last_msg = msgs[-1].get("content", "").lower()
+                # Suggest relevant files based on context
+                if "config" in last_msg or "settings" in last_msg:
+                    config_files = list(Path(".").glob("*.json")) + list(Path(".").glob("*.yaml")) + list(Path(".").glob("*.toml"))
+                    if config_files:
+                        self._show_toast(f"📁 Found {len(config_files)} config files", kind="info", duration=2.0)
+                elif "test" in last_msg or "spec" in last_msg:
+                    test_files = list(Path(".").glob("**/test_*.py")) + list(Path(".").glob("**/*_test.py"))
+                    if test_files:
+                        self._show_toast(f"📁 Found {len(test_files)} test files", kind="info", duration=2.0)
+        except Exception as e:
+            logger.debug("Context suggestions skipped: %s", e)
+
+        # Feature 7: Auto-optimization based on usage
+        try:
+            # Enable compact mode if user prefers short messages
+            short_msgs = self._user_patterns.get("short_msgs", 0)
+            long_msgs = self._user_patterns.get("long_msgs", 0)
+            if short_msgs > long_msgs * 2 and not self._compact_mode:
+                self._compact_mode = True
+                self._log_message("system", "📐 Auto-enabled compact mode based on your preferences")
+            # Disable compact mode if user prefers long messages
+            elif long_msgs > short_msgs * 2 and self._compact_mode:
+                self._compact_mode = False
+                self._log_message("system", "📐 Auto-disabled compact mode based on your preferences")
+        except Exception as e:
+            logger.debug("Auto-optimization skipped: %s", e)
+
 
 class WIDDXTUI(App):
     CSS_PATH = "app.tcss"
@@ -1445,6 +2322,10 @@ class WIDDXTUI(App):
 
     def on_mount(self) -> None:
         self.push_screen(MainScreen(self._state, self._provider, self._tool_defs))
+
+    def on_error(self, event) -> None:
+        """Log all uncaught exceptions from the TUI."""
+        logger.exception("An uncaught error occurred in the TUI:")
 
 
 def run_tui() -> None:

@@ -10,28 +10,23 @@ This module provides an improved user interface with:
 """
 
 import sys
-import time
 import json
 from datetime import datetime
 from pathlib import Path
 
-from .. import tools
-from .. import config
 from ..proxy import proxy_manager
 from ..skills import skill_manager
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-from rich.table import Table
 from rich.markdown import Markdown
-from rich.spinner import Spinner
 from rich.live import Live
 from rich.console import Group
 from rich.syntax import Syntax
 from rich.align import Align
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.box import ROUNDED, HEAVY, SQUARE
+from rich.box import ROUNDED
 
 # Color scheme
 COLORS = {
@@ -53,6 +48,16 @@ except ImportError:
     _HAS_PYGMENTS = False
 
 from .ui import _PROMPT_TOOLKIT_OK  # shared prompt_toolkit detection
+
+# Try importing prompt_toolkit components
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.styles import Style as PTStyle
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+except ImportError:
+    pass
 
 console = Console(highlight=False, force_terminal=True)
 _session = None
@@ -225,7 +230,6 @@ def print_tool_result_enhanced(name: str, result: str, success: bool = True):
     color = "#10b981" if success else "#ef4444"
     ts = datetime.now().strftime("%H:%M")
     
-    title = f" [bold {color}]{icon} {name} Output[/] [dim]({ts})[/]"
     preview = result[:1500]
     if len(result) > 1500:
         preview += "\n... [truncated]"
@@ -235,6 +239,8 @@ def print_tool_result_enhanced(name: str, result: str, success: bool = True):
         border_style=color,
         padding=(0, 1),
         box=ROUNDED,
+        title=f" [bold {color}]{icon} {name} Output[/] [dim]({ts})[/]",
+        title_align="left",
     ))
 
 
@@ -451,7 +457,7 @@ def get_input_enhanced(state: dict | None = None) -> str:
             })
             
             text = _session.prompt(
-                HTML(f"<ansigreen><b> ❯ </b></ansigreen>"),
+                HTML("<ansigreen><b> ❯ </b></ansigreen>"),
                 style=style,
                 bottom_toolbar=_bottom_toolbar_enhanced,
             )

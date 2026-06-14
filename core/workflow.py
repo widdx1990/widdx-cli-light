@@ -1,6 +1,6 @@
 """Workflow Engine — spawn sub-agents in parallel/pipeline.
 
-Inspired by Claude Code's Workflow system.
+Inspired by WIDDX's Workflow system.
 
 Three primitives:
   agent(prompt, tools=None)  → spawn a sub-agent, get its result

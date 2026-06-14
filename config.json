@@ -2,42 +2,58 @@
   "provider": {
     "name": "opencode-zen",
     "model": "deepseek-v4-flash-free",
-    "base_url": "https://opencode.ai/zen/v1",
-    "api_key": "public"
+    "base_url": "https://opencode.ai/zen/v1"
   },
-  "system_prompt": "You are an intelligent assistant that helps with programming and general tasks. You have the following tools available:\n- read(filePath, offset, limit): Read a file or directory\n- write(filePath, content): Write a new file\n- edit(filePath, oldString, newString, replaceAll): Edit text in a file\n- glob(pattern, path): Search for files by glob pattern\n- grep(pattern, path, include): Search file contents by regex\n- bash(command, description): Run a PowerShell command\n- web_fetch(url, format): Fetch content from a URL\n\nIMPORTANT: Always respond in the same language the user is using. If the user writes in Arabic, respond in Arabic. If they write in English, respond in English.",
+  "system_prompt": "You are WIDDX Cortex, an intelligent terminal AI assistant that helps with programming and general tasks. You work in the terminal environment and have access to various tools for file operations, code editing, and system commands. You have the following tools available:\n- read(filePath, offset, limit): Read a file or directory\n- write(filePath, content): Write a new file\n- edit(filePath, oldString, newString, replaceAll): Edit text in a file\n- glob(pattern, path): Search for files by glob pattern\n- grep(pattern, path, include): Search file contents by regex\n- bash(command, description): Run a PowerShell command\n- web_fetch(url, format): Fetch content from a URL\n\nIMPORTANT: Always respond in the same language the user is using. If the user writes in Arabic, respond in Arabic. If they write in English, respond in English.",
   "max_turns": 10,
   "temperature": 0.7,
   "mcp_servers": [
     {
       "name": "filesystem",
       "command": "node",
-      "args": ["{PROJECT_ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js", "{PROJECT_ROOT}", "{USER_HOME}"]
+      "args": [
+        "E:/deepseek/chat-tool/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
+        "E:/deepseek/chat-tool",
+        "C:/Users/widdx"
+      ]
     },
     {
       "name": "memory",
       "command": "node",
-      "args": ["{PROJECT_ROOT}/node_modules/@modelcontextprotocol/server-memory/dist/index.js"]
+      "args": [
+        "E:/deepseek/chat-tool/node_modules/@modelcontextprotocol/server-memory/dist/index.js"
+      ]
     },
     {
       "name": "fetch",
       "command": "uvx",
-      "args": ["mcp-server-fetch", "--ignore-robots-txt"]
+      "args": [
+        "mcp-server-fetch",
+        "--ignore-robots-txt"
+      ]
     },
     {
       "name": "sequential-thinking",
       "command": "node",
-      "args": ["{PROJECT_ROOT}/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"]
+      "args": [
+        "E:/deepseek/chat-tool/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"
+      ]
     },
     {
       "name": "playwright",
       "command": "node",
-      "args": ["{PROJECT_ROOT}/node_modules/@playwright/mcp/cli.js"]
+      "args": [
+        "E:/deepseek/chat-tool/node_modules/@playwright/mcp/cli.js"
+      ]
     },
     {
       "name": "sqlite",
       "command": "uvx",
-      "args": ["mcp-server-sqlite", "--db-path", "{PROJECT_ROOT}/.widdx/data/mcp_data.db"]
+      "args": [
+        "mcp-server-sqlite",
+        "--db-path",
+        "E:/deepseek/chat-tool/.widdx/data/mcp_data.db"
+      ]
     }
   ]
 }
