@@ -7,6 +7,8 @@
 
 الاتصال يتم مباشرة عبر واجهة OpenAI-compatible. أي مكتبة تدعم OpenAI API تستطيع استخدام هذه النماذج.
 
+> **ملاحظة:** WIDDX Cortex يستخدم هذه النماذج افتراضياً. فقط شغّل `widdx` وابدأ المحادثة فوراً!
+
 ---
 
 ## جلب قائمة النماذج المجانية آلياً
@@ -20,7 +22,7 @@ r = httpx.get("https://opencode.ai/zen/v1/models", timeout=10)
 all_models = r.json()["data"]
 free_models = [m["id"] for m in all_models if "free" in m["id"].lower()]
 print(free_models)
-# مثال: ['deepseek-v4-flash-free', 'mimo-v2.5-free', 'qwen3.6-plus-free', ...]
+# مثال: ['deepseek-v4-flash-free', 'mimo-v2.5-free', 'nemotron-3-ultra-free', ...]
 ```
 
 ```bash
@@ -31,17 +33,19 @@ curl https://opencode.ai/zen/v1/models | jq '.data[].id'
 
 ---
 
-## النماذج المجانية (حسب آخر فحص)
+## النماذج المجانية (آخر فحص: 2026-06-16)
 
-| النموذج | الحالة |
-|---------|--------|
-| `deepseek-v4-flash-free` | يعمل — سريع، دعم أدوات (tool calling)، استدلال |
-| `mimo-v2.5-free` | يعمل |
-| `minimax-m3-free` | يعمل — مع تفكير داخلي (thinking) |
-| `nemotron-3-super-free` | يعمل — سريع |
-| `qwen3.6-plus-free` | ❌ انتهت الفترة المجانية |
+| النموذج | الحالة | ملاحظات |
+|---------|--------|---------|
+| `deepseek-v4-flash-free` | ✅ يعمل | سريع، دعم أدوات (tool calling)، استدلال — **مستقر** |
+| `mimo-v2.5-free` | ✅ يعمل | جيد للمحادثات العامة |
+| `nemotron-3-ultra-free` | ✅ يعمل | سريع — حل محل `nemotron-3-super-free` |
+| `north-mini-code-free` | ✅ يعمل | **نموذج جديد** — متخصص بالبرمجة |
+| `minimax-m3-free` | ❌ انتهت الفترة المجانية | — |
+| `qwen3.6-plus-free` | ❌ انتهت الفترة المجانية | — |
 
-> النماذج تتغير باستمرار. استخدم `/v1/models` للحصول على القائمة المحدثة.
+> النماذج تتغير باستمرار — بعضها تنتهي فترته المجانية وتظهر نماذج جديدة.
+> استخدم `/v1/models` للحصول على القائمة المحدثة دائماً.
 
 ---
 
@@ -224,6 +228,7 @@ if message.get("tool_calls"):
 | `429 Provider returned error` | تجاوزت الحد المسموح | انتظر 5 ثوان وأعد المحاولة، أو استخدم نموذجاً آخر |
 | `400 Messages with role 'tool'...` | ترتيب رسائل غير صحيح | تأكد أن رسالة الـ tool تأتي بعد رسالة assistant تحتوي tool_calls |
 | `ModelError: Free promotion has ended` | النموذج لم يعد متاحاً مجاناً | استخدم `/v1/models` لتعثر على نموذج مجاني آخر |
+| المهلة (timeout) | النموذج بطيء أو السيرفر مشغول | زد timeout أو استخدم نموذجاً أسرع |
 
 ---
 
@@ -237,3 +242,13 @@ POST https://opencode.ai/zen/v1/chat/completions     # محادثة (مع Auth: 
 ```
 
 `GET /models` لا يحتاج أي توثيق. `POST /chat/completions` يحتاج `Authorization: Bearer public`.
+
+---
+
+## 💡 نصائح سريعة
+
+1. **deepseek-v4-flash-free** هو الأنسب بشكل عام — سريع، يدعم الأدوات، ويدعم الاستدلال (reasoning)
+2. **north-mini-code-free** ممتاز للمهام البرمجية البحتة
+3. إذا واجهت `429`، جرب `nemotron-3-ultra-free` كبديل سريع
+4. استخدم دائمًا `/v1/models` للتحقق من النماذج المتاحة — لا تفترض أن القائمة ثابتة
+5. في WIDDX، يمكنك تغيير النموذج بأمر `/model <name>` والمزود بأمر `/provider <name>`

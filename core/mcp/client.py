@@ -63,8 +63,8 @@ class MCPServerConnection:
         if self._proc:
             try:
                 self._proc.kill()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to kill MCP subprocess: %s", e)
 
     def _send_jsonrpc(self, method: str, params: dict | None = None, msg_id: int = 1) -> dict | None:
         """Send a JSON-RPC message and read the response."""

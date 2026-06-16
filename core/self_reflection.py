@@ -3,12 +3,12 @@
 import time
 from typing import Optional, List
 from core.memory import MemoryStore
-from core.project.state import load_session, save_session
+from core.utils import get_last_turn
 
 
 def generate_reflection_prompt(user_input: str, assistant_response: str, tools_used: List[str]) -> str:
     """Build a prompt to let the AI reflect on its own work."""
-    return f"""You are reviewing your own work as an AI assistant. Your task is to extract 1-2 key lessons or improvements you can use in the future.
+    return f"""You are WIDDX Cortex (a WIDDX AI, created by MUHAMMAD MUSLIH 🇵🇸), reviewing your own work. Your task is to extract 1-2 key lessons or improvements you can use in the future.
 
 USER'S REQUEST:
 {user_input}
@@ -68,18 +68,12 @@ def save_reflection_lessons(lessons: List[str], project_dir: Optional[str] = Non
 
 def reflect_on_last_turn(provider, messages: List[dict], state: dict, project_dir: Optional[str] = None) -> None:
     """Orchestrate self-reflection on the last conversation turn."""
-    # Find the last user-assistant turn pair
-    last_user = None
-    last_assistant = None
-    for m in reversed(messages):
-        if m.get("role") == "assistant" and last_user:
-            last_assistant = m.get("content", "")
-            break
-        if m.get("role") == "user":
-            last_user = m.get("content", "")
-    
-    if not last_user or not last_assistant:
+    turn = get_last_turn(messages)
+    if not turn:
         return
+
+    last_user = turn["user"]
+    last_assistant = turn["assistant"]
     
     # Get tools used from state
     tools_used = list(state.get("tools_used", []))

@@ -37,8 +37,10 @@ class BaseClassifier:
         raise NotImplementedError
 
     def _find_matches(self, lower: str) -> list[str]:
-        """Return all trigger words found in the input."""
-        return [t for t in self.TRIGGERS if t in lower]
+        """Return all trigger words/phrases found in the input (word-boundary matching)."""
+        import re
+        return [t for t in self.TRIGGERS
+                if re.search(r'\b' + re.escape(t) + r'\b', lower)]
 
     def _default_decision(self, input_summary: str, reason: str
                           ) -> tuple[ClassificationResult, list[DecisionStep]] | None:
@@ -302,7 +304,7 @@ class ChatClassifier(BaseClassifier):
     """User is having a GENERAL conversation or asking a simple question."""
     task_type = TaskType.CHAT
     domain = Domain.CHAT
-    MIN_MATCHES = 2
+    MIN_MATCHES = 1
     BASE_CONFIDENCE = 0.65
     TRIGGERS = {
         # English
@@ -325,7 +327,7 @@ class ChatClassifier(BaseClassifier):
 # LLM Classifier — fallback for when keyword classifiers are uncertain
 # -------------------------------------------------------------------
 
-_LLM_CLASSIFIER_PROMPT = """You are a task classifier. Given a user message, classify it into ONE category.
+_LLM_CLASSIFIER_PROMPT = """You are WIDDX Cortex (a WIDDX AI, created by MUHAMMAD MUSLIH 🇵🇸), acting as a task classifier. Given a user message, classify it into ONE category.
 
 Categories: code_read, code_write, code_modify, code_review, research, browser, database, reasoning, chat, file_ops, complex
 

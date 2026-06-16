@@ -1,7 +1,13 @@
-"""Real autonomous agent — AI-driven tool-calling loop with full control."""
+"""Real autonomous agent — AI-driven tool-calling loop with full control.
 
-import json, uuid
+This implementation wraps tool execution, tracks steps, and enforces
+automatic validation after file writes/edits and after `bash` commands
+that create/modify known source files.
+"""
+
+import json, uuid, time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from rich.panel import Panel
@@ -9,7 +15,7 @@ from rich.text import Text
 
 from .. import tools as core_tools
 from ..skills import skill_manager as _skill_manager
-from ..ui import (
+from ..chat import (
     console, print_system_msg, print_tool_call, print_tool_msg,
     print_reasoning, print_ai_stream, print_agent_done,
 )
@@ -27,23 +33,28 @@ def _vid(tc_id) -> str:
 # Agent System Prompt
 # ---------------------------------------------------------------------------
 
-AGENT_PROMPT = """You are an autonomous agent with full control over tools.
+AGENT_PROMPT = """# WIDDX Cortex — Autonomous Agent
+
+You are WIDDX Cortex, created by MUHAMMAD MUSLIH (Founder & CEO of WIDDX).
+🇵🇸 Made in Palestine.
 
 AVAILABLE TOOLS:
 {tool_descriptions}
 
-YOUR WORKFLOW:
-1. You receive a task from the user
+WORKFLOW:
+1. Receive a task from the user
 2. Think step by step about what needs to be done
 3. Call ONE tool at a time, analyze the result, then decide next step
 4. If a tool fails, analyze the error and try a different approach
 5. If you need clarification, ask the user directly in your response
-6. When the task is COMPLETE, respond with a clear summary of what was done
+6. Validate after every write/edit — quality first
+7. When complete, summarize clearly what was accomplished
 
 RULES:
 - Call one tool at a time (you can call many in sequence)
 - After each tool result, analyze and decide what to do next
 - On failure: explain what happened, then try a different approach
+- ALWAYS run validate after writing or editing code
 - NEVER say you're done until the task is actually complete
 - Your final response MUST be a summary of what was accomplished"""
 
@@ -51,6 +62,7 @@ RULES:
 # ---------------------------------------------------------------------------
 # Agent Step Tracking
 # ---------------------------------------------------------------------------
+
 
 class AgentStep:
     """A single dynamically-recorded step during agent execution."""
@@ -60,7 +72,14 @@ class AgentStep:
         self.tool_name = tool_name
         self.args = args
         self.result = result
-        self.status = "done" if result and not result.startswith("\u26a0\ufe0f") else "failed"
+        self.status = "done" if self._is_success(result) else "failed"
+
+    def _is_success(self, result: str) -> bool:
+        if not result or not result.strip():
+            return False
+        normalized = result.strip()
+        failure_prefixes = ("❌", "⚠️", "⚠", "⛔", "Error", "Failed", "No such", "File not found")
+        return not normalized.startswith(failure_prefixes)
 
     def to_dict(self) -> dict:
         return {
@@ -75,6 +94,7 @@ class AgentStep:
 # ---------------------------------------------------------------------------
 # Autonomous Agent
 # ---------------------------------------------------------------------------
+
 
 class AutonomousAgent:
     """Real autonomous agent with real-time tool-calling loop.
@@ -112,8 +132,6 @@ class AutonomousAgent:
                 print_system_msg("🛑 Agent cancelled by user")
                 break
 
-            iter_num = iteration + 1
-
             # Call provider (streaming preferred, fallback to chat)
             try:
                 if self._supports_streaming():
@@ -131,41 +149,41 @@ class AutonomousAgent:
 
             # ── Process tool calls if AI decided to use tools ──
             if tool_calls:
-                # CRITICAL: Append assistant message with tool_calls FIRST
-                # (API requires tool results to follow a tool_calls message)
                 tc_list = [
                     {"id": _vid(tc.id), "type": "function",
                      "function": {"name": tc.name,
                                   "arguments": json.dumps(tc.args, ensure_ascii=False)}}
                     for tc in tool_calls
                 ]
-                messages.append({
-                    "role": "assistant",
-                    "content": content or None,
-                    "tool_calls": tc_list,
-                })
+                messages.append({"role": "assistant", "content": content or None, "tool_calls": tc_list})
 
                 for tc in tool_calls:
                     result = self._execute_tool(tc)
                     step = AgentStep(len(self.steps) + 1, tc.name, tc.args, result)
                     self.steps.append(step)
+
+                    # If the tool wrote or edited a file, run validation immediately
+                    if tc.name in {"write", "edit"} and not step.result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed", "No such", "File not found")):
+                        file_path = tc.args.get("file_path")
+                        if file_path:
+                            val_result = self._auto_validate_file(file_path)
+                            validation_step = AgentStep(len(self.steps) + 1, "validate", {"file_path": file_path}, val_result)
+                            self.steps.append(validation_step)
+
                     # Append tool result to messages for context
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": _vid(tc.id),
+                        "tool_call_id": _vid(getattr(tc, 'id', None)),
                         "name": tc.name,
                         "content": result,
                     })
                     model = self.state.get("model", "").split("/")[-1] or "unknown"
                     self.state["cost"] += estimate_turn_cost(model, 200, 100)
-                    self.state["turns"] += 1
+                    self.state["turns"] = self.state.get("turns", 0) + 1
             else:
-                # AI responded without tool calls — task is complete
-                # (or AI is asking a question)
+                # AI responded without tool calls — task is complete (or AI is asking a question)
                 summary = content or "Task completed."
                 self._show_final_result(content)
-
-                # Print step summary panel
                 print_agent_done(self.steps, summary)
                 return self.steps, summary
 
@@ -219,9 +237,8 @@ class AutonomousAgent:
     def _execute_tool(self, tc) -> str:
         """Execute a single tool call and display it.
 
-        Uses tools.execute_with_skills() as the single source of truth
-        for tool dispatch (shared with chat.py).  Tracks tool names
-        in self.state for ExecutionResult telemetry (Phase 2.2).
+        Handles automatic validation for `bash` commands that create/modify
+        repository files by snapshotting mtimes and validating changed files.
         """
         # Track tool usage
         if "tools_used" not in self.state:
@@ -230,8 +247,50 @@ class AutonomousAgent:
             self.state["tools_used"].append(tc.name)
 
         print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
+
+        # Handle bash specially: snapshot time, run command, then validate new/modified files
+        if tc.name == "bash":
+            t0 = time.time()
+            result = core_tools.execute_with_skills(tc.name, tc.args)
+            print_tool_msg(tc.name, result[:1000])
+
+            normalized = (result or "").strip()
+            if not normalized.startswith(("\ud83d\udeab", "❌", "⛔", "Error", "Failed")):
+                exts = {".py", ".js", ".ts", ".tsx", ".json", ".css", ".html", ".htm", ".go", ".dart", ".rb", ".php", ".yaml", ".yml"}
+                changed = []
+                try:
+                    root = Path(".").resolve()
+                    for f in root.rglob("*"):
+                        if not f.is_file():
+                            continue
+                        try:
+                            if f.stat().st_mtime >= t0 - 0.5 and f.suffix.lower() in exts:
+                                changed.append(f)
+                        except Exception:
+                            continue
+                except Exception:
+                    changed = []
+
+                for f in changed[:30]:
+                    val_result = self._auto_validate_file(str(f))
+                    self.steps.append(AgentStep(len(self.steps) + 1, "validate", {"file_path": str(f)}, val_result))
+
+            return result
+
+        # Default execution path
         result = core_tools.execute_with_skills(tc.name, tc.args)
         print_tool_msg(tc.name, result[:1000])
+        return result
+
+    def _auto_validate_file(self, file_path: str) -> str:
+        """Automatically validate a file after a write/edit operation."""
+        p = Path(file_path)
+        if not p.exists():
+            return f"⚠️ Validation skipped: file not found {file_path}"
+        validation_args = {"file_path": str(p)}
+        print_tool_call("validate", json.dumps(validation_args, ensure_ascii=False))
+        result = core_tools.execute_with_skills("validate", validation_args)
+        print_tool_msg("validate", result[:1000])
         return result
 
     def _build_prompt(self) -> str:
@@ -287,6 +346,7 @@ class AutonomousAgent:
 # ---------------------------------------------------------------------------
 # Helper: run agent with a custom system prompt
 # ---------------------------------------------------------------------------
+
 
 def run_agent_with_prompt(provider, tool_defs, cfg, state, system_prompt, user_input):
     """Run AutonomousAgent with a custom system prompt.

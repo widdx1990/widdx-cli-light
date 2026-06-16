@@ -3,9 +3,28 @@
 **مساعد برمجي ذكي يعمل في الطرفية (Terminal)**  
 **Smart Terminal AI Assistant — بالعربية والإنجليزية**
 
+<div align="center">
+
+[![PyPI](https://img.shields.io/pypi/v/widdx-cortex?color=00c896&label=PyPI&logo=python&logoColor=white)](https://pypi.org/project/widdx-cortex/)
+[![Python](https://img.shields.io/pypi/pyversions/widdx-cortex?color=f5a623&logo=python)](https://www.python.org/)
+[![CI/CD](https://github.com/widdx/chat-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/widdx/chat-tool/actions)
+[![License](https://img.shields.io/badge/license-MIT-00c896.svg)](LICENSE)
+[![Lines](https://img.shields.io/badge/code-20,620-00c896.svg)](.)
+
+</div>
+
 يستخدم نماذج ذكاء اصطناعي **مجانية** عبر [OpenCode Zen API](https://opencode.ai/zen/v1)، مع دعم مزودات متعددة (Ollama، DeepSeek، OpenAI، GGUF محلياً). يتميز بطبقة ذكاء موحدة (UIL) تحلل المهام، تخطط، تنفذ، وتتعلم من التجارب السابقة.
 
 ---
+
+## ⚡ التثبيت الفوري
+
+```bash
+pip install widdx-cortex
+widdx
+```
+
+أقل من دقيقة و WIDDX شغال.
 
 ## 📋 جدول المحتويات
 - [✨ الميزات الرئيسية](#-الميزات-الرئيسية)
@@ -35,6 +54,7 @@
 | 🧰 **7 أدوات مدمجة** | قراءة، كتابة، تعديل، بحث، Bash، glob، web_fetch |
 | 📡 **Streaming كامل** | عرض فوري للردود مع دعم `reasoning_content` |
 | 🌐 **Proxy تلقائي** | يجلب ويختبر proxies مجانية ويدورها تلقائياً |
+| 🌍 **REST API** | FastAPI — `/api/chat`, `/api/memory`, `/api/providers`, `/api/tools` |
 | 🔀 **نموذج احتياطي** | fallback تلقائي بين النماذج عند الفشل |
 | 🧠 **ذاكرة طويلة الأمد** | يتعلم من المحادثات السابقة ويخزن الدروس |
 | 💡 **اقتراح المهارات تلقائياً** | يقترح المهارة المناسبة لطلبك |
@@ -47,6 +67,11 @@
 | 🌍 **دعم كامل للغة العربية** | RTL، رسائل وأوامر بالعربية |
 | 🎨 **واجهة Rich TUI** | ألوان، جداول، Markdown، spinners |
 | 📊 **تشخيص الأخطاء الصامتة** | `/debug` لاكتشاف المشاكل الخفية |
+| ⚡ **إعداد تلقائي للمشروع** | ينصب الاعتماديات، يتعلم بنية المشروع، وينشئ مهارات مخصصة |
+| 📋 **خطة مشروع مستمرة** | PLAN, DESIGN, TASKS, ROADMAP — يتم تحميلها في السياق وتحديثها تلقائياً |
+| 🔧 **تثبيت الأدوات تلقائياً** | يثبت TypeScript والمكتبات الناقصة عند الحاجة |
+| 📐 **دعم 25+ لغة برمجة** | Validate, Symbol Extraction, TODO Scanning موسّعة |
+| 🛡️ **حماية API Keys** | تمنع تسرب المفاتيح إلى أوامر Bash |
 
 ---
 
@@ -99,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 ```bash
 pip install -r requirements.txt
-python main.py
+python main.py  # wrapper to scripts/main.py
 ```
 
 ### 📋 ملفات التثبيت
@@ -109,8 +134,7 @@ python main.py
 | **`install.bat`** 🏆 | مثبت بنقرة واحدة — ينصح به للجميع |
 | **`install.ps1`** | مثبت PowerShell مع خيارات متقدمة |
 | **`uninstall.bat`** | إلغاء التثبيت بنقرة واحدة |
-| **`widdx.bat`** | مشغل الواجهة النصية (CLI) |
-| **`widdx-tui.bat`** | مشغل الواجهة المحسنة (TUI) |
+| **`pyproject.toml`** | تعريف الحزمة — يوفر أوامر `widdx`, `widdx-tui`, `widdx-api` |
 
 ### 🚀 أوامر التشغيل
 
@@ -118,9 +142,13 @@ python main.py
 widdx                    # تشغيل الواجهة النصية (CLI)
 widdx-tui                # تشغيل الواجهة المحسنة (TUI) ★
 widdx C:\project         # تشغيل في مجلد معين
-python main.py           # تشغيل مباشر (يدوياً)
-python run_textual.py    # تشغيل TUI (يدوياً)
+widdx-api                # تشغيل REST API server
+python main.py           # تشغيل مباشر (يدوياً, wrapper to scripts/main.py)
+python run_textual.py    # تشغيل TUI (يدوياً, wrapper to scripts/run_textual.py)
+python api_server.py     # تشغيل API server (يدوياً, wrapper to scripts/api_server.py)
 ```
+
+> ملاحظة: تم نقل تنفيذ نقاط الدخول الفعلية إلى مجلد `scripts/`، بينما تبقى ملفات الغلاف الجذري في جذر المشروع للعودة التوافقية.
 
 ---
 
@@ -132,95 +160,131 @@ WIDDX/
 ├── 📄 install.bat           ← مثبت بنقرة واحدة ★
 ├── 📄 install.ps1           ← مثبت PowerShell
 ├── 📄 uninstall.bat         ← إلغاء التثبيت
-├── 📄 widdx.bat             ← مشغل CLI
-├── 📄 widdx-tui.bat         ← مشغل TUI
-├── 📄 main.py               ← نقطة الدخول الرئيسية (CLI)
-├── 📄 run_textual.py        ← نقطة الدخول للواجهة المحسنة (TUI)
+├── 📄 main.py               ← compatibility wrapper إلى scripts/main.py
+├── 📄 run_textual.py        ← compatibility wrapper إلى scripts/run_textual.py
+├── 📄 api_server.py         ← compatibility wrapper إلى scripts/api_server.py
+├── 📁 scripts/              ← تنفيذ نقاط الدخول الفعلية
 ├── 📄 config.json           ← إعدادات المستخدم
 ├── 📄 pyproject.toml        ← تكوين الحزمة
 ├── 📄 requirements.txt      ← التبعيات
-├── 📄 MANIFEST.json         ← وصف المشروع
+├── 📄 MANIFEST.json         ← فهرس المشروع الكامل
 │
 ├── 📁 core/                 ← المكونات الأساسية
-│   ├── __init__.py
 │   ├── chat.py              ← حلقة المحادثة
-│   ├── cli.py               ← واجهة CLI
+│   ├── cli.py               ← واجهة CLI (نقطة الدخول)
 │   ├── commands.py          ← أوامر السلاش
 │   ├── memory.py            ← نظام الذاكرة
 │   ├── memory_learner.py    ← تعلم الذاكرة تلقائياً ★
 │   ├── suggester.py         ← اقتراح الإجراءات ★
+│   ├── project_tracker.py   ← تتبع خطة المشروع ★
+│   ├── auto_setup.py        ← إعداد تلقائي للمشروع ★
 │   ├── diagnostics.py       ← تشخيص الأخطاء الصامتة ★
 │   ├── self_reflection.py   ← التأمل الذاتي ★
 │   ├── permissions.py       ← نظام الأذونات
 │   ├── proxy.py             ← إدارة البروكسيات
-│   ├── skills.py            ← نظام المهارات
-│   ├── tools.py             ← 7 أدوات مدمجة
-│   ├── workflow.py          ← محرك سير العمل
+│   ├── skills.py            ← نظام المهارات v1
+│   ├── skills_v2.py         ← نظام المهارات v2 (محسن) ★
+│   ├── tools.py             ← 9 أدوات مدمجة
+│   ├── workflow.py          ← محرك سير العمل (sub-agents)
+│   ├── database.py          ← قاعدة بيانات SQLite للجلسات ★
+│   ├── session_v2.py        ← إدارة الجلسات المتطورة ★
+│   ├── provider_router.py   ← التوجيه الذكي للمزودات ★
+│   ├── project_context.py   ← سياق المشروع المتقدم ★
+│   ├── project_structure.py ← تحليل بنية المشروع ★
+│   ├── widdx_v2.py          ← WIDDX v2 — واجهة موحدة ★
+│   ├── utils.py             ← دوال مساعدة مشتركة
 │   │
 │   ├── 📁 agents/           ← الوكلاء
 │   │   ├── agent.py         ← وكيل مستقل (AutonomousAgent)
 │   │   └── expert.py        ← فريق وكلاء (ExpertTeam)
 │   │
 │   ├── 📁 config/           ← الإعدادات
-│   │   ├── keychain.py      ← إدارة مفاتيح API
+│   │   ├── keychain.py      ← إدارة مفاتيح API بأمان
 │   │   └── settings.py      ← تحميل/حفظ config.json
 │   │
 │   ├── 📁 project/          ← إدارة المشروع
-│   │   ├── git.py           ← أدوات Git
+│   │   ├── git.py           ← أدوات Git (auto-commit, undo)
 │   │   ├── manifest.py      ← مولد MANIFEST.json
-│   │   ├── scanner.py       ← ماسح المشروع ★
-│   │   └── state.py         ← حالة المشروع + إدارة الجلسات
+│   │   ├── scanner.py       ← ماسح المشروع الذكي ★
+│   │   └── state.py         ← حالة المشروع + استرداد السياق
 │   │
 │   ├── 📁 providers/        ← مزودات الذكاء الاصطناعي
-│   │   ├── providers.py     ← OpenCodeZen, Ollama, DeepSeek, OpenAI, GGUF
+│   │   ├── providers.py     ← OpenCodeZen, Ollama, DeepSeek, OpenAI
 │   │   └── gguf.py          ← دعم نماذج GGUF المحلية
 │   │
-│   ├── 📁 ui/               ← واجهة المستخدم الأساسية
-│   │   ├── ui.py            ← دوال العرض (Markdown، جداول)
-│   │   └── ui_enhanced.py   ← واجهة محسنة
-│   │
 │   ├── 📁 uil/              ← طبقة الذكاء الموحدة ★
-│   │   ├── contract.py      ← العقود والبيانات
-│   │   ├── analyzer.py      ← محلل المهام
+│   │   ├── contract.py      ← العقود والبيانات (Data Contracts)
+│   │   ├── analyzer.py      ← محلل المهام (13 مصنفاً)
 │   │   ├── router.py        ← موجه القرار
 │   │   ├── planner.py       ← مخطط المهام
-│   │   ├── brain.py         ← المنسّق الأساسي
-│   │   └── knowledge.py     ← قاعدة المعرفة
+│   │   ├── brain.py         ← المنسّق الأساسي (Pipeline Orchestrator)
+│   │   └── knowledge.py     ← قاعدة المعرفة (سجل التنفيذ)
 │   │
 │   └── 📁 mcp/              ← Model Context Protocol
 │       └── client.py        ← الاتصال بخوادم MCP
 │
-├── 📁 tui/                  ← واجهة Textual المحسنة
+├── 📁 cli/                  ← واجهة CLI محسنة (Rich + prompt_toolkit)
+│   ├── app.py               ← التطبيق الرئيسي لواجهة CLI
+│   ├── commands.py          ← معالجة الأوامر
+│   ├── display.py           ← عرض غني (Rich rendering)
+│   ├── input.py             ← إدخال محترف (prompt_toolkit)
+│   └── theme.py             ← نظام الألوان (داكن/فاتح)
+│
+├── 📁 tui/                  ← واجهة Textual المحسنة ★
 │   ├── app.py               ← التطبيق الرئيسي للواجهة
 │   ├── app.tcss             ← أنماط CSS
-│   └── 📁 screens/          ← شاشات التطبيق
-│       ├── detail.py        ← تفاصيل
-│       ├── help.py          ← المساعدة
-│       ├── memory_crud.py   ← إدارة الذكريات
-│       ├── session_crud.py  ← إدارة الجلسات
-│       ├── settings.py      ← الإعدادات
-│       └── tool_detail.py   ← تفاصيل الأدوات
+│   ├── chat_engine.py       ← محرك المحادثة (streaming + tools)
+│   ├── commands.py          ← أوامر السلاش في TUI
+│   ├── state.py             ← إدارة الحالة المركزية
+│   ├── 📁 screens/          ← شاشات التطبيق
+│   │   ├── detail.py        ← عرض تفاصيل النصوص الطويلة
+│   │   ├── help.py          ← شاشة المساعدة والأوامر
+│   │   ├── memory_crud.py   ← إدارة الذكريات (CRUD)
+│   │   ├── session_crud.py  ← إدارة الجلسات (CRUD)
+│   │   ├── settings.py      ← الإعدادات المتقدمة (tabbed)
+│   │   ├── tool_detail.py   ← تفاصيل الأدوات
+│   │   └── ubuntu_grid.py   ← مشغل تطبيقات شبكي ★
+│   └── 📁 widgets/
+│       └── header.py        ← ويدجت العنوان
 │
-├── 📁 skills/               ← المهارات المتاحة
+├── 📁 skills/               ← المهارات المتاحة (8 مهارات)
 │   ├── code-review/         ← مراجعة الكود
 │   ├── document/            ← توثيق الكود
 │   ├── explain-code/        ← شرح الكود
 │   ├── fix-bug/             ← تصحيح الأخطاء
 │   ├── generate-tests/      ← توليد الاختبارات
 │   ├── refactor/            ← إعادة هيكلة
+│   ├── textual-master/      ← قواعد Textual الرسمية ★
 │   └── tui-builder/         ← بناء واجهات TUI
 │
 ├── 📁 doc/
-│   └── FREE_MODELS_API.md   ← دليل OpenCode Zen API
+│   └── FREE_MODELS_API.md   ← دليل OpenCode Zen API المجاني
 │
-├── 🧪 test_uil_p12.py       ← 11 اختبار
-├── 🧪 test_uil_p13.py       ←  7 اختبار
-├── 🧪 test_uil_planner.py   ← 13 اختبار
-├── 🧪 test_uil_p15.py       ←  7 اختبار
-└── 🧪 test_uil_knowledge.py ←  8 اختبار
+├── 📁 .widdx/               ← بيانات المشروع المحلية (تتولد تلقائياً)
+│   ├── config.json          ← الإعدادات المحلية
+│   ├── permissions.json     ← سجل الأذونات
+│   ├── widdx.db             ← قاعدة بيانات SQLite (جلسات + ذكريات)
+│   ├── memory/              ← ملفات الذاكرة
+│   ├── data/                ← بيانات أخرى
+│   ├── PLAN.md              ← خطة المشروع الحالية
+│   ├── DESIGN.md            ← قرارات التصميم
+│   ├── TASKS.md             ← قائمة المهام
+│   └── ROADMAP.md           ← خريطة الطريق
+│
+├── 🧪 test_uil_knowledge.py ← 8 اختبارات
+├── 🧪 test_uil_p12.py       ← اختبارات router + brain
+├── 🧪 test_uil_p13.py       ← اختبارات UIL Wiring
+├── 🧪 test_uil_planner.py   ← 13 اختبار للمخطط
+├── 🧪 test_uil_p15.py       ← اختبارات طبقة التغذية الراجعة
+├── 🧪 test_features.py      ← اختبارات الميزات الست الجديدة
+├── 🧪 test_v2.py            ← اختبارات WIDDX v2
+├── 🧪 test_project_context.py ← اختبارات سياق المشروع
+├── 🧪 test_check_cli.py     ← اختبارات سلامة CLI
+└── 🧪 test_cli_all.py       ← اختبارات CLI الشاملة
 ```
 
-> **📊 الإجمالي: 46 اختباراً — جميعها ناجحة ✅**
+> **📊 الإجمالي: 10 ملفات اختبار — 46+ اختباراً ✅**
+> **📊 إجمالي الكود: ~19,000 سطر بايثون عبر 85 ملفاً**
 
 ---
 
@@ -239,9 +303,14 @@ WIDDX/
 | `/save` | حفظ المحادثة الحالية |
 | `/load` | تحميل جلسة من ملف آخر |
 | `/export` | تصدير المحادثة كـ Markdown |
+| `/session new <name>` | إنشاء جلسة جديدة ★ |
+| `/session list` | عرض قائمة الجلسات ★ |
+| `/session load <id>` | تحميل جلسة ★ |
+| `/session delete <id>` | حذف جلسة ★ |
 | `/tools` | عرض الأدوات المتاحة |
 | `/skills` | عرض المهارات المتاحة |
-| `/sandbox <path>` | تحديد مجلد آمن للكتابة |
+| `/skill activate <id>` | تفعيل مهارة بالمعرف ★ |
+| `/skill deactivate` | إلغاء تفعيل المهارة ★ |
 | `/undo` | تراجع آخر تغيير (git commit) |
 | `/doctor` | فحص صحة النظام |
 | `/debug` | تشخيص الأخطاء الصامتة ★ |
@@ -266,12 +335,13 @@ WIDDX/
 | `!refactor` | تفعيل مهارة إعادة الهيكلة |
 | `!document` | تفعيل مهارة التوثيق |
 | `!generate-tests` | تفعيل مهارة توليد الاختبارات |
+| `!textual-master` | تفعيل مهارة قواعد Textual الرسمية |
 | `!tui-builder` | تفعيل مهارة بناء واجهات TUI |
 | `!off` | إلغاء تنشيط المهارة الحالية |
 
 ---
 
-## 🛠️ الأدوات المضمنة
+## 🛠️ الأدوات المضمنة (9 أدوات)
 
 | الأداة | الوظيفة | الوسائط |
 |--------|---------|---------|
@@ -282,10 +352,11 @@ WIDDX/
 | `grep` | البحث بالمحتوى (regex) | `pattern`, `path`, `include` |
 | `bash` | تشغيل أمر PowerShell | `command`, `description` |
 | `web_fetch` | جلب محتوى من URL | `url`, `format` |
-| `validate` | التحقق من صحة الكود (PHP, Python, JS, JSON, HTML) | `filePath`, `language` |
+| `validate` | التحقق من صحة الكود (Python, JS/TS, PHP, Ruby, Go, Dart, JSON, YAML, CSS, HTML) | `filePath`, `language` |
 | `list_files` | عرض محتويات مجلد | `path` |
 
 > ⚠️ أدوات `write`, `edit`, `bash` تطلب تصريحاً من المستخدم قبل التنفيذ.
+> 💡 **أدوات إضافية:** MCP servers (filesystem, memory, fetch, sequential-thinking, playwright, sqlite) — تُحمّل تلقائياً من config.json
 
 ---
 
@@ -390,6 +461,150 @@ Analyze → Route (يستشير Knowledge) → Plan → Execute → Record → K
 
 ---
 
+## ⚡ Auto Setup — الإعداد التلقائي للمشاريع
+
+`core/auto_setup.py` — يُشغّل تلقائياً عند بدء التشغيل لتهيئة المشروع.
+
+### 1. Auto Dependency Installer
+
+يكتشف ملفات الاعتماديات ويُحمّلها تلقائياً:
+
+| الملف | الأمر |
+|---|---|
+| `requirements.txt` / `pyproject.toml` | `pip install -r requirements.txt` |
+| `package.json` (بدون node_modules) | `npm install` |
+| `go.mod` | `go mod download` |
+| `Cargo.toml` | `cargo build` |
+
+### 2. Deep Project Learner
+
+يحلل المشروع بعمق ويخزن الحقائق في الذاكرة:
+- اسم المشروع ووصفه
+- نقاط الدخول (main.py, app.py, index.js...)
+- قواعد البيانات (SQLite files)
+- مسارات API (api/, routes/, controllers/)
+- مجلدات الاختبار (tests/, spec/)
+- ملفات الإعدادات (.env, config.py, tsconfig.json...)
+
+```bash
+⚡ Auto-setup: deps: pip -e . | learned: 3 facts
+```
+
+### 3. Dynamic Skill Generation
+
+يكتشف إطار العمل ويُنشئ Skill مخصصة تلقائياً:
+
+| الإطار | الـ Skill المُنشأ |
+|---|---|
+| Django | أوامر manage.py، models، migrations |
+| Flask | تشغيل، قوالب، static files |
+| React | مكونات، npm start/build، TypeScript |
+| Next.js | App/Pages router، API routes |
+| Vue | Composition API، Vue Router، Pinia |
+| Express | Routing، middleware |
+| Rust | cargo build/run/test/clippy |
+| Go | go build/run/test/fmt |
+
+### 4. Proactive Tool Installer
+
+عند استخدام validate وأداة CLI غير موجودة، يحاول تثبيتها:
+
+```
+validate .ts  → tsc غير موجود → npm install -g typescript → يعيد المحاولة
+```
+
+### 5. Git Init تلقائي
+
+عند إنشاء مشروع جديد، `auto_commit` يشغل `git init` تلقائياً:
+```python
+auto_commit() → is_git_repo? لا → git init → git add -A → git commit -m "WIDDX: ..."
+```
+
+---
+
+## 🌍 REST API
+
+`api_server.py` — compatibility wrapper forwarding execution to `scripts/api_server.py` and launching the FastAPI server للتواصل مع WIDDX من أي تطبيق.
+
+### التشغيل
+```bash
+pip install widdx-cortex[api]
+widdx-api
+# أو
+python api_server.py --port 8080
+```
+
+### التوثيق التفاعلي (Swagger UI)
+```
+http://localhost:8000/docs
+```
+
+### الم endpoints
+
+| method | endpoint | الوظيفة |
+|---|---|---|
+| `GET` | `/api/health` | فحص الصحة — version, provider, model |
+| `POST` | `/api/chat` | إرسال رسالة واستقبال رد |
+| `GET` | `/api/providers` | قائمة المزودات والنماذج المتاحة |
+| `POST` | `/api/providers/switch` | التبديل بين المزودات |
+| `GET` | `/api/sessions` | حالة الجلسة الحالية |
+| `DELETE` | `/api/sessions` | مسح الجلسة |
+| `GET` | `/api/memory` | قائمة الذكريات (مع بحث اختياري) |
+| `POST` | `/api/memory` | حفظ حقيقة في الذاكرة |
+| `DELETE` | `/api/memory/{name}` | حذف حقيقة |
+| `GET` | `/api/tools` | قائمة الأدوات الكاملة (base + MCP) |
+| `GET` | `/api/project/docs` | وثائق المشروع (PLAN, DESIGN, TASKS, ROADMAP) |
+| `POST` | `/api/project/docs` | تحديث وثيقة مشروع |
+| `GET` | `/api/project/status` | حالة المشروع (ملفات، اعتماديات) |
+
+### مثال: محادثة
+```python
+import httpx
+
+r = httpx.post("http://localhost:8000/api/chat", json={
+    "message": "What files are in this project?"
+})
+print(r.json()["response"])
+```
+
+---
+
+## 📋 Project Tracker — تتبع خطة المشروع
+
+`core/project_tracker.py` — يدير أربع وثائق مستمرة في `.widdx/`:
+
+| الوثيقة | المحتوى |
+|---|---|
+| **PLAN.md** | الخطة الحالية، الخطوات، الإنجازات |
+| **DESIGN.md** | قرارات التصميم، الـ Architecture، تدفق البيانات |
+| **TASKS.md** | قائمة المهام (todo / in-progress / done) |
+| **ROADMAP.md** | المراحل، التقدم، الخطوات القادمة |
+
+### كيف يعمل؟
+
+1. **عند بدء التشغيل** — تنشأ الوثائق تلقائياً إذا لم تكن موجودة، وتُحقن في سياق النظام
+2. **أثناء العمل** — الـ AI يستخدم أداة `update_project_doc` لتحديثها عند إنجاز المهام
+3. **في كل جلسة** — تُحمّل الوثائق في بداية السياق، فيعرف WIDDX أين هو وماذا يفعل
+
+```
+📋 Created project docs: PLAN.md, DESIGN.md, TASKS.md, ROADMAP.md
+📋 Project docs loaded (plan, tasks, roadmap)
+```
+
+### مثال لاستخدام الأداة (تلقائياً من الـ AI)
+```
+update_project_doc({
+  doc: "TASKS.md",
+  content: "# Tasks\n\n## In Progress\n- [ ] Build API endpoint\n\n## Done\n- [x] Project setup"
+})
+```
+
+### الفرق
+**قبل:** WIDDX لا يتذكر خطة المشروع بين الجلسات — يضل عن الطريق.
+**بعد:** يعرف أين هو، ما أنجز، ما هي الخطوة التالية — دائماً.
+
+---
+
 ## 💡 الميزات الذكية الجديدة
 
 ### 1. 💡 Auto-Skill Suggestion (اقتراح المهارات التلقائي)
@@ -466,23 +681,25 @@ WIDDX يأتي مع واجهة **Textual TUI** محسنة بالكامل، يم�
 ```bash
 widdx-tui
 # أو
-python run_textual.py
+python run_textual.py  # wrapper to scripts/run_textual.py
 ```
 
 ### مميزات واجهة TUI
 
 | الميزة | الوصف |
 |--------|-------|
-| 🔄 **Streaming مباشر** | عرض الردود لحظة بلحظة |
-| 💬 **سجل محادثة منسق** | ألوان، Markdown، ولوحات |
+| 🔄 **Streaming مباشر** | عرض الردود لحظة بلحظة مع دعم reasoning |
+| 💬 **سجل محادثة منسق** | ألوان، Markdown، ولوحات محادثة |
 | 🧠 **عرض التفكير** | `reasoning_content` للنماذج التي تدعمه |
-| 🛠️ **لوحة الأدوات** | عرض وتفاصيل جميع الأدوات |
+| 🛠️ **لوحة الأدوات** | عرض وتفاصيل جميع الأدوات (base + MCP) |
 | 🎯 **لوحة المهارات** | تفعيل/إلغاء المهارات بضغطة زر |
-| 💾 **لوحة الذكريات** | عرض/إضافة/تعديل/حذف الذكريات |
-| 📦 **لوحة الجلسات** | حفظ/تحميل/إدارة الجلسات |
+| 💾 **لوحة الذكريات** | عرض/إضافة/تعديل/حذف الذكريات (CRUD) |
+| 📦 **لوحة الجلسات** | حفظ/تحميل/إدارة الجلسات (CRUD) |
 | 🌿 **مُبدّل الفروع** | التبديل بين فروع الجلسة |
 | 🔌 **مُبدّل المزود** | تغيير مزود AI بسرعة |
-| ⚙️ **شاشة الإعدادات** | إعدادات متقدمة للنماذج والمزودات |
+| 🧩 **شاشة المساعدة** | أوامر، اختصارات، وأزرار سريعة |
+| ⚙️ **شاشة الإعدادات** | إعدادات متقدمة (بعلامات تبويب) |
+| 🖥️ **مشغل التطبيقات** | شبكة أيقونات على غرار Ubuntu GNOME |
 | 🩺 **Doctor** | فحص صحة النظام |
 | 📤 **تصدير** | تصدير المحادثة كـ Markdown |
 | ⌨️ **اختصارات لوحة المفاتيح** | `Ctrl+P` مساعدة، `Ctrl+L` مسح، `Ctrl+Q` خروج |
@@ -506,6 +723,8 @@ python run_textual.py
 - **Sandbox:** يمكن تحديد مجلد آمن — أي كتابة خارجه تُرفض
 - **مهلة الأوامر:** أوامر Bash تنتهي بعد 120 ثانية
 - **فحص الأخطاء:** أنماط أوامر خطرة محظورة تلقائياً
+- **حماية API Keys:** مفاتيح API لا تتسرب إلى أوامر Bash الفرعية (عبر `sanitized_environ()`)
+- **Git init تلقائي:** المشاريع الجديدة تنشأ مع version control تلقائياً
 
 ---
 

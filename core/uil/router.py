@@ -36,8 +36,8 @@ _MODE_MAP: dict[TaskType, ExecutionMode] = {
     TaskType.COMPLEX: ExecutionMode.EXPERT_TEAM,
     # DIRECT_TOOL: single system call
     TaskType.SYSTEM: ExecutionMode.DIRECT_TOOL,
-    # FALLBACK: treat unknown as autonomous
-    TaskType.UNKNOWN: ExecutionMode.AUTONOMOUS,
+    # FALLBACK: treat unknown as simple chat (fast, streaming)
+    TaskType.UNKNOWN: ExecutionMode.SIMPLE_CHAT,
 }
 
 

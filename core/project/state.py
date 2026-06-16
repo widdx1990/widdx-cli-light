@@ -246,7 +246,9 @@ def build_index(project_dir: str | Path, extra_ignore: list | None = None) -> di
         })
 
         # Extract symbols from text files
-        if p.suffix in (".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", ".c", ".cpp", ".h", ".hpp"):
+        if p.suffix in (".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs",
+                        ".c", ".cpp", ".h", ".hpp", ".rb", ".php", ".swift", ".kt",
+                        ".dart", ".lua", ".r", ".jl", ".cs", ".scala", ".ex", ".exs", ".hs"):
             try:
                 text = p.read_text(encoding="utf-8", errors="ignore")
                 symbols.extend(_extract_symbols(text, str(rel.as_posix()), p.suffix))
@@ -268,7 +270,7 @@ def _extract_symbols(text: str, file_path: str, ext: str) -> list[dict]:
         "if", "else", "for", "while", "return", "import", "from",
         "switch", "case", "catch", "finally", "with", "yield",
         "print", "console", "this", "super", "self", "it",
-        "describe", "it", "test", "expect", "assert",
+        "describe", "test", "expect", "assert",
         "export", "default", "new", "delete", "typeof",
         "try", "throw", "await",
     })
@@ -285,9 +287,17 @@ def _extract_symbols(text: str, file_path: str, ext: str) -> list[dict]:
 
     # Functions/methods — only explicit definition keywords
     patterns = [
-        r'^\s*(?:async\s+)?(?:public\s+|private\s+|protected\s+|static\s+)?(?:def|function|fun|fn)\s+(\w+)',
+        r'^\s*(?:async\s+)?(?:public\s+|private\s+|protected\s+|static\s+)?(?:def|function|fun|fn|sub)\s+(\w+)',
         r'^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*[=:]\s*(?:async\s*)?\(.*\)\s*(?:=>|->)',
         r'^\s*(\w+)\s*\([^)]*\)\s*\{',
+        # Return-type-first: Dart, Kotlin, TypeScript, Swift
+        r'^\s*(?:public\s+|private\s+|protected\s+|static\s+|internal\s+)?'
+        r'(?:void|int|str|bool|float|double|String|int\??|bool\??|Future\b.*|async\s+\w+)\s+'
+        r'(\w+)\s*\(',
+        # R language: name <- function(...)
+        r'^\s*(\w+)\s*<-\s*(?:function|reactive)\s*\(',
+        # Lua: name = function(...)  or  local name = function(...)
+        r'^\s*(?:local\s+)?(\w+)\s*=\s*(?:function)\s*\(',
     ]
     for pat in patterns:
         for m in re.finditer(pat, text, re.MULTILINE):
@@ -398,8 +408,8 @@ def _summarize_message(content: str) -> str:
     'head tail' is better than truncate because code often has the
     important part at the end (result, error, summary).
     """
-    if len(content) < HEAD_CHARS + TAIL_CHARS + 50:
-        return content[:HEAD_CHARS + TAIL_CHARS + 50].replace("\n", " ").strip()
+    if len(content) <= HEAD_CHARS + TAIL_CHARS + 50:
+        return content.replace("\n", " ").strip()
 
     head = content[:HEAD_CHARS]
     tail = content[-TAIL_CHARS:]

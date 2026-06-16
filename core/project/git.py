@@ -41,16 +41,32 @@ def has_changes(path: str | Path) -> bool:
 
 
 def auto_commit(path: str | Path, user_message: str):
-    """Auto-commit changes if the directory is a git repo with changes.
+    """Auto-commit changes.
+
+    For new directories (not yet a git repo), runs ``git init`` automatically
+    so even brand-new projects get version-controlled.
 
     SAFETY:
     - Skips sensitive files (see _SENSITIVE_PATTERNS)
-    - Only updates tracked files (`git add -u`, not `git add -A`)
+    - For existing repos: only updates tracked files (``git add -u``)
+    - For new repos: ``git add -A`` (first commit), then ``git add -u`` thereafter
     - Commit message is prefixed with 'WIDDX:' and truncated to 70 chars.
     """
     path_str = str(Path(path).resolve())
+    is_new_repo = False
+
     if not is_git_repo(path_str):
-        return False
+        # New project — auto-init so version control kicks in
+        try:
+            subprocess.run(
+                ["git", "init"],
+                cwd=path_str, capture_output=True, text=True, timeout=15,
+                check=True,
+            )
+            is_new_repo = True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
     if not has_changes(path_str):
         return False
     try:
@@ -72,13 +88,23 @@ def auto_commit(path: str | Path, user_message: str):
         if sensitive_detected:
             return False  # Skip commit — sensitive files detected
 
-        # Add only already-tracked files (safe: no untracked files dragged in)
-        subprocess.run(
-            ["git", "add", "-u"],
-            cwd=path_str, capture_output=True, text=True, timeout=30,
-            check=True,
-        )
+        # For a brand-new repo stage everything; otherwise only tracked files
+        if is_new_repo:
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=path_str, capture_output=True, text=True, timeout=30,
+                check=True,
+            )
+        else:
+            subprocess.run(
+                ["git", "add", "-u"],
+                cwd=path_str, capture_output=True, text=True, timeout=30,
+                check=True,
+            )
+
         msg = f"WIDDX: {user_message[:70].strip()}"
+        # Configure minimal user for the auto-commit if not set
+        _ensure_git_config(path_str)
         result = subprocess.run(
             ["git", "commit", "-m", msg],
             cwd=path_str, capture_output=True, text=True, timeout=30,
@@ -86,6 +112,23 @@ def auto_commit(path: str | Path, user_message: str):
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
+
+
+def _ensure_git_config(path_str: str):
+    """Set a minimal default git identity so commit doesn't fail on a fresh machine."""
+    try:
+        for key, value in [("user.email", "widdx@local"), ("user.name", "WIDDX")]:
+            r = subprocess.run(
+                ["git", "config", key],
+                cwd=path_str, capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode != 0 or not r.stdout.strip():
+                subprocess.run(
+                    ["git", "config", key, value],
+                    cwd=path_str, capture_output=True, text=True, timeout=5,
+                )
+    except Exception:
+        pass  # non-critical
 
 
 def undo_last_commit(path: str | Path) -> str:

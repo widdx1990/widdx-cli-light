@@ -1,10 +1,13 @@
 """
-WIDDX v2 - Unified AI Coding Assistant
-Integrates all enhanced components:
-- Durable Sessions (SQLite)
-- Enhanced Skills
-- Smart Provider Routing
-- Advanced Memory
+WIDDX v2 - DEPRECATED
+======================
+This module is preserved for reference only.
+All functionality has been consolidated into `core/chat.py` + `core/widdx.py`.
+
+Key migration:
+  - WIDDXV2.chat()        → use `core.chat.run_chat_turn()` / `run_stream_chat_turn()`
+  - WIDDXV2.new_session() → use `core.session_v2.create_new_session()`
+  - WIDDXV2.add_memory()  → use `core.memory.MemoryStore.save()`
 """
 
 from .session_v2 import (

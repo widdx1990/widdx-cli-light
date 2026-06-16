@@ -5,7 +5,9 @@ from pathlib import Path
 from datetime import datetime
 from rich.prompt import Prompt as RPrompt
 
-from core.ui.ui import print_system_msg, console
+from core.chat import print_system_msg
+from rich.console import Console
+console = Console(highlight=False)
 from rich.text import Text
 from rich.table import Table
 from core.providers.providers import create_provider, fetch_free_models, fetch_ollama_models
@@ -32,13 +34,26 @@ def build_mcp_discover_table(discovered: list[dict], mgr=None) -> "Table":
 
 def handle_model(provider, state):
     """Handle /model command — change AI model."""
+    from core.providers.providers import get_available_models, resolve_model
+
     # ── Ollama: auto-discover local models ──────────────────────
     if provider.name == "ollama":
         return _handle_ollama_model(provider, state)
 
-    free_list = fetch_free_models()
-    print_system_msg(f"Available free models: {', '.join(free_list)}")
-    new = RPrompt.ask("Model name", default=provider.model)
+    available = get_available_models(provider.name, provider.base_url, force_refresh=True)
+    if available:
+        print_system_msg(f"Available models: {', '.join(available[:10])}")
+        new = RPrompt.ask("Model name", default=available[0])
+    else:
+        new = RPrompt.ask("Model name", default=provider.model)
+
+    # Auto-resolve if the chosen name is empty or doesn't exist
+    resolved = resolve_model(provider.name, preferred=new if new else None,
+                             base_url=provider.base_url)
+    if resolved and resolved != new:
+        print_system_msg(f"Auto-resolved to available model: {resolved}")
+        new = resolved
+
     provider.model = new
     state["model"] = f"{provider.name}/{new}"
     print_system_msg(f"Model changed to {new}")
@@ -106,32 +121,37 @@ def _handle_ollama_model(provider, state):
     return provider, state
 
 
-def handle_provider(provider, state, cfg):
-    """Handle /provider command — switch provider type."""
+def handle_provider(provider, state, cfg, preset: str | None = None):
+    """Handle /provider command — switch provider type.
+
+    If ``preset`` is given (e.g. from /provider opencode-zen) the interactive
+    prompt is skipped and the preset is used directly.
+    """
     print_system_msg(f"Current provider: {provider.name}")
-    new_p = RPrompt.ask("Provider (from config / opencode-zen / ollama / openai / deepseek)", default=provider.name)
+    if preset:
+        new_p = preset
+    else:
+        new_p = RPrompt.ask(
+            "Provider (from config / opencode-zen / ollama / openai / deepseek)",
+            default=provider.name,
+        )
     if new_p != provider.name:
         if new_p == "openai":
             url = RPrompt.ask("Base URL", default="https://api.openai.com/v1")
-            key = prompt_key(new_p) if not new_p == provider.name else ""
-            if not key:
-                key = RPrompt.ask("API Key (optional)", default="")
+            prompt_key(new_p)  # stores key in env
             provider = create_provider({
-                "provider": {"name": "openai", "model": provider.model,
-                             "base_url": url}
+                "provider": {"name": "openai", "base_url": url}
             })
         elif new_p == "opencode-zen":
+            # Auto-detect best free model
             free_list = fetch_free_models()
-            print_system_msg(f"Available: {', '.join(free_list)}")
-            model = RPrompt.ask("Free model", default=free_list[0] if free_list else "deepseek-v4-flash-free")
+            model = free_list[0] if free_list else "deepseek-v4-flash-free"
+            print_system_msg(f"✨ Auto-selected: {model} (from {len(free_list)} free model(s))")
             provider = create_provider({"provider": {"name": "opencode-zen", "model": model}})
         elif new_p == "deepseek":
-            key = prompt_key(new_p)
-            if not key:
-                print_system_msg("No API key provided — check DEEPSEEK_API_KEY env var")
-            model = RPrompt.ask("Model", default="deepseek-v4-flash")
+            prompt_key(new_p)
             provider = create_provider({
-                "provider": {"name": "deepseek", "model": model, "base_url": "https://api.deepseek.com"}
+                "provider": {"name": "deepseek", "base_url": "https://api.deepseek.com"}
             })
         elif new_p == "ollama":
             url = RPrompt.ask("Ollama URL", default="http://localhost:11434")
@@ -156,15 +176,13 @@ def handle_provider(provider, state, cfg):
                 except ValueError:
                     pass
                 model = choice
-                print_system_msg(f"Using model: {model}")
             else:
                 print_system_msg("⚠️  No Ollama models found — is 'ollama serve' running?")
-                model = RPrompt.ask("Model name (manual)", default="llama3")
+                model = RPrompt.ask("Model name (manual)", default="")
             provider = create_provider({
                 "provider": {"name": "ollama", "model": model, "base_url": url}
             })
         else:
-            # Try to load from config's default
             print_system_msg(f"Unknown provider '{new_p}'. Keeping {provider.name}")
             return provider, state
         state["model"] = f"{provider.name}/{provider.model}"
@@ -182,26 +200,40 @@ def handle_sandbox(tools):
     return str(p)
 
 
-def handle_mcp():
+def _parse_mcp_sub(raw_input: str) -> tuple[str, str]:
+    """Parse /mcp sub-command from the raw user input.
+
+    Returns (action, rest) where action is one of:
+      "list", "discover", "add", "remove", or "" for default.
+    """
+    parts = raw_input.strip().split(None, 2)
+    if len(parts) < 2:
+        return ("list", "")
+    cmd = parts[1].lower()
+    rest = parts[2] if len(parts) > 2 else ""
+    if cmd == "discover":
+        return ("discover", "")
+    elif cmd == "add" and rest:
+        return ("add", rest)
+    elif cmd == "remove" and rest:
+        return ("remove", rest)
+    return ("list", "")
+
+
+def handle_mcp(user_input: str = ""):
     """Handle /mcp command — manage MCP servers.
 
     Usage:
       /mcp              — list servers and tools
       /mcp discover     — auto-discover servers from system
-      /mcp add <name> <command> [args...] — add a new server
-      /mcp remove <name> — remove a server
+      /mcp add name cmd [args...] — add a new server
+      /mcp remove name  — remove a server
     """
     from core.mcp.client import get_mcp_manager, discover_mcp_servers, load_mcp_tokens
     from rich.table import Table
-    from rich.prompt import Prompt as RPrompt
 
+    action, rest = _parse_mcp_sub(user_input)
     mgr = get_mcp_manager()
-    parts = [p.strip() for p in (getattr(handle_mcp, '_last_input', '')).split(None, 1)]
-    # We access the actual args from the caller context through a hack
-    # Better: parse from the global user input
-
-    # For now, rely on the sub-action being passed
-    action = getattr(handle_mcp, '_pending_action', None)
 
     if action == "discover":
         discovered = discover_mcp_servers(force_refresh=True)
@@ -209,6 +241,35 @@ def handle_mcp():
             print_system_msg("No MCP servers discovered.")
             return
         console.print(build_mcp_discover_table(discovered, mgr))
+        print_system_msg("Use /mcp add <name> <command> [args] to add a server")
+        return
+
+    if action == "add":
+        from core.mcp.client import MCPServerConnection
+        parts = rest.split(None, 1)
+        if len(parts) < 2:
+            print_system_msg("Usage: /mcp add <name> <command> [args...]")
+            return
+        srv_name, cmd_rest = parts[0], parts[1]
+        cmd_parts = cmd_rest.split()
+        srv_cmd = cmd_parts[0]
+        srv_args = cmd_parts[1:] if len(cmd_parts) > 1 else []
+        ok = mgr.add_server(srv_name, srv_cmd, srv_args)
+        if ok:
+            tools_count = len(mgr.get_server(srv_name).get_tool_definitions())
+            print_system_msg(f"MCP server '{srv_name}' added ({tools_count} tools)")
+        else:
+            err = mgr.get_server(srv_name).error if mgr.get_server(srv_name) else "unknown"
+            print_system_msg(f"Failed to add '{srv_name}': {err}")
+        return
+
+    if action == "remove":
+        srv_name = rest.strip()
+        if not srv_name:
+            print_system_msg("Usage: /mcp remove <name>")
+            return
+        mgr.remove_server(srv_name)
+        print_system_msg(f"MCP server '{srv_name}' removed")
         return
 
     # Default: show current servers

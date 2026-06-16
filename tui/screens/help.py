@@ -7,6 +7,7 @@ from textual.binding import Binding
 from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
+from core.ui_visual import BLUE, CYAN, DIM
 from textual.message import Message
 
 
@@ -90,34 +91,34 @@ class HelpScreen(ModalScreen):
         log = self.query_one("#help-log", RichLog)
         log.write(Panel(
             Text.from_markup(
-                "[bold #818cf8]◈  WIDDX Cortex  —  Terminal AI[/]\n"
+                "[bold ◈  WIDDX Cortex  —  Terminal AI]\n"
                 "[dim]by Muhammad Muslih  •  widdx[/]"
             ),
-            border_style="#6366f1",
+            border_style=BLUE,
             padding=(0, 2),
         ))
         for category, cmds in self.CATEGORIES.items():
             log.write("")
             table = Table(
                 title=category,
-                border_style="#0891b2",
-                header_style="bold #818cf8",
-                title_style="bold #64748b",
+                border_style=CYAN,
+                header_style=f"bold {BLUE}",
+                title_style=f"bold {DIM}",
                 padding=(0, 2),
                 box=None,
             )
-            table.add_column("Command / Key", style="bold #0891b2", width=22)
-            table.add_column("Description",   style="#cbd5e1")
+            table.add_column("Command / Key", style=f"bold {CYAN}", width=22)
+            table.add_column("Description",   style=f"{DIM}")
             for cmd, desc in cmds:
                 table.add_row(cmd, desc)
             log.write(table)
         log.write("")
         log.write(Panel(
             Text.from_markup(
-                "[dim]Press [bold #0891b2]Esc[/] or [bold #0891b2]q[/] to close  │  "
+                f"[dim]Press [bold {CYAN}]Esc[/] or [bold {CYAN}]q[/] to close  │  "
                 "Click a button above to run a command instantly[/]"
             ),
-            border_style="dim",
+            border_style=DIM,
             padding=(0, 1),
         ))
 

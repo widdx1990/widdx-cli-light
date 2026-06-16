@@ -46,7 +46,7 @@ def _walk() -> list[dict]:
             continue
         rel = child.relative_to(ROOT)
 
-        if child.is_dir() and child.name == "core":
+        if child.is_dir() and child.name in ("core", "tui", "cli"):
             for f in sorted(child.rglob("*.py")):
                 if f.name in SKIP_FILES or "__pycache__" in f.parts:
                     continue

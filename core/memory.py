@@ -1,8 +1,17 @@
 """Persistent Memory System for WIDDX.
 
-Inspired by WIDDX's memory architecture.
+Two-tier architecture:
+  1. **Global memory** — ``~/.widdx/memory/`` — shared across ALL projects.
+     Facts learned in one project are available in every other project.
+     This is the DEFAULT when ``MemoryStore()`` is called without arguments.
 
-Each memory is a markdown file in CWD/.widdx/memory/ with frontmatter:
+  2. **Project memory** — ``<project>/.widdx/memory/`` — facts specific to one
+     project.  Created by passing ``project_dir=...``.
+
+This means WIDDX learns once and remembers everywhere — continuous
+self-improvement across sessions, projects, and even users (when deployed).
+
+Each memory is a markdown file with frontmatter:
   ---
   name: <short-kebab-case>
   description: <one-line summary>
@@ -11,14 +20,7 @@ Each memory is a markdown file in CWD/.widdx/memory/ with frontmatter:
   ---
   <the fact>
 
-MEMORY.md in CWD/.widdx/ serves as the index with one-line pointers.
-
-Usage:
-    from core.memory import MemoryStore
-    store = MemoryStore()
-    store.save("project-goals", "Build a CLI tool", {"type": "project"})
-    all_memories = store.list_all()
-    relevant = store.search("CLI")
+MEMORY.md serves as the index with one-line pointers.
 """
 
 import os, json
@@ -34,13 +36,21 @@ INDEX_FILE = "MEMORY.md"
 
 
 class MemoryStore:
-    """Persistent memory store backed by markdown files with frontmatter."""
+    """Persistent memory store backed by markdown files with frontmatter.
+
+    Args:
+        project_dir: If given, stores memory in ``<project>/.widdx/memory/``.
+                     If ``None`` (default), stores in ``~/.widdx/memory/``
+                     (global — shared across all projects).
+    """
 
     def __init__(self, project_dir: str | Path | None = None):
         if project_dir is None:
-            project_dir = Path.cwd()
-        self.root = Path(project_dir).resolve()
-        self.widdx_dir = self.root / ".widdx"
+            # Global memory — shared across ALL projects
+            self.root = Path.home() / ".widdx"
+        else:
+            self.root = Path(project_dir).resolve()
+        self.widdx_dir = self.root / ".widdx" if project_dir else self.root
         self.memory_dir = self.widdx_dir / MEMORY_DIR_NAME
         self.index_path = self.widdx_dir / INDEX_FILE
         self.memory_dir.mkdir(parents=True, exist_ok=True)

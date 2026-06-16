@@ -1,14 +1,102 @@
 """Conversation loop and tool processing for WIDDX."""
 
 import json, uuid
+from datetime import datetime
+from rich.console import Console
+from rich.text import Text
+from rich.panel import Panel
+from rich.live import Live
 
 from core import tools
 from core.skills import skill_manager
-from core.ui import (
-    print_tool_msg, print_tool_call, print_system_msg, print_ai_msg, print_reasoning,
-    print_ai_stream,
-)
 from core.providers.providers import estimate_turn_cost
+
+
+# ── Minimal display functions (for chat loop only) ──────────
+_console = Console(highlight=False)
+console = _console  # public alias for agent/expert modules
+_GREEN = "#00c896"
+_ORANGE = "#f5a623"
+_DIM = "#888888"
+
+
+def print_system_msg(text: str):
+    _console.print(Panel(Text(text, style=_DIM), title="[dim]⚙ system[/]", border_style=_DIM, padding=(0, 1)))
+
+
+def print_ai_msg(text: str):
+    _console.print(Panel(Text(text[:2000], style=_ORANGE), title=f"[bold {_ORANGE}]🤖 WIDDX[/]", subtitle=f"[dim]{datetime.now().strftime('%H:%M')}[/]", border_style=_ORANGE, padding=(0, 1)))
+
+
+def print_tool_call(name: str, args_str: str):
+    _console.print(f"  [bold {_GREEN}]🔧 {name}[/] ([dim]{args_str[:100]}[/])")
+
+
+def print_tool_msg(name: str, content: str):
+    _console.print(f"  [{_DIM}]  └─ {content[:150]}[/]")
+
+
+def print_reasoning(text: str):
+    """Display a compact reasoning indicator — not intrusive."""
+    if not text:
+        return
+    # Show only the first line / key insight, max 120 chars
+    first_line = text.split("\n")[0].strip()[:120]
+    if first_line:
+        _console.print(f"  [{_DIM}]🧠 {first_line}…[/]")
+
+
+def print_agent_done(steps: list, summary: str):
+    """Show the final agent summary panel with step log."""
+    from rich.table import Table
+    if not steps:
+        _console.print(Panel(
+            Text(summary, style="white"),
+            border_style=_GREEN,
+            title="[bold]Agent Complete[/]",
+            title_align="left",
+        ))
+        return
+    done = sum(1 for s in steps if s.status == "done")
+    failed = sum(1 for s in steps if s.status == "failed")
+    total = len(steps)
+    lines = [f"Steps: {done}/{total} succeeded"]
+    if failed:
+        lines.append(f"Failed: {failed}")
+    table = Table(title="Agent Execution Summary", border_style="dim")
+    table.add_column("Step", style="dim")
+    table.add_column("Tool", style=f"bold {_GREEN}")
+    table.add_column("Status", style=_ORANGE)
+    for s in steps:
+        status_icon = "✅" if s.status == "done" else "❌" if s.status == "failed" else "⏳"
+        table.add_row(str(s.step_num), s.tool_name, status_icon)
+    _console.print(table)
+    if summary:
+        _console.print(Panel(summary, title="[bold]Summary[/]", border_style=_GREEN))
+
+
+def print_ai_stream():
+    """Return (live, update_fn, done_fn) for streaming AI response."""
+    ts = datetime.now().strftime("%H:%M")
+    header = Text()
+    header.append(" assistant ", style=f"bold {_GREEN}")
+    header.append(f" {ts}", style="dim")
+    _console.print()
+    _console.print(header)
+    _accumulated = [""]
+    live_container = [None]
+
+    def get_panel():
+        return Panel(Text(_accumulated[0][:2000] or "[thinking...]", style=_ORANGE), border_style=_ORANGE, padding=(0, 1))
+
+    def update(chunk: str):
+        _accumulated[0] += chunk
+        if live_container[0] is not None:
+            live_container[0].update(get_panel())
+
+    live = Live(get_panel(), refresh_per_second=10, vertical_overflow="visible")
+    live_container[0] = live
+    return live, update, live.stop
 
 
 # ── Tool-call ID validation ────────────────────────────────
@@ -141,9 +229,10 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
         if tool_calls:
             messages = _handle_tool_calls(tool_calls, content, messages, state)
         else:
+            if not content or not content.strip():
+                content = "[done]"
             messages.append({"role": "assistant", "content": content})
-            if content:
-                print_ai_msg(content)
+            print_ai_msg(content)
             break
     else:
         print_system_msg("Max turns reached")
@@ -177,9 +266,23 @@ def run_stream_turn(provider, messages, state, tool_defs, cfg):
                     err_msg = event["data"]
                     break
                 elif event["type"] == "done":
-                    _, tool_calls = event["data"]
+                    final_content, tool_calls = event["data"]
+                    # Provider may have packed reasoning into content — use it
+                    # when no content was streamed as separate deltas
+                    if not content_chunks and final_content:
+                        # Strip [thinking] tags for cleaner live display
+                        clean = final_content
+                        if clean.startswith("[thinking]"):
+                            end = clean.find("[/thinking]")
+                            if end > 0:
+                                clean = clean[len("[thinking]"):end].strip()
+                        update(clean)
+                        content_chunks.append(final_content)
                     stream_done = True
                     break
+            # Ensure Live panel has *something* so it doesn't commit as empty
+            if not content_chunks and not tool_calls:
+                update("[done]")
             if not err_msg and not stream_done:
                 err_msg = "Stream ended unexpectedly (possible connection timeout)"
 
@@ -194,21 +297,20 @@ def run_stream_turn(provider, messages, state, tool_defs, cfg):
             state["_last_reasoning"] = full_reasoning
             print_reasoning(full_reasoning)
 
-        # Strip any [thinking] tags that the provider may have prepended
-        if content and content.startswith("["):
-            end_idx = content.find("[/")
+        # Strip [thinking]…[/thinking] tags that some providers prepend
+        if content and content.startswith("[thinking]"):
+            end_idx = content.find("[/thinking]")
             if end_idx > 0:
-                close_bracket = content.find("]", end_idx)
-                if close_bracket > 0:
-                    content = content[close_bracket + 1:].strip()
+                reasoning = content[len("[thinking]"):end_idx].strip()
+                rest = content[end_idx + len("[/thinking]"):].strip()
+                content = rest or reasoning or "[done]"  # keep something!
 
         if tool_calls:
             done()  # commit the streamed text before showing tool calls
             messages = _handle_tool_calls(tool_calls, content, messages, state)
         else:
             messages.append({"role": "assistant", "content": content})
-            if content:
-                done()  # print the final response panel
+            done()  # always commit — prevents empty panel when content is only reasoning
             break
     else:
         print_system_msg("Max turns reached")
