@@ -1,7 +1,15 @@
 
 """
-Skills V2 - Enhanced Skills System
-Inspired by OpenCode's Skill Architecture
+Skills V2 - DEPRECATED
+======================
+This module is preserved for reference only.
+All functionality has been consolidated into `core/skills.py`.
+
+Key migration:
+  - SkillTool     → use `skills.Skill.get_tool_definitions()` + manual handler
+  - Skill         → use `skills.Skill` (v1)
+  - SkillRegistry → use `skills.SkillManager` (singleton: `skill_manager`)
+  - get_skill_registry() → use `skills.skill_manager`
 """
 
 import sys

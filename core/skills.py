@@ -11,6 +11,32 @@ from .utils import parse_frontmatter
 SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
 
+class SkillTool:
+    """A callable tool associated with a skill, with OpenAI-compatible schema."""
+
+    def __init__(self, name: str, description: str, parameters: dict, handler: callable):
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+        self.handler = handler
+
+    def to_openai_schema(self) -> dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
+
+    def __call__(self, **kwargs):
+        return str(self.handler(**kwargs))
+
+    def __repr__(self):
+        return f"SkillTool(name={self.name!r})"
+
+
 class Skill:
     """A single skill with prompt template and optional custom tools."""
 

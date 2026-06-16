@@ -8,6 +8,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
 
+from core.ui_visual import CYAN, ORANGE, RED, BLUE, DIM
 from core.memory import MemoryStore
 
 
@@ -67,16 +68,16 @@ class MemoryListScreen(Screen):
         )
         if not self._memories:
             log.write(Panel(
-                Text.from_markup("[dim]No memories yet.\n\nPress [bold #0891b2]C[/] to create one, or type a search query above.[/]"),
-                border_style="dim", padding=(2, 4),
+                Text.from_markup(f"[dim]No memories yet.\n\nPress [bold {CYAN}]C[/] to create one, or type a search query above.[/]") ,
+                border_style=DIM, padding=(2, 4),
             ))
             return
-        table = Table(border_style="#0891b2", header_style="bold #818cf8", padding=(0, 1))
+        table = Table(border_style=CYAN, header_style=f"bold {BLUE}", padding=(0, 1))
         table.add_column("#", style="dim", width=3)
-        table.add_column("Name", style="bold #0891b2", width=22)
-        table.add_column("Type", style="#64748b", width=12)
-        table.add_column("Description", style="#cbd5e1")
-        table.add_column("Actions", style="#f5a623", width=10)
+        table.add_column("Name", style=f"bold {CYAN}", width=22)
+        table.add_column("Type", style=f"{DIM}", width=12)
+        table.add_column("Description", style=f"{DIM}")
+        table.add_column("Actions", style=f"{ORANGE}", width=10)
         for i, mem in enumerate(self._memories, 1):
             table.add_row(str(i), mem.get("name", "?"), (mem.get("type", "unknown")[:10]),
                           mem.get("description", "")[:60], "[E]dit [D]el")

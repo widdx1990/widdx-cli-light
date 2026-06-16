@@ -203,7 +203,7 @@ echo REM WIDDX Cortex — Terminal AI Assistant
 echo REM Launch with: widdx or widdx [directory]
 echo.
 echo if not "%%1"=="" ( cd "%%1" )
-echo "%EMBEDDED_PYTHON%" "%WIDDX_DIR%\main.py" %%*
+echo "%EMBEDDED_PYTHON%" -m core %%*
 ) > "%BIN_DIR%\widdx.bat"
 
 :: Create widdx-tui.bat (TUI version)
@@ -214,7 +214,7 @@ echo REM WIDDX Cortex — Terminal AI Assistant (TUI Mode)
 echo REM Launch with: widdx-tui or widdx-tui [directory]
 echo.
 echo if not "%%1"=="" ( cd "%%1" )
-echo "%EMBEDDED_PYTHON%" "%WIDDX_DIR%\run_textual.py" %%*
+echo "%EMBEDDED_PYTHON%" -m tui %%*
 ) > "%BIN_DIR%\widdx-tui.bat"
 
 echo   ✅ تم إنشاء المشغّلات بنجاح!

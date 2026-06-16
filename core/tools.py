@@ -5,6 +5,7 @@ Every tool is registered here via a dict with:
 """
 import glob as glob_module
 import os, subprocess, platform, re, json, time, logging
+from html.parser import HTMLParser
 import httpx
 from pathlib import Path
 import tempfile
@@ -249,15 +250,16 @@ def _grep(pattern: str, path: str | None = None, include: str | None = None):
     results = []
     files_iter = p.rglob(include) if include else p.rglob("*")
     for f in files_iter:
-        if f.is_file() and f.stat().st_size < 102400:
-            try:
-                for i, line in enumerate(f.read_text("utf-8", errors="ignore").splitlines(), 1):
+        if not f.is_file() or f.stat().st_size > 102400:
+            continue
+        try:
+            with f.open("r", encoding="utf-8", errors="ignore") as fh:
+                for i, line in enumerate(fh, 1):
                     if re.search(pattern, line, re.I):
                         rel = str(f.relative_to(p))
                         results.append(f"{rel}:{i}: {line.strip()[:120]}")
-            except Exception as e:
-                logger.debug("grep: skip %s: %s", f.name, e)
-                pass
+        except Exception as e:
+            logger.debug("grep: skip %s: %s", f.name, e)
     if not results:
         return f"No results for '{pattern}'"
     return f"{len(results)} result(s):\n" + "\n".join(results[:50])
@@ -278,6 +280,8 @@ def _bash(command: str, description: str | None = None) -> str:
         )
 
     try:
+        from .config.keychain import sanitized_environ
+        clean_env = sanitized_environ()
         if platform.system() == "Windows":
             shell_cmd = ["powershell", "-NoProfile", "-Command", command]
         else:
@@ -287,6 +291,7 @@ def _bash(command: str, description: str | None = None) -> str:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=clean_env,
         )
         try:
             stdout, stderr = proc.communicate(timeout=BASH_TIMEOUT)
@@ -342,11 +347,66 @@ def _web_fetch(url: str, format: str = "markdown") -> str:
         return f"Web fetch error: {e}"
 
 
+class HTMLTagValidator(HTMLParser):
+    """Basic HTML tag validator that detects mismatched or unclosed tags."""
+
+    VOID_TAGS = {
+        "area", "base", "br", "col", "embed", "hr", "img",
+        "input", "link", "meta", "param", "source", "track", "wbr",
+    }
+
+    OPTIONAL_CLOSING_TAGS = {
+        "li", "dt", "dd", "p", "rt", "rp", "optgroup",
+        "option", "thead", "tbody", "tfoot", "tr", "td", "th",
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.stack: list[str] = []
+        self.errors: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str]]):
+        if tag in self.VOID_TAGS:
+            return
+        self.stack.append(tag)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str]]):
+        pass
+
+    def handle_endtag(self, tag: str):
+        if not self.stack:
+            self.errors.append(f"Unexpected closing tag </{tag}>")
+            return
+        if self.stack[-1] == tag:
+            self.stack.pop()
+            return
+        if tag in self.stack:
+            while self.stack and self.stack[-1] != tag:
+                unclosed = self.stack.pop()
+                if unclosed not in self.OPTIONAL_CLOSING_TAGS:
+                    self.errors.append(f"Unclosed <{unclosed}> before </{tag}>")
+            if self.stack and self.stack[-1] == tag:
+                self.stack.pop()
+            return
+        self.errors.append(f"Unexpected closing tag </{tag}>")
+
+    def close(self):
+        super().close()
+        while self.stack:
+            unclosed = self.stack.pop()
+            if unclosed not in self.OPTIONAL_CLOSING_TAGS:
+                self.errors.append(f"Unclosed <{unclosed}>")
+
+
 def _validate(file_path: str) -> str:
     """Validate syntax of a code file using available CLI tools.
 
     Supports: PHP (php -l), Python (compile), JavaScript (node --check),
-    JSON (json module), and basic bracket matching fallback.
+    TypeScript (tsc --noEmit), Ruby (ruby -c), Go (gofmt), Dart (dart analyze),
+    JSON (json module), CSS (cssutils), YAML (yaml.safe_load),
+    and basic bracket matching fallback.
+
+    When a CLI tool is missing, tries to auto-install it (e.g. TypeScript via npm).
     """
     p = Path(file_path).resolve()
     if not p.exists():
@@ -355,10 +415,15 @@ def _validate(file_path: str) -> str:
     ext = p.suffix.lower()
     content = p.read_text("utf-8", errors="replace")
 
-    # ── Language-specific validators ──────────────────────────
+    # ── Auto-install missing CLI tools if possible ──────────
+    def _ensure_tool(name: str) -> bool:
+        try:
+            from core.auto_setup import ensure_cli_tools
+            return bool(ensure_cli_tools([name]))
+        except Exception:
+            return False
 
     # PHP
-    if ext == ".php":
         try:
             r = subprocess.run(["php", "-l", str(p)],
                                capture_output=True, text=True, timeout=10)
@@ -405,17 +470,100 @@ def _validate(file_path: str) -> str:
         except _json.JSONDecodeError as e:
             return f"❌ JSON error:\n{e}"
 
-    # HTML: basic check for matching tags
+    # TypeScript
+    if ext in (".ts", ".tsx"):
+        try:
+            r = subprocess.run(["npx", "--yes", "typescript", "--noEmit", "--strict", str(p)],
+                               capture_output=True, text=True, timeout=30)
+            if r.returncode == 0:
+                return f"✅ TypeScript: No errors in {file_path}"
+            else:
+                return f"❌ TypeScript error:\n{(r.stderr or r.stdout).strip()[:500]}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            if _ensure_tool("typescript"):
+                try:
+                    r = subprocess.run(["npx", "--yes", "typescript", "--noEmit", "--strict", str(p)],
+                                       capture_output=True, text=True, timeout=30)
+                    if r.returncode == 0:
+                        return f"✅ TypeScript: No errors in {file_path}"
+                    else:
+                        return f"❌ TypeScript error:\n{(r.stderr or r.stdout).strip()[:500]}"
+                except Exception:
+                    pass
+
+    # Ruby
+    if ext == ".rb":
+        try:
+            r = subprocess.run(["ruby", "-c", str(p)],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                return f"✅ Ruby syntax: No errors in {file_path}"
+            else:
+                return f"❌ Ruby syntax error:\n{r.stderr.strip()[:500]}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # Go (gofmt checks syntax without compiling)
+    if ext == ".go":
+        try:
+            r = subprocess.run(["gofmt", "-e", str(p)],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                return f"✅ Go syntax: No errors in {file_path}"
+            else:
+                return f"❌ Go syntax error:\n{(r.stderr or r.stdout).strip()[:500]}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # Dart
+    if ext == ".dart":
+        try:
+            r = subprocess.run(["dart", "analyze", "--fatal-infos", str(p)],
+                               capture_output=True, text=True, timeout=30)
+            if r.returncode == 0:
+                return f"✅ Dart: No errors in {file_path}"
+            else:
+                return f"❌ Dart issue:\n{(r.stderr or r.stdout).strip()[:500]}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # CSS
+    if ext == ".css":
+        try:
+            import cssutils
+            cssutils.parseString(content)
+            return f"✅ CSS: Valid in {file_path}"
+        except ImportError:
+            # Fallback: basic bracket/brace balance
+            if content.count("{") != content.count("}"):
+                return f"⚠️  CSS: Brace mismatch ({content.count('{')} vs {content.count('}')})"
+            return f"✅ CSS: Brace balance OK in {file_path}"
+        except Exception as e:
+            return f"❌ CSS error:\n{e}"
+
+    # YAML
+    if ext in (".yaml", ".yml"):
+        try:
+            import yaml
+            yaml.safe_load(content)
+            return f"✅ YAML: Valid in {file_path}"
+        except ImportError:
+            pass  # pyyaml not installed
+        except yaml.YAMLError as e:
+            return f"❌ YAML error:\n{e}"
+
+    # HTML: structural validation using a parser-based tag check
     if ext in (".html", ".htm"):
-        # Count common HTML tag mismatches
-        open_tags = len(re.findall(r'<(div|span|table|tr|td|th|form|ul|ol|li|a|p|h[1-6]|section|header|footer|main|nav|article|aside)[^>]*>', content))
-        close_tags = len(re.findall(r'</(div|span|table|tr|td|th|form|ul|ol|li|a|p|h[1-6]|section|header|footer|main|nav|article|aside)>', content))
-        issues = []
-        if open_tags != close_tags:
-            issues.append(f"Tag mismatch: {open_tags} opening vs {close_tags} closing")
-        if not issues:
-            return f"✅ HTML: Basic structure OK in {file_path}"
-        return f"⚠️  HTML: {'; '.join(issues)} in {file_path}"
+        parser = HTMLTagValidator()
+        try:
+            parser.feed(content)
+            parser.close()
+        except Exception as e:
+            return f"❌ HTML parser error in {file_path}: {e}"
+        if parser.errors:
+            details = "\n".join(parser.errors[:10])
+            return f"❌ HTML validation errors in {file_path}:\n{details}"
+        return f"✅ HTML: No structure errors in {file_path}"
 
     # ── Generic: check for obvious syntax issues ──────────────
     issues = []
@@ -466,6 +614,163 @@ def _list_files(path: str = ".") -> str:
         else:
             lines.append(f"{prefix}{name}  ({size} bytes)")
     return f"Contents of {path}:\n" + "\n".join(lines)
+
+
+def _project_validate(project_dir: str) -> str:
+    """Run project-level build/test validation.
+    
+    Detects project type by looking for config files, then runs
+    appropriate test/build commands. Returns pass/fail with output.
+    """
+    p = Path(project_dir).resolve()
+    if not p.is_dir():
+        return f"Project directory not found: {project_dir}"
+
+    results = []
+    
+    # Python: pytest or unittest
+    if (p / "pyproject.toml").exists() or (p / "setup.py").exists() or (p / "requirements.txt").exists():
+        results.append("🐍 Python project detected")
+        try:
+            # Try pytest first
+            r = subprocess.run(
+                ["python", "-m", "pytest", str(p), "-v", "--tb=short"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(p),
+            )
+            if r.returncode == 0:
+                results.append("✅ pytest passed")
+            else:
+                out = (r.stdout or r.stderr)[:1000]
+                results.append(f"❌ pytest failed:\n{out}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            # Fallback to unittest
+            try:
+                r = subprocess.run(
+                    ["python", "-m", "unittest", "discover", "-s", str(p), "-p", "test_*.py", "-v"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=str(p),
+                )
+                if r.returncode == 0:
+                    results.append("✅ unittest passed")
+                else:
+                    out = (r.stdout or r.stderr)[:1000]
+                    results.append(f"❌ unittest failed:\n{out}")
+            except Exception as e:
+                results.append(f"⚠️  No Python tests found: {e}")
+    
+    # Node.js: npm test
+    if (p / "package.json").exists():
+        results.append("📦 Node.js project detected")
+        try:
+            r = subprocess.run(
+                ["npm", "test"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=str(p),
+            )
+            if r.returncode == 0:
+                results.append("✅ npm test passed")
+            else:
+                out = (r.stdout or r.stderr)[:1000]
+                results.append(f"❌ npm test failed:\n{out}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            results.append("⚠️  npm test timed out or not available")
+        except Exception as e:
+            results.append(f"⚠️  npm test error: {e}")
+    
+    # Rust: cargo test
+    if (p / "Cargo.toml").exists():
+        results.append("🦀 Rust project detected")
+        try:
+            r = subprocess.run(
+                ["cargo", "test"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=str(p),
+            )
+            if r.returncode == 0:
+                results.append("✅ cargo test passed")
+            else:
+                out = (r.stdout or r.stderr)[:1000]
+                results.append(f"❌ cargo test failed:\n{out}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            results.append("⚠️  cargo test timed out or not available")
+        except Exception as e:
+            results.append(f"⚠️  cargo test error: {e}")
+    
+    # Go: go test
+    if any((p / f).exists() for f in ["go.mod", "go.sum"]):
+        results.append("🐹 Go project detected")
+        try:
+            r = subprocess.run(
+                ["go", "test", "./..."],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=str(p),
+            )
+            if r.returncode == 0:
+                results.append("✅ go test passed")
+            else:
+                out = (r.stdout or r.stderr)[:1000]
+                results.append(f"❌ go test failed:\n{out}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            results.append("⚠️  go test timed out or not available")
+        except Exception as e:
+            results.append(f"⚠️  go test error: {e}")
+    
+    # Java: maven or gradle
+    if (p / "pom.xml").exists():
+        results.append("☕ Maven project detected")
+        try:
+            r = subprocess.run(
+                ["mvn", "test"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                cwd=str(p),
+            )
+            if r.returncode == 0:
+                results.append("✅ mvn test passed")
+            else:
+                out = (r.stdout or r.stderr)[:1000]
+                results.append(f"❌ mvn test failed:\n{out}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            results.append("⚠️  mvn test timed out or not available")
+        except Exception as e:
+            results.append(f"⚠️  mvn test error: {e}")
+    
+    if (p / "build.gradle").exists() or (p / "build.gradle.kts").exists():
+        results.append("☕ Gradle project detected")
+        try:
+            r = subprocess.run(
+                ["gradle", "test"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                cwd=str(p),
+            )
+            if r.returncode == 0:
+                results.append("✅ gradle test passed")
+            else:
+                out = (r.stdout or r.stderr)[:1000]
+                results.append(f"❌ gradle test failed:\n{out}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            results.append("⚠️  gradle test timed out or not available")
+        except Exception as e:
+            results.append(f"⚠️  gradle test error: {e}")
+    
+    if not results:
+        results.append("ℹ️  No recognized project type (Python, Node, Rust, Go, Java) found")
+    
+    return "\n".join(results)
 
 
 # ─────────────────────────────────────────────
@@ -607,6 +912,30 @@ register(
     _validate,
 )
 
+register(
+    "project_validate",
+    "Run project-level build/test validation. Detects project type (Python, Node.js, Rust, Go, Java) "
+    "and runs appropriate test commands (pytest, npm test, cargo test, go test, mvn test, gradle test). "
+    "Returns pass/fail status with test output. Run this to verify the entire project builds and tests pass.",
+    {
+        "type": "object",
+        "properties": {
+            "project_dir": {"type": "string", "description": "Path to project root directory"},
+        },
+        "required": ["project_dir"],
+    },
+    _project_validate,
+)
+
+# ── Project Tracker tool ──────────────────────────────────────────────────
+from core.project_tracker import TOOL_DEFINITION as _PT_TOOL, handle_update_project_doc
+
+register(
+    _PT_TOOL["name"],
+    _PT_TOOL["description"],
+    _PT_TOOL["parameters"],
+    handle_update_project_doc,
+)
 
 _SAFE_DIR: str | None = None
 
@@ -679,7 +1008,8 @@ def execute_with_skills(name: str, args: dict) -> str:
 
     # ── Case 2: Permission check ────────────────────────────────────
     from core.permissions import get_permission_manager
-    from core.ui.ui import console as _console
+    from rich.console import Console as _RichConsole
+    _console = _RichConsole(highlight=False)
     pm = get_permission_manager()
     if not pm.check(name, console=_console):
         return f"⛔ Permission denied: {name}"

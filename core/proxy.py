@@ -1,3 +1,10 @@
+"""Proxy Manager — fetches free proxies, tests them, and rotates automatically.
+
+Handles proxy rotation for the OpenCode Zen provider to avoid rate limits.
+Manages a pool of working proxies, tests them periodically, and cycles
+through them when requests fail with 429 or connection errors.
+"""
+
 import time, threading, logging
 import httpx
 from typing import Optional
@@ -173,13 +180,12 @@ class ProxyManager:
             proxy_url = f"http://{proxy_addr}"
             try:
                 transport = httpx.HTTPTransport(proxy=proxy_url)
-                client = httpx.Client(transport=transport, timeout=self.PROBE_TIMEOUT)
-                r = client.post(
-                    f"{ZEN_BASE}/chat/completions",
-                    headers=_PROBE_HEADERS,
-                    json=_build_probe_body(),
-                )
-                client.close()
+                with httpx.Client(transport=transport, timeout=self.PROBE_TIMEOUT) as client:
+                    r = client.post(
+                        f"{ZEN_BASE}/chat/completions",
+                        headers=_PROBE_HEADERS,
+                        json=_build_probe_body(),
+                    )
                 if r.status_code == 200:
                     working.append(proxy_addr)
                 elif r.status_code == 429:

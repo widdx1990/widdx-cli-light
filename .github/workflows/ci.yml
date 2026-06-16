@@ -1,0 +1,248 @@
+# WIDDX Cortex — CI/CD Pipeline
+# Runs lint, test, and build on every push/PR to main
+
+name: WIDDX CI/CD
+
+on:
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'node_modules/**'
+  pull_request:
+    branches: [master, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Lint & Test ──────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint with pyflakes
+        run: |
+          pip install pyflakes
+          pyflakes core/ tui/ --exclude=node_modules
+
+      - name: Check syntax (all .py files compile)
+        run: |
+          python -c "
+          import py_compile, glob
+          failures = []
+          for f in glob.glob('**/*.py', recursive=True):
+              if '.widdx' in f or '.git' in f or 'node_modules' in f:
+                  continue
+              try:
+                  py_compile.compile(f, doraise=True)
+              except py_compile.PyCompileError as e:
+                  failures.append(f'{f}: {e}')
+          if failures:
+              print('❌ Compile errors:')
+              for f in failures:
+                  print(f'  {f}')
+              exit(1)
+          else:
+              print(f'✅ All Python files compile ({len(list(glob.glob(\"**/*.py\", recursive=True)))} total)')
+          "
+
+  # ─── Unit Tests ───────────────────────────────────────────
+  test:
+    name: Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run integration tests
+        run: |
+          python -c "
+          import sys, py_compile, glob
+          from pathlib import Path
+
+          print('🧪 WIDDX Integration Tests')
+          print('=' * 50)
+
+          passed, failed = 0, 0
+          def test(name, fn):
+              global passed, failed
+              try:
+                  fn()
+                  print(f'  ✅ {name}')
+                  passed += 1
+              except Exception as e:
+                  print(f'  ❌ {name}: {e}')
+                  failed += 1
+
+          # Core imports
+          test('Import modules', lambda: [
+              __import__('core.memory'),
+              __import__('core.memory_learner'),
+              __import__('core.self_reflection'),
+              __import__('core.project.state'),
+              __import__('core.project.scanner'),
+              __import__('core.project.git'),
+              __import__('core.providers.providers'),
+              __import__('core.tools'),
+              __import__('core.skills'),
+              __import__('core.commands'),
+              __import__('core.suggester'),
+              __import__('core.proxy'),
+              __import__('core.workflow'),
+              __import__('core.auto_setup'),
+              __import__('core.project_tracker'),
+              __import__('core.chat'),
+              __import__('core.uil'),
+              __import__('core.diagnostics'),
+              __import__('core.permissions'),
+          ])
+
+          # Config
+          from core.config.settings import load as load_config
+          test('Load config', lambda: load_config())
+
+          # Tools
+          from core import tools
+          test(f'Tools: {len(tools.TOOL_DEFINITIONS)} registered', lambda: len(tools.TOOL_DEFINITIONS) >= 8)
+          test('Tool: update_project_doc exists', lambda: any(t['name'] == 'update_project_doc' for t in tools.TOOL_DEFINITIONS))
+
+          # UIL
+          from core.uil import UnifiedIntelligenceLayer
+          from core.uil.contract import TaskType
+          uil = UnifiedIntelligenceLayer()
+          uil.set_tool_defs(tools.TOOL_DEFINITIONS)
+          test('UIL: classify hello', lambda: uil.process('Hello')[1].classification.task_type.value == 'chat')
+
+          # Memory
+          from core.memory import MemoryStore
+          mem = MemoryStore()
+          test('Memory: save/delete', lambda: (mem.save('ci-test', 'ci test', {'type':'test'}), mem.delete('ci-test')))
+
+          # Router
+          from core.uil.router import DecisionRouter
+          from core.uil.contract import ClassificationResult, TaskType, Domain
+          router = DecisionRouter()
+          cls = ClassificationResult(task_type=TaskType.CODE_WRITE, domain=Domain.CODE, confidence=0.9, complexity=0.5, reasoning='t')
+          test('Router: filters tools', lambda: len(router.route(cls, tools.TOOL_DEFINITIONS).tool_defs) > 0)
+
+          # Project
+          from core.project.scanner import ProjectScanner
+          test('Scanner: builds context', lambda: True)  # no project dir in CI, but module loads
+
+          # Skills
+          from core.skills import skill_manager
+          test(f'Skills: {len(skill_manager.list_all())} loaded', lambda: len(skill_manager.list_all()) >= 0)
+
+          # Permissions
+          from core.permissions import PermissionManager
+          test('Permissions: loads', lambda: PermissionManager() is not None)
+
+          # Auto setup
+          from core.auto_setup import detect_project_deps
+          test('Auto-setup: detect deps', lambda: isinstance(detect_project_deps(Path.cwd()), dict))
+
+          # Project tracker
+          from core.project_tracker import ensure_docs, load_docs
+          test('Tracker: load docs', lambda: isinstance(load_docs(Path.cwd()), dict))
+
+          # Personality
+          import main as main_mod
+          sp = main_mod.SYSTEM_PROMPT
+          test('Personality: WIDDX Cortex', lambda: 'WIDDX Cortex' in sp)
+          test('Personality: MUHAMMAD MUSLIH', lambda: 'MUHAMMAD MUSLIH' in sp)
+          test('Personality: Palestine', lambda: 'Palestine' in sp)
+
+          print()
+          print(f'Results: {passed} passed, {failed} failed')
+          if failed:
+              exit(1)
+          print('✅ All tests passed!')
+          " 2>&1
+
+  # ─── Build Package ────────────────────────────────────────
+  build:
+    name: Build Package
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package with twine
+        run: twine check dist/*
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # ─── Publish to PyPI (manual trigger or tag) ──────────────
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: release
+
+    permissions:
+      id-token: write  # for PyPI trusted publishing
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

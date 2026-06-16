@@ -1,7 +1,13 @@
 
 """
-Provider Router - Smart Provider Selection & Fallback
-Inspired by OpenCode's Provider Architecture
+Provider Router - DEPRECATED
+============================
+This module is preserved for reference only.
+All functionality has been consolidated into `core/providers/providers.py`.
+
+Key migration:
+  - ProviderRouter          → use `create_provider()` in `core/providers/providers.py`
+  - ProviderRouter.fallback → already handled by `OpenCodeZenProvider._next_model()`
 """
 
 import time

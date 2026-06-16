@@ -4,10 +4,12 @@ Provides a lightweight ProjectCard that is injected as system context before
 each AI call, giving the model fresh awareness of the project state.
 """
 
-import time, hashlib, subprocess
+import time, hashlib, subprocess, logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("widdx.scanner")
 
 
 @dataclass
@@ -173,6 +175,30 @@ class ProjectScanner:
             fname = Path(fdata["path"]).name
             if fname in _FRAMEWORK_MARKERS:
                 seen_frameworks.add(_FRAMEWORK_MARKERS[fname])
+        # Deep-detect JS frameworks from package.json dependencies
+        pkg_json = self._root / "package.json"
+        if pkg_json.exists():
+            _JS_FRAMEWORKS = {
+                "react": "react", "next": "nextjs", "vue": "vue",
+                "nuxt": "nuxt", "angular": "angular", "svelte": "svelte",
+                "express": "express", "fastify": "fastify", "nest": "nestjs",
+                "django": "django", "flask": "flask",
+                "tailwindcss": "tailwind", "jquery": "jquery",
+                "prisma": "prisma", "typeorm": "typeorm",
+                "vitest": "vitest", "jest": "jest",
+            }
+            try:
+                import json as _json
+                pkg = _json.loads(pkg_json.read_text(encoding="utf-8"))
+                all_deps = {}
+                all_deps.update(pkg.get("dependencies", {}))
+                all_deps.update(pkg.get("devDependencies", {}))
+                for dep in all_deps:
+                    for key, label in _JS_FRAMEWORKS.items():
+                        if key in dep.lower():
+                            seen_frameworks.add(label)
+            except Exception:
+                pass
         card.frameworks = sorted(seen_frameworks)
 
         # ── Git ──────────────────────────────────────
@@ -183,8 +209,8 @@ class ProjectScanner:
             )
             if r.returncode == 0:
                 card.git_branch = r.stdout.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get git branch: %s", e)
 
         try:
             r = subprocess.run(
@@ -193,8 +219,8 @@ class ProjectScanner:
             )
             if r.returncode == 0:
                 card.has_uncommitted = bool(r.stdout.strip())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get git status: %s", e)
 
         try:
             r = subprocess.run(
@@ -203,21 +229,27 @@ class ProjectScanner:
             )
             if r.returncode == 0:
                 card.recent_commits = [l.strip() for l in r.stdout.strip().splitlines() if l.strip()]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get git log: %s", e)
 
         # ── TODOs ────────────────────────────────────
         todo_count = 0
         import re as _re
         _todo_pattern = _re.compile(r'\b(TODO|FIXME|HACK|XXX)\b', _re.IGNORECASE)
         for fdata in files:
+            # Scan todo markers in any code/text file
             if fdata["ext"] in {".py", ".js", ".ts", ".jsx", ".tsx", ".java",
-                                ".go", ".rs", ".rb", ".php", ".swift", ".kt"}:
+                                ".go", ".rs", ".rb", ".php", ".swift", ".kt",
+                                ".dart", ".lua", ".r", ".jl", ".cs", ".scala",
+                                ".ex", ".exs", ".hs", ".elm", ".clj", ".zig",
+                                ".c", ".cpp", ".h", ".hpp", ".sh", ".sql",
+                                ".html", ".css", ".scss", ".md", ".json", ".yaml",
+                                ".toml", ".xml"}:
                 try:
                     text = (self._root / fdata["path"]).read_text(encoding="utf-8", errors="ignore")
                     todo_count += len(_todo_pattern.findall(text))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to read %s for TODO scan: %s", fdata["path"], e)
         card.todos_found = todo_count
 
         card._last_hash = ""  # will be set by quick_check on next call

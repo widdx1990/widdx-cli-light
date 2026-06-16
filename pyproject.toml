@@ -5,7 +5,7 @@ description = "WIDDX Cortex — Terminal AI Workspace with UIL Cognitive Archite
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-keywords = ["ai", "chat", "cli", "tui", "terminal"]
+keywords = ["ai", "chat", "cli", "tui", "terminal", "widdx", "assistant"]
 
 authors = [
     {name = "MUHAMMAD MUSLIH (widdx)", email = "widdx@users.noreply.github.com"},
@@ -30,16 +30,27 @@ dependencies = [
     "textual>=1.0",
     "prompt_toolkit>=3.0",
     "pygments>=2.15",
-    "llama-cpp-python>=0.2.0; sys_platform != 'win32' or python_version < '3.12'",
     "python-bidi>=0.6.0",
 ]
 
 [project.optional-dependencies]
-toml = ["tomli>=2.0"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "build>=1.0",
+    "twine>=4.0",
+]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+]
+gguf = ["llama-cpp-python>=0.2.0"]
+all = ["widdx-cortex[dev,gguf]"]
 
 [project.scripts]
 widdx = "core.cli:run"
-widdx-tui = "tui.__main__:run_tui"
+widdx-tui = "tui.app:run_tui"
+widdx-api = "api_server:main"
 
 [project.urls]
 Homepage = "https://github.com/widdx/chat-tool"
@@ -47,7 +58,18 @@ Repository = "https://github.com/widdx/chat-tool"
 Documentation = "https://github.com/widdx/chat-tool#readme"
 
 [tool.setuptools.packages.find]
-include = ["core*", "tui*"]
+include = ["core*", "cli*", "tui*", "tui/screens*", "tui/widgets*"]
+exclude = ["test_*", "node_modules*", ".widdx*"]
 
 [tool.setuptools.package-data]
 tui = ["*.tcss"]
+core = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["core", "tui"]
+omit = ["test_*", "node_modules*"]

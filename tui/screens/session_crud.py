@@ -13,6 +13,7 @@ from textual.binding import Binding
 from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
+from core.ui_visual import ROLE_META_ASCII, BLUE, DIM, RED
 
 # Import Session V2
 from core.session_v2 import SessionV2, create_new_session, load_session as load_v2_session
@@ -158,7 +159,7 @@ class SessionListScreen(Screen):
 
         try:
             s = self._sessions[idx]
-            preview.write(f"[bold #6366f1]Previewing: {s['name']}[/]\n")
+            preview.write(f"[bold {BLUE}]Previewing: {s['name']}[/]\n")
             preview.write(f"[dim]Modified: {s.get('modified', '')}  |  Size: {s.get('size_str', '')}[/]\n")
             preview.write("─" * 60 + "\n")
             
@@ -166,7 +167,6 @@ class SessionListScreen(Screen):
                 sess = SessionV2(s["id"])
                 msgs = sess.messages
                 
-                role_colors = {"user": "#6366f1", "assistant": "#10b981", "system": "#f5a623", "tool": "#0ea5e9"}
                 role_icons = {"user": "👤", "assistant": "🤖", "system": "⚙️", "tool": "🛠️"}
                 
                 preview.write(f"[dim]Branch: {s.get('branch', 'main')}[/]\n")
@@ -176,8 +176,9 @@ class SessionListScreen(Screen):
                 for m in msgs:
                     role = m.get("role", "?")
                     content = m.get("content", "")
-                    color = role_colors.get(role, "#cbd5e1")
-                    icon = role_icons.get(role, "•")
+                    meta = ROLE_META_ASCII.get(role, ("•", role.upper(), DIM))
+                    icon, _, color = meta
+                    icon = icon or role_icons.get(role, "•")
                     
                     preview_text = content[:600] + "\n[dim]… (truncated for preview)[/dim]" if len(content) > 600 else content
                     preview.write(f"[{color}]{icon} {role.upper()}[/]\n{preview_text}\n")
@@ -187,14 +188,14 @@ class SessionListScreen(Screen):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 msgs = data.get("messages", [])
                 
-                role_colors = {"user": "#6366f1", "assistant": "#10b981", "system": "#f5a623", "tool": "#0ea5e9"}
                 role_icons = {"user": "👤", "assistant": "🤖", "system": "⚙️", "tool": "🛠️"}
                 
                 for m in msgs:
                     role = m.get("role", "?")
                     content = m.get("content", "")
-                    color = role_colors.get(role, "#cbd5e1")
-                    icon = role_icons.get(role, "•")
+                    meta = ROLE_META_ASCII.get(role, ("•", role.upper(), DIM))
+                    icon, _, color = meta
+                    icon = icon or role_icons.get(role, "•")
                     
                     preview_text = content[:600] + "\n[dim]… (truncated for preview)[/dim]" if len(content) > 600 else content
                     preview.write(f"[{color}]{icon} {role.upper()}[/]\n{preview_text}\n")
@@ -204,7 +205,7 @@ class SessionListScreen(Screen):
                 content = path.read_text(encoding="utf-8")
                 preview.write(content[:2000] + "\n[dim]… (truncated for preview)[/dim]" if len(content) > 2000 else content)
         except Exception as e:
-            preview.write(f"[bold #ef4444]Error reading session: {e}[/]")
+            preview.write(f"[bold {RED}]Error reading session: {e}[/]")
 
     def on_descendant_focus(self, event) -> None:
         widget = event.widget

@@ -526,18 +526,22 @@ def scan_gguf_files(force_refresh: bool = False) -> list[dict]:
     if not force_refresh and _SCAN_CACHE["files"] and (now - _SCAN_CACHE["timestamp"]) < _SCAN_CACHE_TTL:
         return _SCAN_CACHE["files"]
 
-    found = {}
-    dirs_to_scan = _SCAN_DIRS[:]
+    found: dict[str, dict] = {}
+    seen_dirs: set[Path] = set()
+    dirs_to_scan = list(_SCAN_DIRS)
 
     # Also scan current working directory
-    dirs_to_scan.insert(0, Path.cwd())
+    cwd = Path.cwd().resolve()
+    dirs_to_scan.insert(0, cwd)
 
-    # Add extra drives on Windows
+    # Limited drive scan — only real local drives on Windows
     try:
         import string
-        for letter in string.ascii_uppercase:
+        # C:, D:, E: are the most common — no need to scan all 26 letters
+        for letter in ("C", "D", "E", "F", "G"):
             p = Path(f"{letter}:/")
-            if p.exists() and p not in dirs_to_scan:
+            if p.exists() and p not in seen_dirs:
+                seen_dirs.add(p)
                 dirs_to_scan.append(p / "Models")
     except Exception:
         pass
@@ -546,22 +550,29 @@ def scan_gguf_files(force_refresh: bool = False) -> list[dict]:
         if not scan_dir.exists():
             continue
         try:
-            for gguf_file in scan_dir.rglob("*.gguf"):
+            # Limit scan depth to 3 levels to avoid deep traversal
+            for i, gguf_file in enumerate(scan_dir.rglob("*.gguf")):
                 try:
-                    if gguf_file.is_file() and gguf_file.stat().st_size > 100 * 1024:
-                        key = str(gguf_file.resolve())
-                        if key not in found:
-                            st = gguf_file.stat()
-                            found[key] = {
-                                "path": key,
-                                "name": gguf_file.name,
-                                "size_gb": st.st_size / 1e9,
-                                "size_mb": st.st_size / 1e6,
-                                "modified": st.st_mtime,
-                            }
-                except (PermissionError, OSError):
+                    if not gguf_file.is_file() or gguf_file.stat().st_size < 100 * 1024:
+                        continue
+                    # Check depth — skip files deeper than 3 subdirs
+                    rel = gguf_file.relative_to(scan_dir).parts
+                    if len(rel) > 4:
+                        continue
+                    st = gguf_file.stat()
+                    # Dedup by (file_name, size_in_bytes) — catches copies
+                    dedup_key = f"{gguf_file.name}:{st.st_size}"
+                    if dedup_key not in found:
+                        found[dedup_key] = {
+                            "path": str(gguf_file.resolve()),
+                            "name": gguf_file.name,
+                            "size_gb": st.st_size / 1e9,
+                            "size_mb": st.st_size / 1e6,
+                            "modified": st.st_mtime,
+                        }
+                except (PermissionError, OSError, ValueError):
                     continue
-            # Stop after finding enough
+            # Stop after finding enough distinct models
             if len(found) >= 20:
                 break
         except (PermissionError, OSError):

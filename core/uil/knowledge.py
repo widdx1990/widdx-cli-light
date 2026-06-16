@@ -4,12 +4,14 @@ Phase 2.3: Persistent KnowledgeBase that saves/loads from .widdx/knowledge.json.
 Provides historical execution stats for knowledge-informed routing.
 """
 
-import json, time, statistics
+import json, time, statistics, logging
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Optional
 
 from .contract import ExecutionMode
+
+logger = logging.getLogger("widdx.knowledge")
 
 
 # -------------------------------------------------------------------
@@ -74,7 +76,8 @@ class KnowledgeBase:
                 self._records[task_type] = [
                     ExecutionRecord.from_dict(r) for r in records_raw
                 ]
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to load knowledge records: %s", e)
             self._records = {}
 
     def _save(self):
@@ -87,8 +90,8 @@ class KnowledgeBase:
                 raw[task_type] = [r.to_dict() for r in records]
             path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
             self._dirty = False
-        except Exception:
-            pass  # non-critical
+        except Exception as e:
+            logger.warning("Failed to save knowledge records: %s", e)
 
     # ------------------------------------------------------------------
     # Write
@@ -238,5 +241,5 @@ class KnowledgeBase:
         if path.exists():
             try:
                 path.unlink()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to delete knowledge file: %s", e)

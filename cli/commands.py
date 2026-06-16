@@ -1,0 +1,300 @@
+"""CLI Commands — organized slash command processing.
+
+Each command group is a separate method on ``CLICommands``.
+The class has NO display logic — it calls back into the app for UI.
+"""
+
+from pathlib import Path
+from core import tools
+from core.config.keychain import prompt_key, forget_key, has_key
+from core.memory import MemoryStore
+from core.skills import skill_manager
+from core.project import state as project_state
+from core.project.git import undo_last_commit
+from core.mcp.client import get_mcp_manager
+
+
+class CLICommands:
+    """Handles slash commands and special inputs.
+
+    Each method receives ``(args, provider, state, messages)``.
+    """
+
+    def __init__(self, app_ref):
+        self.app = app_ref  # CLIApp reference for display
+
+    # ── Dispatch ─────────────────────────────────────────────
+    def handle(self, text: str, provider, state, messages) -> bool:
+        """Route command. Returns True if it was a command."""
+        parts = text.split(None, 1)
+        cmd = parts[0].lower()
+
+        handlers = {
+            "/exit": self.exit, "/quit": self.exit,
+            "/help": self.help,
+            "/clear": self.clear,
+            "/tools": self.tools,
+            "/skills": self.skills,
+            "/history": self.history,
+            "/model": self.model,
+            "/provider": self.provider,
+            "/save": self.save,
+            "/load": self.load,
+            "/export": self.export,
+            "/remember": self.remember,
+            "/memories": self.memories,
+            "/manifest": self.manifest,
+            "/reasoning": self.reasoning,
+            "/debug": self.debug,
+            "/doctor": self.doctor,
+            "/undo": self.undo,
+            "/proxy": self.proxy,
+            "/sandbox": self.sandbox,
+            "/mcp": self.mcp,
+            "/gguf": self.gguf,
+            "/branch": self.branch,
+            "/version": self.version,
+            "/permissions": self.permissions,
+            "/apikey": self.apikey,
+        }
+
+        handler = handlers.get(cmd)
+        if handler:
+            arg = parts[1] if len(parts) > 1 else ""
+            result = handler(arg, provider, state, messages)
+            if isinstance(result, tuple) and len(result) == 2:
+                new_provider, new_state = result
+                self.app.provider = new_provider
+                self.app.state = new_state
+            return True
+
+        # Skill activation: !name
+        if text.startswith("!"):
+            self._skill(text[1:].strip(), provider, state, messages)
+            return True
+
+        return False
+
+    # ── Core Commands ────────────────────────────────────────
+    def help(self, arg, p, s, msgs):
+        self.app.show_system("Available commands:")
+        self.app.show_system("  /help /clear /model /provider /tools /skills")
+        self.app.show_system("  /history /save /load /export /remember /memories")
+        self.app.show_system("  /manifest /reasoning /debug /doctor /undo")
+        self.app.show_system("  /proxy /sandbox /mcp /gguf /branch /version")
+        self.app.show_system("  /permissions /apikey /exit")
+        self.app.show_system("  !skill_name — activate a skill")
+
+    def clear(self, arg, p, s, msgs):
+        """Clear screen."""
+        from cli.display import console
+        console.clear()
+        self.app.show_header()
+
+    def exit(self, arg, p, s, msgs):
+        raise SystemExit(0)
+
+    # ── Provider / Model ─────────────────────────────────────
+    def model(self, arg, p, s, msgs):
+        from core.providers.providers import get_available_models
+        available = get_available_models(p.name, p.base_url, force_refresh=True)
+        if available:
+            self.app.show_system(f"Available models: {', '.join(available[:15])}")
+        else:
+            self.app.show_system(f"Current model: {p.model}")
+
+    def provider(self, arg, p, s, msgs):
+        from core.commands import handle_provider
+        return handle_provider(p, s, {}, preset=arg.strip() or None)
+
+
+    # ── Tools / Skills ───────────────────────────────────────
+    def tools(self, arg, p, s, msgs):
+        all_tools = list(tools.TOOL_DEFINITIONS)
+        try:
+            all_tools.extend(get_mcp_manager().get_all_tool_definitions())
+        except Exception:
+            pass
+        rows = [[t["name"][:30], (t.get("description") or "")[:60]] for t in all_tools]
+        self.app.show_table("Available Tools", ["Tool", "Description"], rows[:40])
+
+    def skills(self, arg, p, s, msgs):
+        all_sk = skill_manager.list_all()
+        rows = [[f"!{sk.name}", sk.description[:50], sk.icon or ""] for sk in all_sk]
+        self.app.show_table("Skills", ["Command", "Description", "Icon"], rows)
+
+    def _skill(self, name: str, p, s, msgs):
+        if name == "off":
+            if skill_manager.active:
+                old = skill_manager.active.name
+                skill_manager.deactivate()
+                self.app.show_system(f"Skill '{old}' deactivated")
+            return
+        ok = skill_manager.toggle(name)
+        if ok:
+            active = skill_manager.active
+            if active:
+                icon = active.icon + " " if active.icon else ""
+                self.app.show_system(f"{icon}Skill '{active.name}' activated")
+                msgs[:] = [m for m in msgs if not m.get("_skill_prompt")]
+                msgs.insert(0, {"role": "system", "content": active.prompt, "_skill_prompt": True})
+            else:
+                msgs[:] = [m for m in msgs if not m.get("_skill_prompt")]
+                self.app.show_system("Skill deactivated")
+        else:
+            self.app.show_system(f"Unknown skill: '{name}'")
+
+    # ── Memory / History ─────────────────────────────────────
+    def history(self, arg, p, s, msgs):
+        history_text = "\n".join(
+            f"[{i+1}] {m.get('role','?')}: {(m.get('content') or '')[:80]}"
+            for i, m in enumerate(msgs[-30:])
+        )
+        self.app.show_panel("Recent History", history_text)
+
+    def save(self, arg, p, s, msgs):
+        project_state.save_session(msgs, s)
+        self.app.show_system("Session saved")
+
+    def load(self, arg, p, s, msgs):
+        from core.commands import handle_load
+        return handle_load(p, s, msgs, arg)
+
+    def export(self, arg, p, s, msgs):
+        from core.commands import handle_export
+        handle_export(msgs)
+
+    def remember(self, arg, p, s, msgs):
+        if not arg:
+            self.app.show_system("Usage: /remember <fact>")
+            return
+        mem = MemoryStore()
+        mem.save(f"note-{len(arg[:20])}", arg, {"type": "feedback"})
+        self.app.show_system(f"Remembered: {arg[:80]}")
+
+    def memories(self, arg, p, s, msgs):
+        mem = MemoryStore()
+        all_m = mem.search(arg) if arg else mem.list_all()
+        if not all_m:
+            self.app.show_system("No memories found")
+            return
+        rows = [[m["name"][:25], m.get("description","")[:60], m.get("type","")] for m in all_m[:30]]
+        self.app.show_table("Memories", ["Name", "Fact", "Type"], rows)
+
+    # ── Diagnostics ──────────────────────────────────────────
+    def debug(self, arg, p, s, msgs):
+        from core.diagnostics import audit_silent_errors
+        r = audit_silent_errors()
+        self.app.show_system(f"Silent errors: {r['counts']}")
+        import json
+        self.app.show_system(json.dumps(r['counts'], indent=2))
+
+    def doctor(self, arg, p, s, msgs):
+        import subprocess
+        self.app.show_system("🩺 Running doctor checks...")
+        checks = []
+        try:
+            r = subprocess.run(["git", "--version"], capture_output=True, text=True, timeout=5)
+            checks.append(f"Git: {r.stdout.strip()[:30]}")
+        except Exception:
+            checks.append("Git: not found")
+        try:
+            r = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5)
+            checks.append(f"Node: {r.stdout.strip()[:10]}")
+        except Exception:
+            checks.append("Node: not found")
+        checks.append(f"Provider: {p.name}/{p.model}")
+        checks.append(f"Memory: {MemoryStore().total()} facts")
+        checks.append(f"MCP: {get_mcp_manager().server_count} servers")
+        checks.append(f"Skills: {len(skill_manager.list_all())}")
+        for c in checks:
+            self.app.show_system(f"  • {c}")
+
+    # ── Manifest / Reasoning ─────────────────────────────────
+    def manifest(self, arg, p, s, msgs):
+        """Regenerate MANIFEST.json for the project."""
+        from core.project.manifest import generate_manifest
+        generate_manifest()
+        self.app.show_system("MANIFEST.json regenerated")
+
+    def reasoning(self, arg, p, s, msgs):
+        """Show the AI's last reasoning / thinking trace."""
+        last = s.get("_last_reasoning")
+        if last:
+            from .display import show_reasoning
+            show_reasoning(last)
+        else:
+            self.app.show_system("No reasoning from last turn")
+
+    # ── Git / Undo ───────────────────────────────────────────
+    def undo(self, arg, p, s, msgs):
+        result = undo_last_commit(Path.cwd())
+        self.app.show_system(result)
+
+    # ── Proxy ────────────────────────────────────────────────
+    def proxy(self, arg, p, s, msgs):
+        from core.proxy import proxy_manager
+        self.app.show_system(f"Proxy status: {proxy_manager.status()}")
+
+    # ── Sandbox ──────────────────────────────────────────────
+    def sandbox(self, arg, p, s, msgs):
+        if arg:
+            tools.configure(arg)
+            self.app.show_system(f"Sandbox set to: {arg}")
+        else:
+            self.app.show_system("Usage: /sandbox <path>")
+
+    # ── MCP ──────────────────────────────────────────────────
+    def mcp(self, arg, p, s, msgs):
+        from core.commands import handle_mcp
+        handle_mcp(arg)
+
+    # ── GGUF ─────────────────────────────────────────────────
+    def gguf(self, arg, p, s, msgs):
+        from core.commands import handle_gguf
+        handle_gguf(arg, p, s)
+
+    # ── Branch ───────────────────────────────────────────────
+    def branch(self, arg, p, s, msgs):
+        from core.project.state import list_branches, get_current_branch, set_current_branch, create_branch
+        parts = arg.split()
+        action = parts[0] if parts else "list"
+        if action == "list":
+            current = get_current_branch()
+            for b in list_branches():
+                prefix = "  * " if b == current else "    "
+                self.app.show_system(f"{prefix}{b}")
+        elif action == "create" and len(parts) > 1:
+            if create_branch(parts[1]):
+                self.app.show_system(f"Branch '{parts[1]}' created")
+        elif action == "switch" and len(parts) > 1:
+            if set_current_branch(parts[1]):
+                self.app.show_system(f"Switched to '{parts[1]}'")
+        else:
+            self.app.show_system("Usage: /branch list|create|switch")
+
+    # ── Version ──────────────────────────────────────────────
+    def version(self, arg, p, s, msgs):
+        from core.commands import handle_version
+        handle_version()
+
+    # ── Permissions ──────────────────────────────────────────
+    def permissions(self, arg, p, s, msgs):
+        from core.commands import handle_permissions
+        handle_permissions(arg)
+
+    # ── API Key ──────────────────────────────────────────────
+    def apikey(self, arg, p, s, msgs):
+        parts = arg.split()
+        action = parts[0] if parts else ""
+        if action == "forget":
+            forget_key(p.name)
+            self.app.show_system(f"API key for {p.name} removed")
+        elif action == "show":
+            if has_key(p.name):
+                self.app.show_system(f"API key is set for {p.name}")
+            else:
+                self.app.show_system(f"No API key set for {p.name}")
+        else:
+            prompt_key(p.name)
+            self.app.show_system(f"API key stored for {p.name}")

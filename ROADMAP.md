@@ -69,7 +69,29 @@
 
 ---
 
-## 🔜 Phase 8: Polish & Next Features
+## ✅ Phase 8: Auto Setup & Language Expansion — COMPLETE
+
+- [x] **Auto Dependency Installer** — يكتشف requirements.txt, package.json, go.mod, Cargo.toml وينصبها تلقائياً
+- [x] **Deep Project Learning** — يحلل المشروع (entry points, DB, APIs, tests, config) ويخزن في الذاكرة
+- [x] **Dynamic Skill Generation** — ينشئ Skills مخصصة حسب الإطار المكتشف (Django, React, Vue, Next.js...)
+- [x] **Proactive Tool Installer** — يثبت CLI tools (TypeScript...) عند الحاجة
+- [x] **Git Init تلقائي** — `auto_commit()` يعمل `git init` للمشاريع الجديدة
+- [x] **Language Support Expansion** — Validate لـ 10 لغات، Symbol Extraction لـ 25 لغة، TODO لجميع الملفات
+- [x] **Framework Detection متعمق** — يقرأ package.json dependencies ليكتشف React, Vue, Angular, Svelte...
+- [x] **API Key Protection** — `sanitized_environ()` تمنع تسرب المفاتيح إلى أوامر Bash
+- [x] **Bug Fixes** — self-reflection, duplicate messages, [thinking] parser, session context, thread safety
+- [x] **Documentation Update** — README, ROADMAP محدّثة بكل التغييرات
+
+## ✅ Phase 9: GGUF & Provider Polish — COMPLETE
+
+- [x] **GGUF scanner dedup** — إزالة التكرارات باكتشاف الملفات المتطابقة (حسب الاسم + الحجم)
+- [x] **GGUF drive scan محدود** — فقط C: D: E: F: G: بدلاً من A-Z
+- [x] **GGUF عمق المسح** — حد أقصى 4 مستويات لمنع المسح العميق
+- [x] **Model auto-resolve** — `resolve_model()` تختار أنسب نموذج تلقائياً
+- [x] **ديناميكية قوائم النماذج** — opencode-zen و ollama تجلب النماذج من API مباشرة
+- [x] **`handle_provider` مبسط** — auto-select للأنسب بدون إدخال يدوي
+
+## 🔜 Phase 10: Polish & Next Features
 
 - [ ] **Plugin hot-reload** — reload skills without restart
 - [ ] **Session search** — full-text search across saved sessions
@@ -78,7 +100,7 @@
 - [ ] **PyPI publish** — `pip install widdx-cortex`
 - [ ] **GitHub Actions** — CI: lint + tests on push
 
-## 🔜 Phase 9: Ecosystem
+## 🔜 Phase 10: Ecosystem
 
 - [ ] VS Code Extension (sidebar chat panel)
 - [ ] GitHub App (PR review, issue triage)

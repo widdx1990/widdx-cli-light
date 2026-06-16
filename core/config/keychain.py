@@ -122,3 +122,16 @@ def list_providers_with_keys() -> list[str]:
     """Return names of providers that have keys set in this session."""
     providers = _get_providers()
     return [p for p in providers if has_key(p)]
+
+
+def sanitized_environ() -> dict[str, str]:
+    """Return the current environment with WIDDX API keys stripped.
+
+    Use this when spawning subprocesses to prevent leaking
+    API keys to child processes (e.g. bash commands).
+    """
+    clean = dict(os.environ)
+    keys_to_remove = [k for k in clean if k.startswith(_ENV_PREFIX)]
+    for k in keys_to_remove:
+        del clean[k]
+    return clean

@@ -1,4 +1,14 @@
-import json, time, uuid
+"""AI Provider implementations — OpenCode Zen, Ollama, DeepSeek, OpenAI.
+
+Each provider wraps the LLM API with a consistent interface:
+  - chat()         → streaming generator of content/reasoning chunks
+  - chat_sync()    → blocking call, returns full response
+  - list_models()  → fetch available models from the API
+
+Includes fallback logic: if one provider fails, the router tries the next.
+"""
+
+import json, time, uuid, threading
 import httpx
 from pathlib import Path
 from typing import Optional
@@ -943,26 +953,33 @@ def _get_fallback_model() -> str:
 # ---------------------------------------------------------------------------
 
 FREE_MODELS_CACHE = {"models": [], "timestamp": 0}
+_FREE_MODELS_LOCK = threading.Lock()
 
 def fetch_free_models(force_refresh: bool = False) -> list[str]:
-    now = time.time()
-    if (not force_refresh
-            and FREE_MODELS_CACHE["models"]
-            and (now - FREE_MODELS_CACHE["timestamp"]) < 3600):
-        return FREE_MODELS_CACHE["models"]
+    with _FREE_MODELS_LOCK:
+        now = time.time()
+        if (not force_refresh
+                and FREE_MODELS_CACHE["models"]
+                and (now - FREE_MODELS_CACHE["timestamp"]) < 3600):
+            return FREE_MODELS_CACHE["models"]
     fallback = _get_fallback_model()
     try:
         r = httpx.get(f"{ZEN_BASE}/models", timeout=10)
         if r.status_code != 200:
-            return FREE_MODELS_CACHE["models"] or [fallback]
+            with _FREE_MODELS_LOCK:
+                return FREE_MODELS_CACHE["models"] or [fallback]
         all_models = r.json().get("data", [])
         free = [m["id"] for m in all_models if "free" in m.get("id", "").lower()]
         if free:
-            FREE_MODELS_CACHE["models"] = free
-            FREE_MODELS_CACHE["timestamp"] = now
-        return FREE_MODELS_CACHE["models"] or [fallback]
+            with _FREE_MODELS_LOCK:
+                FREE_MODELS_CACHE["models"] = free
+                FREE_MODELS_CACHE["timestamp"] = now
+                return FREE_MODELS_CACHE["models"] or [fallback]
+        with _FREE_MODELS_LOCK:
+            return FREE_MODELS_CACHE["models"] or [fallback]
     except Exception:
-        return FREE_MODELS_CACHE["models"] or [fallback]
+        with _FREE_MODELS_LOCK:
+            return FREE_MODELS_CACHE["models"] or [fallback]
 
 
 # ── Ollama local model discovery ─────────────────────────────
@@ -1295,12 +1312,12 @@ _DEFAULT_BASE_URLS = {
     "opencode": "https://opencode.ai/zen/v1",
 }
 
-_DEFAULT_MODELS = {
-    "opencode-zen": ["deepseek-v4-flash-free", "gemini-3.5-flash", "gpt-4o-mini"],
+_DEFAULT_MODELS: dict[str, list[str]] = {
+    "opencode-zen": [],       # تُجلب ديناميكياً من fetch_free_models()
     "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
     "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
-    "ollama": ["llama3.2", "llama3.1", "mistral", "codellama"],
-    "gguf": [],
+    "ollama": [],             # تُجلب ديناميكياً من fetch_ollama_models()
+    "gguf": [],               # تُجلب ديناميكياً من fetch_gguf_models()
 }
 
 
@@ -1308,13 +1325,20 @@ def create_provider(cfg: dict) -> Provider:
     p = cfg.get("provider", {})
     # Load from config with dynamic fallbacks
     name = p.get("name") or cfg.get("default_provider", "opencode-zen")
-    model = p.get("model") or cfg.get("default_model", "deepseek-v4-flash-free")
+    model = p.get("model") or cfg.get("default_model", "")
     # Use provider-specific default base_url, fall back to config, then opencode
     base_url = (
         p.get("base_url")
         or cfg.get("default_base_url")
         or _DEFAULT_BASE_URLS.get(name, "https://opencode.ai/zen/v1")
     )
+    # Resolve model dynamically — never use a stale hardcoded name
+    resolved = resolve_model(name, preferred=model or None, base_url=base_url)
+    if resolved:
+        model = resolved
+    elif not model:
+        # Absolute last resort
+        model = "deepseek-v4-flash-free"
     # Update the fallback model for proxy & cache (dynamic)
     set_fallback_model(model)
 
@@ -1357,10 +1381,37 @@ def get_available_models(provider_name: str, base_url: str | None = None, force_
         return fetch_free_models(force_refresh=force_refresh)
     elif provider_name == "ollama":
         installed = fetch_ollama_models(base_url=base_url, force_refresh=force_refresh)
-        if installed:
-            return [m["name"] for m in installed]
-        return _DEFAULT_MODELS.get(provider_name, [])
+        return [m["name"] for m in installed] if installed else []
     elif provider_name == "gguf":
         return fetch_gguf_models()
     else:  # deepseek, openai: use static default lists
-        return _DEFAULT_MODELS.get(provider_name, [])
+        return list(_DEFAULT_MODELS.get(provider_name, []))
+
+
+def resolve_model(provider_name: str, preferred: str | None = None,
+                  base_url: str | None = None) -> str:
+    """Return a valid model name for *provider_name*.
+
+    1. If *preferred* is given and exists in the dynamic list → return it.
+    2. Otherwise fetch the dynamic list and return the first entry.
+    3. Fall back to a hardcoded safe default if everything fails.
+
+    This is used by ``create_provider`` and ``handle_provider`` so the user
+    never gets a model that doesn't exist.
+    """
+    available = get_available_models(provider_name, base_url, force_refresh=False)
+    if preferred and preferred in available:
+        return preferred
+    if available:
+        return available[0]
+
+    # Ultimate fallback — one known-good model per provider
+    _FALLBACK = {
+        "opencode-zen": "deepseek-v4-flash-free",
+        "opencode": "deepseek-v4-flash-free",
+        "ollama": "",
+        "gguf": "",
+        "deepseek": "deepseek-v4-flash",
+        "openai": "gpt-4o-mini",
+    }
+    return _FALLBACK.get(provider_name, preferred or "")

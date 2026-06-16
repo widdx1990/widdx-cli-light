@@ -1,10 +1,12 @@
 """Proactive Suggester — analyze project state and suggest next actions."""
 
-import time, subprocess, re
+import time, subprocess, re, logging
 from dataclasses import dataclass
 from pathlib import Path
 from .memory import MemoryStore
 from .project import git as git_utils
+
+logger = logging.getLogger("widdx.suggester")
 
 
 @dataclass
@@ -36,8 +38,8 @@ class ProjectSuggester:
                 s = check()
                 if s and s.title not in self._last:
                     all_suggestions.append(s)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Suggestion check failed: %s", e)
 
         all_suggestions.sort(key=lambda s: -s.priority)
         result = all_suggestions[:3]
@@ -66,8 +68,8 @@ class ProjectSuggester:
                     action_type="git",
                     priority=4,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Git check failed: %s", e)
         return None
 
     def _check_todos(self) -> Suggestion | None:
@@ -79,10 +81,11 @@ class ProjectSuggester:
                     count += len(re.findall(r'\b(TODO|FIXME|HACK|XXX)\b', text))
                     if count >= 3:
                         break
-                except Exception:
+                except Exception as e:
+                    logger.debug("Failed to read %s for TODO scan: %s", f, e)
                     continue
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("TODO check failed: %s", e)
         if count >= 3:
             return Suggestion(
                 icon="📋",
@@ -110,8 +113,8 @@ class ProjectSuggester:
                     action_type="git",
                     priority=2,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Git activity check failed: %s", e)
         return None
 
     def _check_config_changes(self) -> Suggestion | None:
@@ -142,6 +145,6 @@ class ProjectSuggester:
                     action_type="memory",
                     priority=1,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Memory gap check failed: %s", e)
         return None
