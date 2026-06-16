@@ -28,4 +28,8 @@ package-lock.json
 widdx-tui.log
 .coverage
 auto_backup_*.json
+backups/
 chat_*.json
+
+# Build artifacts
+/build/

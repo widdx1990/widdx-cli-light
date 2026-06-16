@@ -34,11 +34,6 @@ from textual.screen import Screen
 from textual.message import Message
 from textual import work
 from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
-from rich.console import Group
-from rich.markdown import Markdown
-from rich.align import Align
 
 from core import config, tools
 from core.providers.providers import create_provider, estimate_turn_cost, fetch_ollama_models, get_available_models
@@ -445,18 +440,23 @@ class MainScreen(Screen):
 
         if role == "user":
             title = f" 👤 You  [dim]{ts}[/dim] "
-            border_style = "#4f46e5"
+            border_style = "#6366f1"
             msg_text = Text(content, style="default")
             panel = Panel(msg_text, title=title, title_align="left", border_style=border_style, padding=(1, 2))
         elif role == "assistant":
             title = f" 🤖 Assistant  [dim]{ts}[/dim] "
-            border_style = "#059669"
+            border_style = "#10b981"
             md = Markdown(content, code_theme="monokai")
             panel = Panel(md, title=title, title_align="left", border_style=border_style, padding=(1, 2))
         elif role == "system":
             title = f" ⚙ System  [dim]{ts}[/dim] "
-            border_style = "#d97706"
+            border_style = "#f5a623"
             panel = Panel(content, title=title, title_align="left", border_style=border_style, padding=(1, 1))
+        elif role == "tool":
+            title = f" 🛠 Tool  [dim]{ts}[/dim] "
+            border_style = "#0ea5e9"
+            preview = content[:600] + "\n[dim]…[/dim]" if len(content) > 600 else content
+            panel = Panel(preview, title=title, title_align="left", border_style=border_style, padding=(1, 1))
         else:
             panel = Panel(content, border_style="dim", padding=(1, 1))
 
@@ -1962,44 +1962,6 @@ class MainScreen(Screen):
         display = text[end + len(_THINK_END):].strip()
         return display, reasoning
 
-    @staticmethod
-    def _render_thinking(reasoning: str) -> Panel:
-        """Render thinking with beautiful, structured formatting like DeepSeek."""
-        from rich.panel import Panel
-        from rich.text import Text
-        from rich.console import Group
-        from rich.align import Align
-        reasoning = _fix_rtl(reasoning)
-        
-        lines = reasoning.strip().split('\n')
-        structured_items = []
-        for line in lines:
-            lstrip = line.strip()
-            if not lstrip:
-                continue
-            # Detect step types
-            if lstrip.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', '0.')) or lstrip[0].isdigit() and (len(lstrip) == 1 or lstrip[1] in '. '):
-                structured_items.append(Text(f"  {lstrip}", style="#a78bfa"))
-            elif lstrip.startswith(('-', '*', '•')):
-                structured_items.append(Text(f"  • {lstrip[1:].strip()}", style="#c084fc"))
-            elif any(keyword in lstrip.lower() for keyword in ['search', 'web', 'looking', 'checking', 'found']):
-                structured_items.append(Text(f"  🌐 {lstrip}", style="#0ea5e9"))
-            elif any(keyword in lstrip.lower() for keyword in ['reading', 'writing', 'editing', 'file']):
-                structured_items.append(Text(f"  📄 {lstrip}", style="#8b5cf6"))
-            elif any(keyword in lstrip.lower() for keyword in ['thinking', 'analyzing', 'understanding']):
-                structured_items.append(Text(f"  💭 {lstrip}", style="#f5a623"))
-            else:
-                structured_items.append(Text(f"  {lstrip}", style="#e2e8f0"))
-        
-        content = Group(*structured_items)
-        return Panel(
-            content,
-            title=f" 🧠 Thinking Process ({len(structured_items)} steps) ",
-            title_align="left",
-            border_style="#6d28d9",
-            padding=(1, 2),
-        )
-
     def on_result_msg(self, msg: ResultMsg) -> None:
         self._show_chat()
         raw = msg.text
@@ -2007,7 +1969,30 @@ class MainScreen(Screen):
         # Cache response to prevent data loss
         self._response_cache[f"response_{self._state.get('turns', 0)}"] = raw
         if reasoning and self._chat_log and self._show_thinking:
-            self._chat_log.write(self._render_thinking(reasoning))
+            from rich.panel import Panel
+            from rich.text import Text
+            from rich.console import Group
+            reasoning = _fix_rtl(reasoning)
+            # Enhanced thinking display with structure
+            lines = reasoning.split('\n')
+            structured_lines = []
+            for line in lines:
+                if line.strip().startswith('-') or line.strip().startswith('*'):
+                    structured_lines.append(f"  • {line.strip()[1:].strip()}")
+                elif line.strip().isdigit():
+                    structured_lines.append(f"  {line.strip()}.")
+                else:
+                    structured_lines.append(line.strip())
+            structured_reasoning = '\n'.join([l for l in structured_lines if l])
+            title = f" 🧠 Thinking Process ({len([l for l in lines if l.strip()])} steps) "
+            reasoning_panel = Panel(
+                Text(structured_reasoning, style="italic #c084fc"),
+                title=title,
+                title_align="left",
+                border_style="#8b5cf6",
+                padding=(1, 2),
+            )
+            self._chat_log.write(reasoning_panel)
         if msg.msgs:
             # Bug#5 fix: strip _tool_desc injected by OllamaProvider text-mode
             self._state["_messages"] = [m for m in msg.msgs if not m.get("_tool_desc")]
@@ -2040,25 +2025,7 @@ class MainScreen(Screen):
             pass
         # Log only completed tool steps (not pending)
         if msg.status == "ok":
-            from rich.panel import Panel
-            from rich.text import Text
-            from rich.markdown import Markdown
-            tool_icons = {
-                "read": "📖", "write": "✏️", "edit": "🔧", "bash": "💻",
-                "glob": "🔍", "grep": "🔎", "web_fetch": "🌐",
-                "validate": "✅", "use_skill": "⚡",
-            }
-            icon = tool_icons.get(msg.tool, "🛠")
-            
-            tool_panel = Panel(
-                Markdown(msg.detail[:500]),
-                title=f" {icon} Tool: {msg.tool} ",
-                title_align="left",
-                border_style="#0ea5e9",
-                padding=(1, 2),
-            )
-            if self._chat_log:
-                self._chat_log.write(tool_panel)
+            self._log_message("tool", f"🛠 {msg.tool}\n{msg.detail[:300]}")
 
     def on_stream_chunk_msg(self, msg: StreamChunkMsg) -> None:
         """Live chunk from AI stream — update last line in same chat area."""
@@ -2081,13 +2048,20 @@ class MainScreen(Screen):
             from rich.console import Group
             group_items = []
             if thinking_text and self._show_thinking:
-                group_items.append(self._render_thinking(thinking_text))
+                thinking_panel = Panel(
+                    Text(thinking_text, style="italic #c084fc"),
+                    title=" 🧠 Thinking Process ",
+                    title_align="left",
+                    border_style="#8b5cf6",
+                    padding=(1, 2),
+                )
+                group_items.append(thinking_panel)
             if display_text:
                 response_panel = Panel(
                     Markdown(display_text),
                     title=" 🤖 Assistant ",
                     title_align="left",
-                    border_style="#059669",
+                    border_style="#10b981",
                     padding=(1, 2),
                 )
                 group_items.append(response_panel)
@@ -2097,7 +2071,7 @@ class MainScreen(Screen):
                     Text(self._stream_buffer, style="default"),
                     title=" 🤖 Assistant ",
                     title_align="left",
-                    border_style="#059669",
+                    border_style="#10b981",
                     padding=(1, 2),
                 )
                 group_items.append(response_panel)
@@ -2150,7 +2124,29 @@ class MainScreen(Screen):
         # Now write the final assistant response properly using _log_message
         display, reasoning = self._parse_thinking(msg.content)
         if reasoning and self._chat_log and self._show_thinking:
-            self._chat_log.write(self._render_thinking(reasoning))
+            from rich.panel import Panel
+            from rich.text import Text
+            from rich.console import Group
+            reasoning = _fix_rtl(reasoning)
+            lines = reasoning.split('\n')
+            structured_lines = []
+            for line in lines:
+                if line.strip().startswith('-') or line.strip().startswith('*'):
+                    structured_lines.append(f"  • {line.strip()[1:].strip()}")
+                elif line.strip().isdigit():
+                    structured_lines.append(f"  {line.strip()}.")
+                else:
+                    structured_lines.append(line.strip())
+            structured_reasoning = '\n'.join([l for l in structured_lines if l])
+            title = f" 🧠 Thinking Process ({len([l for l in lines if l.strip()])} steps) "
+            reasoning_panel = Panel(
+                Text(structured_reasoning, style="italic #c084fc"),
+                title=title,
+                title_align="left",
+                border_style="#8b5cf6",
+                padding=(1, 2),
+            )
+            self._chat_log.write(reasoning_panel)
         self._log_message("assistant", display)
 
         # Bug#4 fix: strip internal _tool_desc messages before saving to state
