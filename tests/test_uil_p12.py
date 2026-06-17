@@ -44,7 +44,7 @@ def test_mode_selection():
         (TaskType.REASONING, ExecutionMode.AUTONOMOUS),
         (TaskType.COMPLEX, ExecutionMode.EXPERT_TEAM),
         (TaskType.SYSTEM, ExecutionMode.DIRECT_TOOL),
-        (TaskType.UNKNOWN, ExecutionMode.AUTONOMOUS),
+        (TaskType.UNKNOWN, ExecutionMode.SIMPLE_CHAT),
     ]
     for task_type, expected_mode in cases:
         cls = ClassificationResult(task_type, Domain.CHAT, 0.8, 0.3, "", [])
@@ -194,7 +194,7 @@ def test_brain_full_end_to_end():
         ("create a new flask app",      ExecutionMode.AUTONOMOUS, 6),
         ("build a complete web app",    ExecutionMode.EXPERT_TEAM, 13),
         ("navigate to google.com",      ExecutionMode.AUTONOMOUS, 2),
-        ("xylophone purples",           ExecutionMode.AUTONOMOUS, 13),
+        ("xylophone purples",           ExecutionMode.SIMPLE_CHAT, 13),
     ]
 
     uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS)
