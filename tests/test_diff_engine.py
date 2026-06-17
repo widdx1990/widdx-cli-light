@@ -78,7 +78,7 @@ def test_apply_patch_simple():
     with tempfile.TemporaryDirectory() as tmp:
         f = Path(tmp) / "test.py"
         f.write_text("line1\nline2\nline3\n")
-        patch = "@@ -2 +2 @@\n line1\n-line2\n+line2_new\n line3\n"
+        patch = "@@ -1,3 +1,3 @@\n line1\n-line2\n+line2_new\n line3\n"
         result = DiffEngine.apply_patch(f, patch)
         assert result.ok
         assert "line2_new" in f.read_text()
