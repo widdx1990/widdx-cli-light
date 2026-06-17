@@ -165,6 +165,8 @@ def test_brain_with_custom_executor():
     executors = {
         ExecutionMode.AUTONOMOUS: test_exec,
         ExecutionMode.EXPERT_TEAM: test_exec,
+        ExecutionMode.EXPERT_TEAM: test_exec,
+        ExecutionMode.EXPERT_TEAM: test_exec,
     }
     uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS)
     result, decision = uil.process("create a new app", executors=executors)
