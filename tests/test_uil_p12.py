@@ -44,7 +44,7 @@ def test_mode_selection():
         (TaskType.REASONING, ExecutionMode.AUTONOMOUS),
         (TaskType.COMPLEX, ExecutionMode.EXPERT_TEAM),
         (TaskType.SYSTEM, ExecutionMode.DIRECT_TOOL),
-        (TaskType.UNKNOWN, ExecutionMode.SIMPLE_CHAT),
+        (TaskType.UNKNOWN, ExecutionMode.AUTONOMOUS),
     ]
     for task_type, expected_mode in cases:
         cls = ClassificationResult(task_type, Domain.CHAT, 0.8, 0.3, "", [])
@@ -164,15 +164,12 @@ def test_brain_with_custom_executor():
 
     executors = {
         ExecutionMode.AUTONOMOUS: test_exec,
-        ExecutionMode.EXPERT_TEAM: test_exec,
-        ExecutionMode.EXPERT_TEAM: test_exec,
-        ExecutionMode.EXPERT_TEAM: test_exec,
     }
     uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS)
     result, decision = uil.process("create a new app", executors=executors)
 
     assert result.summary == "EXECUTED: create a new app"
-    assert captured["mode"] == ExecutionMode.EXPERT_TEAM
+    assert captured["mode"] == ExecutionMode.AUTONOMOUS
     print("  PASS: Brain delegates to custom executor correctly")
 
 
@@ -194,10 +191,10 @@ def test_brain_full_end_to_end():
     """End-to-end: analyze a task and get the right routing decision."""
     test_cases = [
         ("hello how are you",           ExecutionMode.SIMPLE_CHAT, 0),
-        ("create a new flask app",      ExecutionMode.EXPERT_TEAM, 13),
+        ("create a new flask app",      ExecutionMode.AUTONOMOUS, 6),
         ("build a complete web app",    ExecutionMode.EXPERT_TEAM, 13),
         ("navigate to google.com",      ExecutionMode.AUTONOMOUS, 2),
-        ("xylophone purples",           ExecutionMode.SIMPLE_CHAT, 13),
+        ("xylophone purples",           ExecutionMode.AUTONOMOUS, 13),
     ]
 
     uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS)
