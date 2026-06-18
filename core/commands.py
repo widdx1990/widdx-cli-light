@@ -412,7 +412,7 @@ def handle_doctor():
     # Tests
     try:
         r = subprocess.run(
-            [sys.executable, "-m", "pytest", "--ignore=test_features.py", "--tb=no", "-q"],
+            [sys.executable, "-m", "pytest", "tests/", "--tb=no", "-q"],
             capture_output=True, text=True, timeout=30,
             cwd=str(Path(__file__).parent.parent),
         )
@@ -432,7 +432,9 @@ def handle_doctor():
 def handle_export(messages):
     """Export the current conversation as a Markdown file."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = Path(f"chat_export_{ts}.md")
+    export_dir = Path(".widdx/exports")
+    export_dir.mkdir(parents=True, exist_ok=True)
+    path = export_dir / f"chat_export_{ts}.md"
 
     from core import config as cfg_mod
     cfg = cfg_mod.load()

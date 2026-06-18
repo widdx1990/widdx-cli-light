@@ -116,6 +116,16 @@ class SkillManager:
                 if skill:
                     self._skills[skill.name] = skill
 
+    def load_skill(self, skill_dir: Path) -> Optional[Skill]:
+        """Load (or reload) a single skill from a directory.
+
+        Called by the hot-reload watcher when a skill file changes.
+        """
+        skill = self._load_one(skill_dir)
+        if skill:
+            self._skills[skill.name] = skill
+        return skill
+
     def _load_one(self, skill_dir: Path) -> Optional[Skill]:
         """Load a single skill from a directory."""
         md = skill_dir / "skill.md"
