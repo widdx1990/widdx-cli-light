@@ -26,6 +26,8 @@ from rich.text import Text
 from core import config, tools
 from core.ui_visual import role_panel, reasoning_panel
 from core.mcp.client import get_mcp_manager
+from core.skills import skill_manager
+from core.memory import MemoryStore
 
 from .state import TUIState
 from .chat_engine import ChatEngine, ResultMsg, ErrorMsg, StreamEndMsg, ThinkingMsg, ToolStepMsg
@@ -139,6 +141,9 @@ class MainScreen(Screen):
             self.query_one("#input", Input).disabled = True
             self.query_one("#processing", Static).set_class(True, "active")
             self.run_chat(text)
+        else:
+            # Slash command handled — re-enable input immediately
+            self._finish_chat()
 
     @work(exclusive=True, thread=True)
     def run_chat(self, text: str) -> None:
@@ -359,19 +364,24 @@ class MainScreen(Screen):
 
     def history_prev(self):
         if self._command_history:
-            self._history_index = max(-1, self._history_index - 1) if self._history_index < 0 else max(-len(self._command_history), self._history_index - 1)
+            # Move further back: -1→0→1→2... (0 = most recent)
+            max_idx = len(self._command_history) - 1
+            self._history_index = min(max_idx, self._history_index + 1)
             idx = self._history_index
             inp = self.query_one("#input", Input)
-            if 0 <= idx < len(self._command_history):
-                inp.value = self._command_history[-(idx + 1)] if idx >= 0 else ""
-
-    def history_next(self):
-        if self._command_history and self._history_index < 0:
-            self._history_index += 1
-            inp = self.query_one("#input", Input)
-            idx = self._history_index
             if 0 <= idx < len(self._command_history):
                 inp.value = self._command_history[-(idx + 1)]
+
+    def history_next(self):
+        if self._command_history and self._history_index >= 0:
+            # Move forward: 2→1→0→-1 (back to current input)
+            self._history_index -= 1
+            inp = self.query_one("#input", Input)
+            idx = self._history_index
+            if idx >= 0:
+                inp.value = self._command_history[-(idx + 1)]
+            else:
+                inp.value = ""
 
     # ── Toast notifications ────────────────────────────────
     def _show_toast(self, msg: str, kind: str = "info", duration: float = 3.0):

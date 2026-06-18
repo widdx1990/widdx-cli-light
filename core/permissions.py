@@ -146,7 +146,18 @@ class PermissionManager:
         if console is None:
             return True
         if getattr(self, '_tui_mode', False):
-            return True  # TUI can't use input() — auto-allow
+            # TUI can't use input() — check remembered permissions first
+            if tool_name in self._remembered:
+                return self._remembered[tool_name]
+            # For STRICT mode, block unremembered tools in TUI
+            if self._level == PermissionLevel.STRICT:
+                return False
+            # For NORMAL mode, warn but allow
+            if self._level == PermissionLevel.NORMAL:
+                # Could show TUI toast here — for now, allow with audit
+                return True
+            # PERMISSIVE: allow all
+            return True
 
         from rich.prompt import Prompt as RPrompt
         from rich.text import Text

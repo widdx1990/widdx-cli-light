@@ -108,7 +108,7 @@ def _read(file_path: str, offset: int = 0, limit: int = 0) -> str:
     """
     p = Path(file_path).resolve()
     # Sandbox check (consistent with write/edit)
-    if _SAFE_DIR and not str(p).startswith(_SAFE_DIR):
+    if _SAFE_DIR and not str(p.resolve()).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
         return f"Sandbox: read of {file_path} denied — not inside {_SAFE_DIR}"
     if not p.exists():
         return f"File not found: {file_path}"
@@ -149,7 +149,7 @@ def _read(file_path: str, offset: int = 0, limit: int = 0) -> str:
 
 def _write(file_path: str, content: str):
     p = Path(file_path).resolve()
-    if _SAFE_DIR and not str(p).startswith(_SAFE_DIR):
+    if _SAFE_DIR and not str(p.resolve()).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
         return f"Sandbox: write to {file_path} denied — not inside {_SAFE_DIR}"
     p.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -171,7 +171,7 @@ def _edit(file_path: str, old_string: str, new_string: str,
         preview: If True, return diff without making changes.
     """
     p = Path(file_path).resolve()
-    if _SAFE_DIR and not str(p).startswith(_SAFE_DIR):
+    if _SAFE_DIR and not str(p.resolve()).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
         return f"Sandbox: edit of {file_path} denied — not inside {_SAFE_DIR}"
     if not p.exists():
         return f"File not found: {file_path}"
@@ -317,8 +317,16 @@ def _bash(command: str, description: str | None = None) -> str:
                 ret += f"\U0001f4e4 stdout:\n{out}\n"
             if err:
                 ret += f"\U0001f4db stderr:\n{err}\n"
-            ret += "\u26a0\ufe0f Timeout (120s) -- process killed"
+            ret += f"\U0001f51a Exit code: timeout (killed after {BASH_TIMEOUT}s)"
             return ret
+        except Exception:
+            # Ensure subprocess is cleaned up on any other exception
+            try:
+                proc.kill()
+                proc.wait(timeout=3)
+            except Exception:
+                pass
+            raise
     except Exception as e:
         logger.warning("bash tool error: %s | command: %s", e, command[:100])
         return f"\u26a0\ufe0f Failed: {e}"
@@ -424,6 +432,7 @@ def _validate(file_path: str) -> str:
             return False
 
     # PHP
+    if ext == ".php":
         try:
             r = subprocess.run(["php", "-l", str(p)],
                                capture_output=True, text=True, timeout=10)
@@ -625,6 +634,10 @@ def _project_validate(project_dir: str) -> str:
     p = Path(project_dir).resolve()
     if not p.is_dir():
         return f"Project directory not found: {project_dir}"
+
+    # Sandbox check — same as read/write/edit
+    if _SAFE_DIR and not str(p).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
+        return f"Sandbox: project_validate denied — {project_dir} not inside {_SAFE_DIR}"
 
     results = []
     
@@ -1018,7 +1031,35 @@ def execute_with_skills(name: str, args: dict) -> str:
     if skill_manager.active and name in skill_manager.active.tools:
         return skill_manager.execute_tool(name, args)
 
-    # ── Case 4: Built-in tool (or falls through to MCP) ─────────────
+    # ── Case 4: Workflow tools ──────────────────────────────────────
+    if name in ("create_agent", "run_parallel"):
+        from core.workflow import WorkflowEngine
+        # WorkflowEngine needs provider, tool_defs, config, state.
+        # We assume the caller or app-level logic has set these up.
+        # For simplicity in this global dispatcher, we can try to re-init
+        # or use a cached instance if we had one.
+        # Here we re-init based on the current context if possible.
+        # Note: In a real app, WorkflowEngine is usually passed down.
+        # Since this is a global dispatcher, we'll try to get what we need.
+        try:
+            from core.config.settings import load as load_config
+            cfg = load_config()
+            from core.providers.providers import create_provider
+            provider = create_provider(cfg)
+            wf = WorkflowEngine(provider, [], cfg, {})
+            return wf.execute_workflow_tool(name, args)
+        except Exception as e:
+            return f"Workflow execution error: {e}"
+
+    # ── Case 5: MCP tools (prefixed with mcp__) ─────────────────────
+    if name.startswith("mcp__"):
+        from core.mcp.client import get_mcp_manager
+        try:
+            return get_mcp_manager().call_tool(name, args)
+        except Exception as e:
+            return f"MCP execution error: {e}"
+
+    # ── Case 6: Built-in tool ───────────────────────────────────────
     return execute(name, args)
 
 

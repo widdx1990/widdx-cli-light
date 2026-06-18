@@ -293,14 +293,16 @@ class OllamaProvider(Provider):
             return reasoning, cleaned.strip()
 
         # Pattern 3: <thinking>... (unclosed think tag \u2014 DeepSeek streaming)
+        # NOTE: This pattern only catches incomplete streaming fragments where
+        # the closing tag hasn't arrived yet. It only fires when there is
+        # substantial content AFTER the <thinking> block.
         m = re.search(r'<thinking>(.*?)$', content, re.DOTALL)
         if m:
             reasoning = m.group(1).strip()
-            # Only extract if there's substantial content after the tag
-            rest = content[m.end():].strip()
-            if len(rest) > 20:
-                cleaned = rest
-                return reasoning, cleaned
+            # With $ and re.DOTALL, (.*?) captures to end-of-content.
+            # Only use the thinking content if there's actual reasoning text.
+            if len(reasoning) > 10:
+                return reasoning, ""
 
         return reasoning, cleaned
 
@@ -1097,11 +1099,17 @@ except ImportError:
 
 
 def _auto_install_llama_cpp() -> bool:
-    """Try to pip install llama-cpp-python automatically. Returns True on success."""
+    """Try to pip install llama-cpp-python with user consent. Returns True on success."""
     global _LLAMA_CPP_AVAILABLE
     if _LLAMA_CPP_AVAILABLE:
         return True
     import subprocess, sys
+    # Ask user before installing
+    answer = input(
+        "GGUF support requires llama-cpp-python. Install now? [y/N]: "
+    ).strip().lower()
+    if answer not in ("y", "yes"):
+        return False
     try:
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", "llama-cpp-python", "-q"],

@@ -9,12 +9,15 @@ Phase 3 enhancements:
   - Auto-reconnect with exponential backoff
 """
 import json
+import logging
 import subprocess
 import threading
 import time
 import os
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger("widdx.mcp")
 
 
 PROJECT_ROOT = str(Path(__file__).parent.parent.parent.resolve()).replace("\\", "/")

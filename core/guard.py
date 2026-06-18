@@ -20,10 +20,9 @@ Usage:
 
 from __future__ import annotations
 
-import os, re, shutil
+import os, re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +77,12 @@ _WARN_PATTERNS: list[tuple[str, str]] = [
     (r"\bwget\s+.*-O\s*-\s*\|.*(sh|bash)\b", "wget-pipe-shell — inspect script before running"),
     (r"\bshutdown\b", "System shutdown — verify before proceeding"),
     (r"\breboot\b", "System reboot — verify before proceeding"),
-    (r"\bdel\s+/[fq].*C:\\\\Windows", "Windows system file deletion — blocked"),
+    (r"\bdel\s+/[fq].*C:\\Windows", "Windows system file deletion"),
 ]
 
 # Unsafe directories for destructive operations
 _UNSAFE_DIRS = [
-    "/", "/home", "/etc", "/usr", "/var", "/boot", "/sys", "/proc", "/dev",
+    "/", "/root", "/home", "/etc", "/usr", "/var", "/boot", "/sys", "/proc", "/dev",
     "C:\\", "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
     os.path.expanduser("~"),
 ]
@@ -130,14 +129,15 @@ class CommandGuard:
 
     def _is_destructive_path_op(self, cmd: str) -> bool:
         """Check if a destructive command targets an unsafe directory."""
-        # Extract paths from rm/del/rmdir commands
+        # Extract paths from rm/del/rmdir commands — absolute AND relative
         destructive = re.findall(
-            r'(?:rm|del|rmdir|rd)\s+.*?([/~]\\S+|(?:[A-Z]:\\\\\\S+))',
+            r'(?:rm|del|rmdir|rd)\s+.*?([/~]\S+|(?:[A-Z]:\\\S+)|(?:\.\.?(?:[/\\]\S+)+))',
             cmd, re.IGNORECASE,
         )
         for path_str in destructive:
             try:
-                resolved = Path(path_str).resolve()
+                # Resolve relative paths against CWD
+                resolved = (self._cwd / Path(path_str)).resolve()
                 for unsafe in _UNSAFE_DIRS:
                     unsafe_path = Path(unsafe).resolve()
                     if resolved == unsafe_path or unsafe_path in resolved.parents:
