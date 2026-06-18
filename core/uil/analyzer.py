@@ -113,6 +113,9 @@ class CodeWriteClassifier(BaseClassifier):
         "أنشئ", "اكتب", "طبق", "ابن", "صنع",
         "ولد", "طور", "جديد", "أضف ميزة",
         "برنامج", "تطبيق", "مشروع", "سكريبت",
+        "شغل", "اركب", "نفذ", "شغّل", "ركّب",
+        "ثبت", "نصب", "شيل", "احذف", "حدث",
+        "حمل", "نظف", "نزّل",
     }
 
     def classify(self, user_input: str
@@ -272,6 +275,85 @@ class FileOpsClassifier(BaseClassifier):
     def classify(self, user_input: str
                  ) -> tuple[ClassificationResult, list[DecisionStep]] | None:
         return self._default_decision(user_input, "file operations request")
+
+
+# -------------------------------------------------------------------
+# Shell Command Classifier — detect & execute CLI commands directly
+# -------------------------------------------------------------------
+
+_SHELL_COMMAND_PREFIXES = {
+    "npm", "npx", "yarn", "pnpm", "bun", "node", "tsx", "ts-node",
+    "composer", "php", "artisan",
+    "pip", "pip3", "python", "python3", "poetry", "conda", "uv",
+    "dotnet", "nuget", "cargo", "rustc", "rustup", "go",
+    "mvn", "mvnw", "gradle", "gradlew", "javac", "java",
+    "gem", "bundle", "rails", "dart", "flutter",
+    "docker", "docker-compose", "kubectl", "helm", "terraform",
+    "git", "gh", "svn",
+    "curl", "wget", "choco", "winget", "scoop", "brew", "apt",
+    "apt-get", "yum", "dnf", "pacman",
+    "make", "cmake", "meson", "ninja",
+    "create-react-app",
+}
+
+_ARABIC_SHELL_ACTIONS = [
+    "شغل", "شغّل", "اشغل", "نفذ", "اركب",
+    "ركّب", "ركز", "ثبت", "نصب", "شيل", "احذف",
+    "اشيل", "نظف", "حدث", "حمل",
+]
+
+
+class ShellCommandClassifier(BaseClassifier):
+    """Detects direct shell commands and routes them to SYSTEM/DIRECT_TOOL."""
+
+    task_type = TaskType.SYSTEM
+    domain = Domain.SYSTEM
+    MIN_MATCHES = 1
+    BASE_CONFIDENCE = 0.95
+
+    @staticmethod
+    def _extract_command(text: str) -> str | None:
+        cleaned = text.strip()
+        for action in _ARABIC_SHELL_ACTIONS:
+            if cleaned.startswith(action):
+                cleaned = cleaned[len(action):].strip()
+                break
+        for eng_prefix in ("run ", "execute ", "do ", "start "):
+            if cleaned.lower().startswith(eng_prefix):
+                cleaned = cleaned[len(eng_prefix):].strip()
+                break
+        words = cleaned.split()
+        if not words or words[0].lower() not in _SHELL_COMMAND_PREFIXES:
+            return None
+        cmd_words = []
+        for w in words:
+            if any('؀' <= c <= 'ۿ' or 'ݐ' <= c <= 'ݿ' for c in w):
+                break
+            cmd_words.append(w)
+        return " ".join(cmd_words)
+
+    def classify(self, user_input: str
+                 ) -> tuple[ClassificationResult, list[DecisionStep]] | None:
+        extracted = self._extract_command(user_input)
+        if extracted is None:
+            return None
+        step = DecisionStep(
+            component=self.__class__.__name__,
+            input_summary=user_input[:80],
+            output="SYSTEM -> DIRECT_TOOL (bash)",
+            score=0.95,
+            detail=f"Detected shell command: '{extracted[:80]}'",
+        )
+        result = ClassificationResult(
+            task_type=self.task_type, domain=self.domain,
+            confidence=0.95, complexity=0.1,
+            reasoning=f"ShellCommandClassifier: direct command '{extracted[:50]}'",
+            keywords=["shell_command"],
+            detected_features={"raw_command": extracted},
+            decision_path=[step], is_fallback=False,
+        )
+        return result, [step]
+
 
 
 class ComplexClassifier(BaseClassifier):
@@ -476,7 +558,9 @@ class TaskAnalyzer:
 
     def __init__(self, provider=None):
         self.classifiers: list[BaseClassifier] = [
-            # High-specificity classifiers first
+            # HIGHEST priority: shell commands -> direct execution
+            ShellCommandClassifier(),
+            # High-specificity classifiers
             BrowserClassifier(),
             DatabaseClassifier(),
             CodeReviewClassifier(),

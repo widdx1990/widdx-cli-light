@@ -91,18 +91,47 @@
 - [x] **ديناميكية قوائم النماذج** — opencode-zen و ollama تجلب النماذج من API مباشرة
 - [x] **`handle_provider` مبسط** — auto-select للأنسب بدون إدخال يدوي
 
-## 🔜 Phase 10: Polish & Next Features
+## ✅ Phase 10: Polish & Smart Features — COMPLETE
 
-- [ ] **Plugin hot-reload** — reload skills without restart
-- [ ] **Session search** — full-text search across saved sessions
-- [ ] **Diff viewer in TUI** — inline git diff display
-- [ ] **Benchmark suite** — compare routing accuracy across models
-- [ ] **PyPI publish** — `pip install widdx-cortex`
-- [ ] **GitHub Actions** — CI: lint + tests on push
+- [x] **Plugin hot-reload** — reload skills without restart
+- [x] **Session search** — full-text search across saved sessions (FTS5 + LIKE)
+- [x] **Diff viewer in TUI** — inline git diff display
+- [x] **Benchmark suite** — compare routing accuracy across models
+- [x] **PyPI publish** — `pip install widdx-cortex` (via GitHub Actions)
+- [x] **GitHub Actions** — CI: lint + tests + benchmark on push
+- [x] **Cache Layer** — ResponseCache + ToolResultCache with TTL/LRU
+- [x] **Vector Memory** — TF-IDF + Ollama embeddings + semantic search
+- [x] **Advanced self-improvement** — ErrorPatternLearner + FixTracker
 
-## 🔜 Phase 10: Ecosystem
+## ✅ Phase 11: Safety & Production — COMPLETE
+
+- [x] **Dangerous Command Guard** — blocks rm -rf /, fork bombs, etc.
+- [x] **Diff Engine** — unified diff editing with conflict detection
+- [x] **Checkpoint Manager** — file-based snapshots (safe, no git switching)
+- [x] **Repo Mapper 2.0** — dependency graph + smart context selector
+- [x] **Anti-Duplication Rules** — grep-before-write in agent prompt
+- [x] **JS Syntax Auto-Check** — `node --check` after every edit
+
+## ✅ Phase 12: Quality Gates — COMPLETE
+
+- [x] **Sandbox Executor** — docker/subprocess isolation with resource limits
+- [x] **Auto-Commit on Success** — git commit with Co-Authored-By: WIDDX
+- [x] **Linter Auto-Fix** — ruff + eslint + node --check integration
+- [x] **Token Budget Enforcer** — hard limits on token/cost per session
+
+## ✅ Phase 13: Distribution — COMPLETE
+
+- [x] **PyPI Package** — `pip install widdx-cortex`
+- [x] **Docker Support** — Dockerfile + containerized deployment
+- [x] **RAG Pipeline** — dense embeddings with sentence-transformers fallback
+- [x] **Multi-file Editor** — atomic edits across multiple files
+- [x] **LICENSE** — MIT
+
+## 🔜 Phase 14: Ecosystem (future)
 
 - [ ] VS Code Extension (sidebar chat panel)
 - [ ] GitHub App (PR review, issue triage)
 - [ ] Team Features (shared sessions, project config sync)
-- [ ] Advanced self-improvement loop: learn from corrections
+- [ ] Web UI (browser-based interface)
+- [ ] Mobile Push Notifications
+- [ ] Telemetry Dashboard

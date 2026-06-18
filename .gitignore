@@ -24,7 +24,18 @@ package-lock.json
 .widdx/
 .qoder/
 
+# Chat exports (saved to .widdx/exports/)
+.widdx/exports/
+
 # Temporary files
+chat_export_*.md
+*.png
+*.jpg
+MANIFEST.json
+WIDDX_VALIDATION_REPORT.md
+implementation_plan.md
+MIGRATION_GUIDE.md
+.mypy_cache/
 widdx-tui.log
 .coverage
 auto_backup_*.json

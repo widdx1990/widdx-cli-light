@@ -7,7 +7,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/widdx-cortex?color=00c896&label=PyPI&logo=python&logoColor=white)](https://pypi.org/project/widdx-cortex/)
 [![Python](https://img.shields.io/pypi/pyversions/widdx-cortex?color=f5a623&logo=python)](https://www.python.org/)
-[![CI/CD](https://github.com/widdx/chat-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/widdx/chat-tool/actions)
+[![CI/CD](https://github.com/widdx1990/widdx-cli-light/actions/workflows/ci.yml/badge.svg)](https://github.com/widdx1990/widdx-cli-light/actions)
 [![License](https://img.shields.io/badge/license-MIT-00c896.svg)](LICENSE)
 [![Lines](https://img.shields.io/badge/code-20,620-00c896.svg)](.)
 
@@ -155,53 +155,53 @@ python api_server.py     # تشغيل API server (يدوياً, wrapper to scrip
 ## 📁 بنية المشروع
 
 ```
-WIDDX/
+WIDDX/                         # 184 tests | 66 modules | 17,500+ LOC
 │
-├── 📄 install.bat           ← مثبت بنقرة واحدة ★
-├── 📄 install.ps1           ← مثبت PowerShell
-├── 📄 uninstall.bat         ← إلغاء التثبيت
-├── 📄 main.py               ← compatibility wrapper إلى scripts/main.py
-├── 📄 run_textual.py        ← compatibility wrapper إلى scripts/run_textual.py
-├── 📄 api_server.py         ← compatibility wrapper إلى scripts/api_server.py
-├── 📁 scripts/              ← تنفيذ نقاط الدخول الفعلية
-├── 📄 config.json           ← إعدادات المستخدم
-├── 📄 pyproject.toml        ← تكوين الحزمة
-├── 📄 requirements.txt      ← التبعيات
-├── 📄 MANIFEST.json         ← فهرس المشروع الكامل
+├── main.py                    ← نقطة الدخول
+├── pyproject.toml             ← تكوين الحزمة + PyPI
+├── Dockerfile                 ← حاوية Docker ★
+├── LICENSE                    ← MIT
 │
-├── 📁 core/                 ← المكونات الأساسية
-│   ├── chat.py              ← حلقة المحادثة
-│   ├── cli.py               ← واجهة CLI (نقطة الدخول)
-│   ├── commands.py          ← أوامر السلاش
-│   ├── memory.py            ← نظام الذاكرة
-│   ├── memory_learner.py    ← تعلم الذاكرة تلقائياً ★
-│   ├── suggester.py         ← اقتراح الإجراءات ★
-│   ├── project_tracker.py   ← تتبع خطة المشروع ★
-│   ├── auto_setup.py        ← إعداد تلقائي للمشروع ★
-│   ├── diagnostics.py       ← تشخيص الأخطاء الصامتة ★
-│   ├── self_reflection.py   ← التأمل الذاتي ★
-│   ├── permissions.py       ← نظام الأذونات
-│   ├── proxy.py             ← إدارة البروكسيات
-│   ├── skills.py            ← نظام المهارات v1
-│   ├── skills_v2.py         ← نظام المهارات v2 (محسن) ★
-│   ├── tools.py             ← 9 أدوات مدمجة
-│   ├── workflow.py          ← محرك سير العمل (sub-agents)
-│   ├── database.py          ← قاعدة بيانات SQLite للجلسات ★
-│   ├── session_v2.py        ← إدارة الجلسات المتطورة ★
-│   ├── provider_router.py   ← التوجيه الذكي للمزودات ★
-│   ├── project_context.py   ← سياق المشروع المتقدم ★
-│   ├── project_structure.py ← تحليل بنية المشروع ★
-│   ├── widdx_v2.py          ← WIDDX v2 — واجهة موحدة ★
-│   ├── utils.py             ← دوال مساعدة مشتركة
+├── 📁 core/                   ← المكونات الأساسية (66 وحدة)
+│   ├── agents/agent.py        ← وكيل مستقل + Anti-Dup + JS check
+│   ├── agents/expert.py       ← فريق وكلاء
+│   ├── uil/                   ← طبقة الذكاء الموحدة (13 مصنف)
+│   ├── providers/             ← مزودات AI (DeepSeek, Ollama, GGUF...)
+│   ├── config/                ← الإعدادات + keychain
+│   ├── project/               ← Git + scanner + state
+│   ├── mcp/                   ← MCP client
 │   │
-│   ├── 📁 agents/           ← الوكلاء
-│   │   ├── agent.py         ← وكيل مستقل (AutonomousAgent)
-│   │   └── expert.py        ← فريق وكلاء (ExpertTeam)
+│   ├── 🛡️ Safety              ← ★ Phase 11-13
+│   │   ├── guard.py           ← حارس الأوامر الخطيرة
+│   │   ├── sandbox.py         ← عزل التنفيذ (docker/subprocess)
+│   │   ├── checkpoint.py      ← نقاط تفتيش (ملفات، آمن)
+│   │   └── token_budget.py    ← ميزانية الرموز والتكاليف
 │   │
-│   ├── 📁 config/           ← الإعدادات
-│   │   ├── keychain.py      ← إدارة مفاتيح API بأمان
-│   │   └── settings.py      ← تحميل/حفظ config.json
+│   ├── 📝 Quality              ← ★ Phase 11-13
+│   │   ├── diff_engine.py     ← محرر unified diff
+│   │   ├── linter.py          ← فحص الجودة (ruff/eslint)
+│   │   ├── multi_editor.py    ← تحرير متعدد الملفات (ذري)
+│   │   └── auto_commit.py     ← git commit تلقائي
 │   │
+│   ├── 🧠 Intelligence         ← ★ Phase 10
+│   │   ├── cache.py           ← تخزين مؤقت (TTL + LRU)
+│   │   ├── vector_memory.py   ← ذاكرة متجهية (TF-IDF + Ollama)
+│   │   ├── rag.py             ← RAG Pipeline (embeddings)
+│   │   ├── self_improve.py    ← تعلم من الأخطاء المتكررة
+│   │   └── repo_mapper.py     ← خريطة المستودع الذكية
+│   │
+│   ├── 🔍 Search               ← ★ Phase 10
+│   │   ├── session_search.py  ← بحث Full-text (FTS5)
+│   │   └── plugin_loader.py   ← تحميل المهارات بدون إعادة تشغيل
+│   │
+│   └── ... (memory, skills, tools, workflow, chat...)
+│
+├── 📁 tests/                   ← 184 اختبار (29 ملف)
+├── 📁 skills/                  ← 16 مهارة
+├── 📁 tui/                     ← واجهة Textual
+├── 📁 scripts/                 ← نقاط الدخول
+├── 📁 cli/                     ← واجهة الأوامر
+└── 📁 doc/                     ← التوثيق
 │   ├── 📁 project/          ← إدارة المشروع
 │   │   ├── git.py           ← أدوات Git (auto-commit, undo)
 │   │   ├── manifest.py      ← مولد MANIFEST.json
@@ -716,12 +716,36 @@ python run_textual.py  # wrapper to scripts/run_textual.py
 
 ---
 
+## 🛡️ Phase 11-13: Safety & Production (جديد)
+
+| الميزة | الوصف |
+|--------|-------|
+| **Dangerous Command Guard** | يمنع `rm -rf /`، fork bombs، أوامر التدمير |
+| **Sandbox Executor** | عزل الأوامر في docker/subprocess مع حدود موارد |
+| **Checkpoint Manager** | نقاط تفتيش ملفية (آمنة، بدون git branch switching) |
+| **Token Budget** | حد صارم للرموز والتكاليف مع نموذج تسعير لكل مزود |
+| **Diff Engine** | تحرير عبر unified diff مع كشف التعارضات |
+| **Linter Auto-Fix** | فحص الجودة (ruff + eslint + node --check) بعد كل تعديل |
+| **Multi-file Editor** | تحرير عدة ملفات في عملية ذرية واحدة |
+| **Auto-Commit** | git commit تلقائي بعد نجاح المهمة |
+| **Anti-Duplication** | قواعد في agent prompt تمنع تكرار الكود |
+| **Cache Layer** | تخزين مؤقت للاستجابات ونتائج الأدوات (TTL + LRU) |
+| **Vector Memory** | ذاكرة دلالية (TF-IDF + Ollama embeddings) |
+| **RAG Pipeline** | استرجاع معزز بـ sentence-transformers |
+| **Repo Mapper** | خريطة ذكية للمستودع مع dependency graph |
+| **Session Search** | بحث Full-text في الجلسات (FTS5) |
+| **Plugin Hot-Reload** | تحميل المهارات بدون إعادة تشغيل |
+| **Self-Improvement** | تعلم من الأخطاء المتكررة وتحسين الـ prompt |
+
 ## 🔐 الأمان
 
+- **Dangerous Command Guard:** يمنع `rm -rf /`، fork bombs، تدمير الأقراص
+- **Sandbox Executor:** عزل الأوامر في حاويات docker/subprocess
+- **Token Budget:** حد صارم للتكاليف يمنع الاستهلاك الزائد
+- **Checkpoint:** نقاط تفتيش للمشروع قبل كل تعديل
+- **Syntax Auto-Check:** `node --check` + `py_compile` بعد كل تعديل
 - **تصريح يدوي:** كل عملية `write`/`edit`/`bash` تطلب موافقة المستخدم
-- **تصريح متكرر:** التصريح يُحفظ للجلسة لنفس العملية
-- **Sandbox:** يمكن تحديد مجلد آمن — أي كتابة خارجه تُرفض
-- **مهلة الأوامر:** أوامر Bash تنتهي بعد 120 ثانية
+- **حماية المفاتيح:** `sanitized_environ()` تمنع تسرب مفاتيح API
 - **فحص الأخطاء:** أنماط أوامر خطرة محظورة تلقائياً
 - **حماية API Keys:** مفاتيح API لا تتسرب إلى أوامر Bash الفرعية (عبر `sanitized_environ()`)
 - **Git init تلقائي:** المشاريع الجديدة تنشأ مع version control تلقائياً

@@ -3,10 +3,6 @@
   "language": "Python 3.12",
   "files": [
     {
-      "path": "api_server.py",
-      "description": "WIDDX Cortex — REST API Server."
-    },
-    {
       "path": "cli/app.py",
       "description": "WIDDX CLI — main entry point for the terminal interface."
     },
@@ -27,10 +23,6 @@
       "description": "Compatibility shim — re-export theme primitives from `core.ui_visual`."
     },
     {
-      "path": "conftest.py",
-      "description": "Pytest configuration — ensures clean KnowledgeBase before each test."
-    },
-    {
       "path": "core/__main__.py",
       "description": "CLI launcher for `python -m core` and `widdx` command."
     },
@@ -41,6 +33,10 @@
     {
       "path": "core/agents/expert.py",
       "description": "Expert Agents Team — specialized agents that work together like a tech company."
+    },
+    {
+      "path": "core/auto_commit.py",
+      "description": "Auto-Commit on Success — Git-commit agent changes automatically."
     },
     {
       "path": "core/auto_setup.py",
@@ -56,7 +52,7 @@
     },
     {
       "path": "core/checkpoint.py",
-      "description": "Checkpoint Manager — Save/restore project state before agent edits."
+      "description": "Checkpoint Manager — Lightweight file-based snapshots."
     },
     {
       "path": "core/cli.py",
@@ -91,6 +87,10 @@
       "description": "Dangerous Command Guard — Prevent destructive shell commands."
     },
     {
+      "path": "core/linter.py",
+      "description": "Linter Auto-Fix — Run linters after agent edits and fix issues."
+    },
+    {
       "path": "core/mcp/client.py",
       "description": "MCP (Model Context Protocol) client — connect to MCP servers and expose their tools."
     },
@@ -101,6 +101,10 @@
     {
       "path": "core/memory_learner.py",
       "description": "Memory Learner — auto-extract facts from conversations using the LLM."
+    },
+    {
+      "path": "core/multi_editor.py",
+      "description": "Multi-file Editor — Atomic edits across multiple files."
     },
     {
       "path": "core/permissions.py",
@@ -155,8 +159,16 @@
       "description": "Proxy Manager — fetches free proxies, tests them, and rotates automatically."
     },
     {
+      "path": "core/rag.py",
+      "description": "RAG Pipeline — Real embedding-based retrieval for semantic memory."
+    },
+    {
       "path": "core/repo_mapper.py",
       "description": "Smart Repo Map — Dependency graph + context selector."
+    },
+    {
+      "path": "core/sandbox.py",
+      "description": "Sandbox Executor — Isolate & constrain shell command execution."
     },
     {
       "path": "core/self_improve.py",
@@ -185,6 +197,10 @@
     {
       "path": "core/suggester.py",
       "description": "Proactive Suggester — analyze project state and suggest next actions."
+    },
+    {
+      "path": "core/token_budget.py",
+      "description": "Token Budget Enforcer — Hard limits on token usage and cost."
     },
     {
       "path": "core/tools.py",
@@ -235,64 +251,8 @@
       "description": "Workflow Engine — spawn sub-agents in parallel/pipeline."
     },
     {
-      "path": "example_v2.py",
-      "description": "WIDDX v2 - Example Usage."
-    },
-    {
       "path": "main.py",
       "description": "WIDDX — Terminal AI Chat Tool."
-    },
-    {
-      "path": "run_integration_test.py",
-      "description": "Simple integration test: mock provider + agent to validate auto-validate logic."
-    },
-    {
-      "path": "run_textual.py",
-      "description": "Entry point to run WIDDX with Textual TUI."
-    },
-    {
-      "path": "test_check_cli.py",
-      "description": "CLI health-check tests — verifies CLIApp doctor command and module loading."
-    },
-    {
-      "path": "test_cli_all.py",
-      "description": "Comprehensive non-interactive connectivity test for the WIDDX CLI."
-    },
-    {
-      "path": "test_features.py",
-      "description": "Integration test for all 6 new features."
-    },
-    {
-      "path": "test_project_context.py",
-      "description": "Test Project Context System"
-    },
-    {
-      "path": "test_project_validate.py",
-      "description": "Test the project_validate tool with a real Python project."
-    },
-    {
-      "path": "test_uil_knowledge.py",
-      "description": "Phase 2 — Knowledge Base Tests (Phase 1.5 stable, knowledge.py first)."
-    },
-    {
-      "path": "test_uil_p12.py",
-      "description": "Phase 1.2 verification: router.py + brain.py"
-    },
-    {
-      "path": "test_uil_p13.py",
-      "description": "Phase 1.3 Integration Test: main.py UIL Wiring."
-    },
-    {
-      "path": "test_uil_p15.py",
-      "description": "Phase 1.5 — Execution Feedback Layer + Plan Consumption Tests."
-    },
-    {
-      "path": "test_uil_planner.py",
-      "description": "Phase 1.4 — Planner Layer Tests."
-    },
-    {
-      "path": "test_v2.py",
-      "description": "Test WIDDX v2 Components"
     },
     {
       "path": "tui/__main__.py",

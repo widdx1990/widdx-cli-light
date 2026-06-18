@@ -56,7 +56,20 @@ RULES:
 - On failure: explain what happened, then try a different approach
 - ALWAYS run validate after writing or editing code
 - NEVER say you're done until the task is actually complete
-- Your final response MUST be a summary of what was accomplished"""
+- Your final response MUST be a summary of what was accomplished
+
+ANTI-DUPLICATION (MANDATORY):
+- Before creating ANY new variable/function/class: grep the file first.
+  If it already exists, REUSE it — do NOT redeclare.
+- Duplicate declarations cause fatal SyntaxError and break the app.
+- Before ANY edit: Read the target area first — never edit blind.
+
+VERIFICATION (MANDATORY):
+- After EVERY file edit, run a syntax check:
+  JavaScript: node --check <file>
+  Python:     python -m py_compile <file>
+- If syntax check FAILS, fix immediately — do NOT proceed.
+- After all edits pass: run the project and verify it WORKS."""
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +252,19 @@ class AutonomousAgent:
 
         Handles automatic validation for `bash` commands that create/modify
         repository files by snapshotting mtimes and validating changed files.
+
+        Uses :class:`core.cache.tool_cache` to skip redundant read operations.
         """
+        # ── Cache: check before executing (skip for side-effect tools) ──
+        from core.cache import tool_cache
+        cache_key = tool_cache.make_key(tc.name, tc.args)
+        if tc.name not in ("bash", "write", "edit"):
+            cached = tool_cache.get(cache_key)
+            if cached is not None:
+                print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
+                print_tool_msg(tc.name, f"(cached) {cached[:200]}")
+                return cached
+
         # Track tool usage
         if "tools_used" not in self.state:
             self.state["tools_used"] = []
@@ -275,12 +300,63 @@ class AutonomousAgent:
                     val_result = self._auto_validate_file(str(f))
                     self.steps.append(AgentStep(len(self.steps) + 1, "validate", {"file_path": str(f)}, val_result))
 
+            # Cache successful bash results briefly
+            if not result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed")):
+                from core.cache import tool_cache
+                tool_cache.set(cache_key, result, tool_name="bash")
             return result
 
         # Default execution path
         result = core_tools.execute_with_skills(tc.name, tc.args)
         print_tool_msg(tc.name, result[:1000])
+        # Cache successful read-only tool results
+        if tc.name not in ("bash", "write", "edit") and not result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed")):
+            from core.cache import tool_cache
+            tool_cache.set(cache_key, result, tool_name=tc.name)
+        # Invalidate tool cache on writes
+        if tc.name in ("write", "edit"):
+            from core.cache import tool_cache
+            tool_cache.invalidate_on_write()
         return result
+
+    def _auto_verify_build(self) -> str | None:
+        """Auto-install deps, syntax-check JS, and run build.
+
+        Returns error string if build fails, None if OK.
+        """
+        from pathlib import Path
+        import platform as _plat, subprocess as _sp
+
+        root = Path(".").resolve()
+        errors = []
+
+        # ── JS syntax-check for all .js files ──
+        js_files = list(root.rglob("*.js"))
+        js_files = [f for f in js_files[:20]
+                    if "node_modules" not in str(f) and f.stat().st_size < 500_000]
+        node_bin = None
+        import shutil as _sh
+        for candidate in ("node", "nodejs"):
+            if _sh.which(candidate):
+                node_bin = candidate
+                break
+
+        if node_bin and js_files:
+            for jsf in js_files:
+                try:
+                    r = _sp.run(
+                        [node_bin, "--check", str(jsf)],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                    if r.returncode != 0:
+                        err = (r.stderr or r.stdout or "")[:600]
+                        errors.append(f"JS SyntaxError in {jsf.name}: {err}")
+                except Exception:
+                    pass
+
+        if not errors:
+            return None
+        return "\\n".join(errors)
 
     def _auto_validate_file(self, file_path: str) -> str:
         """Automatically validate a file after a write/edit operation."""
