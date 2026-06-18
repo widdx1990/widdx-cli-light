@@ -47,3 +47,7 @@ chat_*.json
 
 # Build artifacts
 /build/
+
+# Private developer docs (removed from history)
+PLAN_PHASE*.md
+TASKS_PHASE*.md
