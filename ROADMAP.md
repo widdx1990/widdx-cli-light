@@ -127,10 +127,11 @@
 - [x] **Multi-file Editor** — atomic edits across multiple files
 - [x] **LICENSE** — MIT
 
-## 🔜 Phase 14: Ecosystem (future)
+## 🚧 Phase 14: Ecosystem (in progress)
 
-- [ ] VS Code Extension (sidebar chat panel)
-- [ ] GitHub App (PR review, issue triage)
+- [x] VS Code Extension — sidebar chat, code context, streaming (`vscode-extension/`)
+- [x] GitHub App — automated PR review, issue triage (`github-app/`)
+- [x] GitHub Actions CI — test, lint, benchmark, build (`.github/workflows/ci.yml`)
 - [ ] Team Features (shared sessions, project config sync)
 - [ ] Web UI (browser-based interface)
 - [ ] Mobile Push Notifications
