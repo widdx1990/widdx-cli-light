@@ -24,6 +24,9 @@ package-lock.json
 .widdx/
 .qoder/
 
+# Claude Code local settings
+.claude/
+
 # Chat exports (saved to .widdx/exports/)
 .widdx/exports/
 
