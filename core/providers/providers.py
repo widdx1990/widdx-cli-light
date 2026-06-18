@@ -1235,11 +1235,12 @@ class GGUFDirectProvider(Provider):
                     f"- {t['name']}: {t.get('description', '')}"
                     for t in tool_defs[:10]
                 )
-                tool_prefix = (
-                    f"{tmpl.format(role='system', content=f'Available tools:\n{tool_desc}\n'
-                    f'To call a tool, output EXACTLY: '
-                    f'{{"tool": "tool_name", "arguments": {{...}}}}')}"
+                tool_content = (
+                    "Available tools:\n" + tool_desc + "\n"
+                    'To call a tool, output EXACTLY: '
+                    '{"tool": "tool_name", "arguments": {...}}'
                 )
+                tool_prefix = tmpl.format(role='system', content=tool_content)
                 full_prompt = tool_prefix + full_prompt
 
             content_chunks: list[str] = []
