@@ -53,23 +53,23 @@ widdx-tui = "tui.app:run_tui"
 widdx-api = "api_server:main"
 
 [project.urls]
-Homepage = "https://github.com/widdx/chat-tool"
-Repository = "https://github.com/widdx/chat-tool"
-Documentation = "https://github.com/widdx/chat-tool#readme"
+Homepage = "https://github.com/widdx1990/widdx-cli-light"
+Repository = "https://github.com/widdx1990/widdx-cli-light"
+Documentation = "https://github.com/widdx1990/widdx-cli-light#readme"
 
 [tool.setuptools.packages.find]
 include = ["core*", "cli*", "tui*", "tui/screens*", "tui/widgets*"]
-exclude = ["test_*", "node_modules*", ".widdx*"]
+exclude = ["tests*", "node_modules*", ".widdx*"]
 
 [tool.setuptools.package-data]
 tui = ["*.tcss"]
 core = ["py.typed"]
 
 [tool.pytest.ini_options]
-testpaths = ["."]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
 source = ["core", "tui"]
-omit = ["test_*", "node_modules*"]
+omit = ["tests/*", "node_modules*"]

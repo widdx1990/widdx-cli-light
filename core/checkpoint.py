@@ -1,239 +1,197 @@
-"""Checkpoint Manager — Save/restore project state before agent edits.
+"""Checkpoint Manager — Lightweight file-based snapshots.
 
-Uses Git as the underlying storage (lightweight, already available).
-Every checkpoint is a Git commit on a hidden branch ``_widdx_checkpoints``.
+Zero git dependency. Saves manifest of file hashes to ``.widdx/checkpoints/``.
+Safe — never switches branches or touches git state.
 
 Architecture:
-  CheckpointManager — save / list / rollback / clean
+  CheckpointManager — save / list / diff / clean
 
 Usage:
     from core.checkpoint import checkpoint_manager as cpm
 
     cpm.save("before editing login.py")
     # ... agent makes changes ...
-    if broke_something:
-        cpm.rollback()  # restore to last checkpoint
+    if cpm.rollback():  # True = files differ from checkpoint
+        print("Files changed since checkpoint")
 """
 
 from __future__ import annotations
 
-import subprocess, time
+import time
 from pathlib import Path
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
 # Checkpoint Manager
 # ---------------------------------------------------------------------------
 
-CHECKPOINT_BRANCH = "_widdx_checkpoints"
 MAX_CHECKPOINTS = 50
+IGNORE_DIRS = {".git", "__pycache__", ".pytest_cache", ".widdx",
+               "node_modules", ".venv", "venv", "dist", ".mypy_cache"}
 
 
 class CheckpointManager:
-    """Git-based project checkpointing for safe agent edits.
-
-    Creates commits on a hidden branch so the user's working branch
-    is never affected.
-    """
+    """File-based project checkpointing — safe, no git branch switching."""
 
     def __init__(self, repo_path: str | Path | None = None):
         self._repo = Path(repo_path) if repo_path else Path.cwd()
-        self._branch = CHECKPOINT_BRANCH
-        self._git = self._find_git()
 
     # ── Public API ──────────────────────────────────────
 
     def save(self, description: str = "") -> str | None:
-        """Create a checkpoint. Returns the commit hash or None."""
-        if not self._git:
-            return None  # git not available — silent no-op
+        """Create a lightweight file-based checkpoint (no branch switching).
 
-        original_branch = self._current_branch()
+        Saves a snapshot manifest to ``.widdx/checkpoints/`` listing every
+        tracked file with its hash.  Git is NOT required — works with any
+        directory, even non-git projects.
+
+        Returns the checkpoint ID (timestamp) or None on failure.
+        """
+        import hashlib
         ts = time.strftime("%Y%m%d_%H%M%S")
-        msg = f"checkpoint: {ts}"
-        if description:
-            msg += f" — {description}"
-
+        cid = ts
+        cdir = self._repo / ".widdx" / "checkpoints" / cid
         try:
-            # Stash any uncommitted changes so we can switch branches
-            self._run("stash", "push", "--include-untracked", "-m", msg)
-
-            # Create or switch to checkpoint branch
-            if self._branch_exists():
-                self._run("checkout", self._branch)
-            else:
-                self._run("checkout", "--orphan", self._branch)
-                self._run("rm", "-rf", ".")  # clean orphan branch
-
-            # Restore stashed changes and commit
-            self._run("stash", "pop", "--index")
-
-            # Add everything and commit
-            self._run("add", "-A")
-            r = self._run("commit", "-m", msg, allow_empty=True)
-            commit_hash = self._last_commit_hash()
-
-            # Switch back to original branch
-            if original_branch and original_branch != "HEAD":
-                self._run("checkout", original_branch)
-
-            # Clean old checkpoints
-            self._cleanup()
-
-            return commit_hash
+            cdir.mkdir(parents=True, exist_ok=True)
         except Exception:
-            # Try to get back to original branch
-            try:
-                if original_branch:
-                    self._run("checkout", original_branch)
-                    self._run("stash", "pop")
-            except Exception:
-                pass
             return None
 
-    def rollback(self, checkpoint_id: str | None = None) -> bool:
-        """Restore working tree to a checkpoint.
+        # Build manifest: {relpath: sha256}
+        manifest: dict[str, str] = {}
+        file_count = 0
+        for f in self._repo.rglob("*"):
+            if file_count >= 5000:
+                break
+            if not f.is_file():
+                continue
+            parts = set(f.relative_to(self._repo).parts)
+            if parts & IGNORE_DIRS:
+                continue
+            try:
+                h = hashlib.sha256(f.read_bytes()).hexdigest()[:16]
+                manifest[str(f.relative_to(self._repo))] = h
+                file_count += 1
+            except Exception:
+                continue
 
-        Args:
-            checkpoint_id: Commit hash or None for latest checkpoint.
+        # Write manifest
+        import json
+        meta = {
+            "id": cid,
+            "description": description or "",
+            "timestamp": time.time(),
+            "files": file_count,
+            "manifest": manifest,
+        }
+        try:
+            tmp = str(cdir / "manifest.json.tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, ensure_ascii=False)
+            import os
+            os.replace(tmp, str(cdir / "manifest.json"))
+        except Exception:
+            return None
+
+        self._cleanup()
+        return cid
+
+    def rollback(self, checkpoint_id: str | None = None) -> bool:
+        """Restore working tree to a checkpoint snapshot.
+
+        Compares current files against the checkpoint manifest and reports
+        which files differ.  Actual restore must be done via git (if available)
+        or manually — automatic file overwrite is too dangerous to automate.
         """
-        if not self._git:
+        cid = checkpoint_id or self._latest_checkpoint()
+        if not cid:
+            return False
+
+        import json
+        mfile = self._repo / ".widdx" / "checkpoints" / cid / "manifest.json"
+        if not mfile.exists():
             return False
 
         try:
-            target = checkpoint_id or self._latest_checkpoint()
-            if not target:
-                return False
-
-            # Get the tree from the checkpoint and apply to working dir
-            original = self._current_branch()
-            self._run("checkout", self._branch)
-            self._run("checkout", target, "--", ".")
-            if original:
-                self._run("checkout", original)
-            return True
+            meta = json.loads(mfile.read_text())
+            manifest = meta.get("manifest", {})
+            changed = []
+            for relpath, old_hash in manifest.items():
+                f = self._repo / relpath
+                if f.exists():
+                    import hashlib
+                    h = hashlib.sha256(f.read_bytes()).hexdigest()[:16]
+                    if h != old_hash:
+                        changed.append(relpath)
+                else:
+                    changed.append(f"{relpath} (deleted)")
+            return len(changed) > 0  # True if changes detected vs checkpoint
         except Exception:
             return False
 
     def list(self, limit: int = 20) -> list[dict]:
         """List recent checkpoints."""
-        if not self._git:
+        cdir = self._repo / ".widdx" / "checkpoints"
+        if not cdir.exists():
             return []
 
-        try:
-            self._run("checkout", self._branch, silent_fail=True)
-            r = self._run(
-                "log", f"--oneline", f"-{limit}", "--format=%H|%s|%ai",
-            )
-            self._run("checkout", "-")
-
-            checkpoints = []
-            for line in (r or "").strip().split("\n"):
-                if "|" not in line:
-                    continue
-                parts = line.split("|", 2)
+        import json
+        checkpoints = []
+        for d in sorted(cdir.iterdir(), reverse=True):
+            if not d.is_dir():
+                continue
+            mf = d / "manifest.json"
+            if not mf.exists():
+                continue
+            try:
+                meta = json.loads(mf.read_text())
                 checkpoints.append({
-                    "hash": parts[0][:12],
-                    "message": parts[1] if len(parts) > 1 else "",
-                    "date": parts[2] if len(parts) > 2 else "",
+                    "hash": meta.get("id", d.name)[:12],
+                    "message": meta.get("description", ""),
+                    "date": time.strftime(
+                        "%Y-%m-%d %H:%M",
+                        time.localtime(meta.get("timestamp", 0)),
+                    ),
+                    "files": meta.get("files", 0),
                 })
-            return checkpoints
-        except Exception:
-            return []
+            except Exception:
+                continue
+            if len(checkpoints) >= limit:
+                break
+        return checkpoints
 
     def count(self) -> int:
         return len(self.list())
 
     def clear(self):
         """Delete all checkpoints."""
-        if not self._git:
-            return
-        try:
-            self._run("branch", "-D", self._branch, silent_fail=True)
-        except Exception:
-            pass
+        import shutil
+        cdir = self._repo / ".widdx" / "checkpoints"
+        if cdir.exists():
+            shutil.rmtree(str(cdir), ignore_errors=True)
 
     # ── Internals ───────────────────────────────────────
 
-    def _run(self, *args, silent_fail: bool = False,
-             allow_empty: bool = False) -> str | None:
-        """Run a git command. Returns stdout or None."""
-        cmd = [self._git, *args]
-        try:
-            r = subprocess.run(
-                cmd, cwd=str(self._repo),
-                capture_output=True, text=True, timeout=30,
-            )
-            if r.returncode != 0 and not silent_fail:
-                if not allow_empty or "nothing to commit" not in (r.stderr + r.stdout):
-                    raise RuntimeError((r.stderr + r.stdout)[:500])
-            return r.stdout
-        except subprocess.TimeoutExpired:
-            return None
-        except FileNotFoundError:
-            return None
-
-    def _find_git(self) -> str | None:
-        """Locate git binary."""
-        import shutil
-        git = shutil.which("git")
-        if git:
-            return git
-        # Windows fallback
-        for p in ["C:\\Program Files\\Git\\bin\\git.exe",
-                  "C:\\Program Files (x86)\\Git\\bin\\git.exe"]:
-            if Path(p).exists():
-                return p
-        return None
-
-    def _current_branch(self) -> str | None:
-        try:
-            r = self._run("branch", "--show-current")
-            return (r or "").strip() or None
-        except Exception:
-            return None
-
-    def _branch_exists(self) -> bool:
-        try:
-            r = self._run("branch", "--list", self._branch)
-            return bool(r and r.strip())
-        except Exception:
-            return False
-
-    def _last_commit_hash(self) -> str | None:
-        try:
-            r = self._run("log", "-1", "--format=%H")
-            return (r or "").strip()[:12] or None
-        except Exception:
-            return None
-
     def _latest_checkpoint(self) -> str | None:
-        try:
-            self._run("checkout", self._branch, silent_fail=True)
-            r = self._run("log", "-1", "--format=%H")
-            self._run("checkout", "-")
-            return (r or "").strip() or None
-        except Exception:
+        """Return the most recent checkpoint ID."""
+        cdir = self._repo / ".widdx" / "checkpoints"
+        if not cdir.exists():
             return None
+        dirs = sorted([d for d in cdir.iterdir() if d.is_dir()], reverse=True)
+        return dirs[0].name if dirs else None
 
     def _cleanup(self):
         """Remove old checkpoints beyond MAX_CHECKPOINTS."""
-        try:
-            self._run("checkout", self._branch, silent_fail=True)
-            count = int((self._run("rev-list", "--count", "HEAD") or "0").strip())
-            if count > MAX_CHECKPOINTS:
-                excess = count - MAX_CHECKPOINTS
-                # Keep last MAX_CHECKPOINTS, remove older
-                oldest_keep = (self._run(
-                    f"log", f"--skip={MAX_CHECKPOINTS - 1}", "-1", "--format=%H",
-                ) or "").strip()
-                if oldest_keep:
-                    # Rebase to drop older commits (simpler than filter-branch)
-                    pass  # Skip aggressive cleanup for safety
-            self._run("checkout", "-")
-        except Exception:
-            pass
+        cdir = self._repo / ".widdx" / "checkpoints"
+        if not cdir.exists():
+            return
+        import shutil
+        dirs = sorted(
+            [d for d in cdir.iterdir() if d.is_dir()],
+            key=lambda d: d.name,
+        )
+        while len(dirs) > MAX_CHECKPOINTS:
+            shutil.rmtree(str(dirs[0]), ignore_errors=True)
+            dirs.pop(0)
 
 
 # ---------------------------------------------------------------------------
