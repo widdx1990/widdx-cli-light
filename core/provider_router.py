@@ -18,6 +18,9 @@ warnings.warn(
 )
 
 import time
+import logging
+
+logger = logging.getLogger("widdx.provider_router")
 
 
 class ProviderConfig:
@@ -192,8 +195,8 @@ class ProviderRouter:
                         provider_name, provider.model,
                         success=False, response_time=0
                     )
-                except:
-                    pass
+                except Exception:
+                    logger.debug("Provider failed (already recorded), skipping")
                 continue
         
         raise RuntimeError(f"All providers failed. Last error: {last_error}")
@@ -242,8 +245,8 @@ class ProviderRouter:
                         provider_name, provider.model,
                         success=False, response_time=0
                     )
-                except:
-                    pass
+                except Exception:
+                    logger.debug("Provider failed (already recorded), skipping")
                 continue
         
         yield {"type": "error", "data": f"All providers failed. Last error: {last_error}"}

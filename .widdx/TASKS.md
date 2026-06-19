@@ -30,10 +30,9 @@
 
 ## ❌ Phase 3 — تقوية الجودة (P2) — PARTIALLY DONE ⚠️
 
-### Task 3.1: استبدال `except: pass` — [⚠️ verified: 2 remaining]
-- ✅ 23 موقعاً تم إصلاحها في `core/tools.py`, `core/mcp/client.py`, `scripts/api_server.py`
-- ❌ **`core/provider_router.py:195,245` — لا يزال يوجد `except:` بدون نوع!**
-- الملف مهمل (deprecated) لكن لا يزال يُستورد عبر `core/widdx_v2.py`
+### Task 3.1: استبدال `except: pass` — [✅ fixed]
+- ✅ 25/25 موقعاً تم إصلاحها
+- ✅ `core/provider_router.py:195,245` — changed to `except Exception: logger.debug(...)`
 
 ### Task 3.2: إزالة unused imports — [done]
 ### Task 3.3: استبدال wildcard imports — [done]
@@ -141,8 +140,8 @@
 - [ ] `test_api_tools.py` — `/api/tools` listing
 
 ### Task 4.3: اختبارات للوحدات الكبيرة بدون تغطية
+- [x] `test_providers.py` — 13 اختباراً للمزودات (create, resolve, fetch, config) ✅
 - [ ] `test_tools.py` — 1200 سطر، 17 أداة، 0 اختبار
-- [ ] `test_providers.py` — 1100 سطر، 5 مزودات، 0 اختبار
 - [ ] `test_analyzer.py` — 800 سطر، 13 مصنف، 0 اختبار
 - [ ] `test_mcp_client.py` — 600 سطر، 0 اختبار
 - [ ] `test_agent.py` — 350 سطر، وكيل مستقل، 0 اختبار
@@ -198,8 +197,8 @@
 - [ ] `core/project_context.py` (286 سطر) — مستورد فقط في test
 - [ ] `core/project_structure.py` (184 سطر) — مستورد فقط في test
 
-### Task 7.2: إصلاح `provider_router.py`
-- [ ] Fix 2 bare `except:` في ملف deprecated
+### Task 7.2: إصلاح `provider_router.py` — [✅ fixed]
+- [x] Changed 2 bare `except:` to `except Exception: logger.debug(...)`
 
 ---
 
@@ -211,11 +210,12 @@
 | الوحدات المهملة | ✅ 3/3 موسومة |
 | VERIFY Pipeline | ✅ مدمج في brain.py + مربوط بالـ executors + auto-retry |
 | VERIFY Tests | ✅ 33/33 اختباراً (10 مجموعات) |
-| except: pass | ⚠️ 23/25 — 2 متبقية في provider_router.py (deprecated) |
+| except: pass | ✅ 25/25 تم الإصلاح |
+| **اختبارات PROVIDERS** | ✅ **13 (مضافة حديثاً)** |
 | **اختبارات TUI** | ⬜ **0/9 شاشات** |
-| **اختبارات API** | ⬜ **0** |
+| **اختبارات API** | ⬜ **7 بحاجة تحديث (auth header)** |
 | **اختبارات E2E** | ⬜ **0** |
-| **اختبارات الوحدات الكبيرة** | ⬜ **8 وحدات (0 اختبار)** |
+| **اختبارات الوحدات الكبيرة** | ⬜ **7 وحدات متبقية** |
 | **API Authentication** | ✅ **مُفعّل** (Bearer token + Rate Limiter) |
 | **SessionCRUDScreen** | ✅ **مُصلَح** |
 | **Sandbox shell=True** | ✅ **مُصلَح** (shlex.split + fallback) |
