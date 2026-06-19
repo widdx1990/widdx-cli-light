@@ -367,3 +367,69 @@ def test_router_knowledge_backward_compat():
     assert "KnowledgeRouter" not in components_explicit, (
         f"KnowledgeRouter should NOT appear without knowledge: {components_explicit}"
     )
+
+
+# =====================================================================
+# K9 — VERIFY feedback: repeated criticals → EXPERT_TEAM
+# =====================================================================
+
+def test_knowledge_suggest_expert_team_after_verify_failures():
+    """Repeated verification critical failures escalate to EXPERT_TEAM."""
+    kb = KnowledgeBase()
+
+    for _ in range(3):
+        cls = ClassificationResult(
+            TaskType.CODE_WRITE, Domain.CODE, 0.85, 0.5,
+            "write html", ["write"], detected_features={},
+        )
+        res = ExecutionResult(
+            success=False, summary="verify failed",
+            mode=ExecutionMode.AUTONOMOUS,
+            steps_planned=2, steps_completed=2,
+            execution_time=1.0,
+        )
+        from core.uil.contract import VerificationReport, VerificationFinding, VerificationSeverity
+        res.verification = VerificationReport(
+            findings=[
+                VerificationFinding(
+                    check_name="html_structure",
+                    severity=VerificationSeverity.CRITICAL,
+                    message="broken",
+                    passed=False,
+                )
+            ],
+            verifier_name="html",
+        )
+        dec = RoutingDecision(
+            classification=cls,
+            plan=ExecutionPlan(mode=ExecutionMode.AUTONOMOUS),
+        )
+        kb.record(classification=cls, result=res, decision=dec)
+
+    stats = kb.get_stats("code_write")
+    assert stats["verify_failure_rate"] == 1.0
+    assert kb.suggest_mode("code_write") == ExecutionMode.EXPERT_TEAM
+
+
+# =====================================================================
+# K10 — Direct tool executor picks filtered tools
+# =====================================================================
+
+def test_direct_tool_executor_prefers_bash():
+    from core.uil.executors import pick_direct_tool, run_direct_tool
+
+    assert pick_direct_tool([{"name": "read"}, {"name": "bash"}]) == "bash"
+    assert pick_direct_tool([{"name": "read"}]) == "read"
+    assert pick_direct_tool([]) is None
+
+    class FakeCtx:
+        tool_defs = [{"name": "bash"}]
+
+    result = run_direct_tool(FakeCtx(), "echo direct-tool-test")
+    assert isinstance(result, str)
+    assert result.strip()
+
+    class EmptyCtx:
+        tool_defs = []
+
+    assert "No tools available" in run_direct_tool(EmptyCtx(), "test")

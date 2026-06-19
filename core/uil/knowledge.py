@@ -30,6 +30,8 @@ class ExecutionRecord:
     timestamp: float
     steps_failed: int = 0
     tools_used: list[str] | None = None
+    verification_criticals: int = 0
+    verification_errors: int = 0
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -37,7 +39,9 @@ class ExecutionRecord:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ExecutionRecord":
-        return cls(**d)
+        from dataclasses import fields
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in d.items() if k in known})
 
 
 # -------------------------------------------------------------------
@@ -100,6 +104,12 @@ class KnowledgeBase:
     def record(self, classification: Any, result: Any,
                decision: Any) -> None:
         """Store an execution outcome and persist to disk."""
+        verify_crit = 0
+        verify_err = 0
+        if hasattr(result, "verification") and result.verification:
+            verify_crit = len(result.verification.criticals)
+            verify_err = len(result.verification.errors)
+
         record = ExecutionRecord(
             task_type=classification.task_type.value if hasattr(classification, 'task_type') else str(classification),
             execution_mode=result.mode.value if hasattr(result, 'mode') and result.mode else "",
@@ -110,6 +120,8 @@ class KnowledgeBase:
             success=result.success if hasattr(result, 'success') else False,
             timestamp=time.time(),
             tools_used=list(result.tools_used) if hasattr(result, 'tools_used') and result.tools_used else None,
+            verification_criticals=verify_crit,
+            verification_errors=verify_err,
         )
 
         key = record.task_type
@@ -167,12 +179,15 @@ class KnowledgeBase:
                 "success_rate": None,
                 "avg_steps_planned": None,
                 "avg_steps_completed": None,
+                "verify_failure_rate": None,
+                "avg_verification_criticals": None,
             }
 
         times = [r.execution_time for r in records]
         successes = [1 if r.success else 0 for r in records]
         planned = [r.steps_planned for r in records]
         completed = [r.steps_completed for r in records]
+        verify_failures = sum(1 for r in records if r.verification_criticals > 0)
 
         return {
             "count": len(records),
@@ -182,6 +197,10 @@ class KnowledgeBase:
             "success_rate": round(statistics.mean(successes), 4),
             "avg_steps_planned": round(statistics.mean(planned), 2),
             "avg_steps_completed": round(statistics.mean(completed), 2),
+            "verify_failure_rate": round(verify_failures / len(records), 4),
+            "avg_verification_criticals": round(
+                statistics.mean([r.verification_criticals for r in records]), 2
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -204,8 +223,23 @@ class KnowledgeBase:
         if stats["count"] < 2:  # lowered from 3 to 2 for practical use
             return None
 
+        records = self.get_similar(task_type)
+        recent = records[-5:]
+
+        # Condition 0: Repeated VERIFY critical failures → escalate
+        if len(recent) >= 2:
+            verify_fails = sum(1 for r in recent if r.verification_criticals > 0)
+            if verify_fails >= 2:
+                return ExecutionMode.EXPERT_TEAM
+
         # Condition 1: Low success rate → escalate to ExpertTeam
         if stats["success_rate"] is not None and stats["success_rate"] < 0.5:
+            return ExecutionMode.EXPERT_TEAM
+
+        # Condition 1.5: High verification failure rate → escalate
+        if (stats.get("verify_failure_rate") is not None
+                and stats["verify_failure_rate"] >= 0.6
+                and stats["count"] >= 3):
             return ExecutionMode.EXPERT_TEAM
 
         # Condition 2: Slow + incomplete → more autonomous

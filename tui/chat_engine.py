@@ -100,6 +100,7 @@ class ChatEngine:
             pass
 
         # UIL routing
+        decision = None
         try:
             uil = UnifiedIntelligenceLayer(provider=state.provider)
             uil.set_tool_defs(state.tool_defs)
@@ -114,6 +115,9 @@ class ChatEngine:
         elif mode == ExecutionMode.AUTONOMOUS:
             self.app.post_message(ThinkingMsg("🧠 Routing to autonomous agent..."))
             self._run_agent(state, text)
+        elif mode == ExecutionMode.DIRECT_TOOL and decision:
+            self.app.post_message(ThinkingMsg("⚙ Running direct tool..."))
+            self._run_direct_tool(state, text, decision)
         else:
             self._run_chat(state, msgs)
 
@@ -231,6 +235,18 @@ class ChatEngine:
         return msgs
 
     # ── Agent (AutonomousAgent) ─────────────────────────────
+    def _run_direct_tool(self, state, task, decision):
+        try:
+            from core.uil.executors import run_direct_tool
+            summary = run_direct_tool(decision, task)
+            state.messages.append({"role": "assistant", "content": summary})
+            state.save_session()
+            self.app.post_message(ResultMsg(summary))
+        except Exception as e:
+            self.app.post_message(ErrorMsg(str(e)))
+        finally:
+            self.app.call_from_thread(self._finish)
+
     def _run_agent(self, state, task):
         try:
             from core.agents.agent import AutonomousAgent

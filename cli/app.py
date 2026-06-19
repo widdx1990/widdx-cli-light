@@ -330,11 +330,15 @@ class CLIApp:
             summary = team.run(inp)
             return summary
 
+        def _direct_tool_exec(ctx, inp, msgs):
+            from core.uil.executors import run_direct_tool
+            return run_direct_tool(ctx, inp)
+
         executors = {
             ExecutionMode.SIMPLE_CHAT: _simple_chat_exec,
             ExecutionMode.AUTONOMOUS: _autonomous_exec,
             ExecutionMode.EXPERT_TEAM: _expert_team_exec,
-            ExecutionMode.DIRECT_TOOL: lambda d, i, m: tools.execute("bash", {"command": i}),
+            ExecutionMode.DIRECT_TOOL: _direct_tool_exec,
         }
 
         result = None

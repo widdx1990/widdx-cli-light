@@ -56,6 +56,7 @@ class CLICommands:
             "/version": self.version,
             "/permissions": self.permissions,
             "/apikey": self.apikey,
+            "/theme": self.theme,
         }
 
         handler = handlers.get(cmd)
@@ -89,8 +90,8 @@ class CLICommands:
         self.app.show_system("  /history /save /load /export /remember /memories")
         self.app.show_system("  /manifest /reasoning /debug /doctor /undo")
         self.app.show_system("  /proxy /sandbox /mcp /gguf /branch /version")
-        self.app.show_system("  /permissions /apikey /exit")
-        self.app.show_system("  !skill_name — activate a skill")
+        self.app.show_system("  /permissions /apikey /theme /exit")
+        self.app.show_system("  !skill_name — activate a skill  |  !off — deactivate")
 
     def clear(self, arg, p, s, msgs):
         """Clear screen."""
@@ -279,6 +280,20 @@ class CLICommands:
                 self.app.show_system(f"Switched to '{parts[1]}'")
         else:
             self.app.show_system("Usage: /branch list|create|switch")
+
+    # ── Theme ────────────────────────────────────────────────
+    def theme(self, arg, p, s, msgs):
+        from core.config.settings import load, save
+        cfg = load()
+        current = str(cfg.get("cli_theme", "dark")).lower()
+        new = arg.strip().lower() if arg.strip() else ("light" if current == "dark" else "dark")
+        if new not in ("dark", "light"):
+            self.app.show_system("Usage: /theme [dark|light]")
+            return
+        cfg["cli_theme"] = new
+        save(cfg)
+        self.app.cfg = cfg
+        self.app.show_system(f"Theme set to {new}")
 
     # ── Version ──────────────────────────────────────────────
     def version(self, arg, p, s, msgs):

@@ -247,7 +247,7 @@ WIDDX/                         # 184 tests | 66 modules | 17,500+ LOC
 │   └── 📁 widgets/
 │       └── header.py        ← ويدجت العنوان
 │
-├── 📁 skills/               ← المهارات المتاحة (8 مهارات)
+├── 📁 skills/               ← المهارات المتاحة (16 مهارة)
 │   ├── code-review/         ← مراجعة الكود
 │   ├── document/            ← توثيق الكود
 │   ├── explain-code/        ← شرح الكود
@@ -300,24 +300,21 @@ WIDDX/                         # 184 tests | 66 modules | 17,500+ LOC
 | `/provider <name>` | تغيير المزود (`opencode-zen`, `ollama`, `openai`, `deepseek`, `gguf`) |
 | `/proxy` | عرض حالة البروكسيات أو تجديدها |
 | `/history` | عرض تاريخ المحادثة |
-| `/save` | حفظ المحادثة الحالية |
-| `/load` | تحميل جلسة من ملف آخر |
+| `/load <path>` | تحميل جلسة من مجلد مشروع آخر (CLI) |
 | `/export` | تصدير المحادثة كـ Markdown |
-| `/session new <name>` | إنشاء جلسة جديدة ★ |
-| `/session list` | عرض قائمة الجلسات ★ |
-| `/session load <id>` | تحميل جلسة ★ |
-| `/session delete <id>` | حذف جلسة ★ |
+| `/sessions` | إدارة الجلسات (TUI — شاشة CRUD) ★ |
+| `/save` | حفظ الجلسة الحالية |
 | `/tools` | عرض الأدوات المتاحة |
 | `/skills` | عرض المهارات المتاحة |
-| `/skill activate <id>` | تفعيل مهارة بالمعرف ★ |
-| `/skill deactivate` | إلغاء تفعيل المهارة ★ |
+| `!skill-name` | تفعيل مهارة (مثل `!code-review`) ★ |
+| `!off` | إلغاء تفعيل المهارة الحالية ★ |
 | `/undo` | تراجع آخر تغيير (git commit) |
 | `/doctor` | فحص صحة النظام |
 | `/debug` | تشخيص الأخطاء الصامتة ★ |
 | `/remember <fact>` | حفظ حقيقة في الذاكرة |
 | `/memories [query]` | عرض/البحث في الذكريات |
 | `/permissions` | عرض/تغيير مستوى الأذونات |
-| `/theme` | التبديل بين الواجهة العادية والمحسنة |
+| `/theme` | التبديل بين الوضع الداكن والفاتح (`dark` / `light`) |
 | `/version` | عرض معلومات الإصدار |
 | `/gguf` | إدارة نماذج GGUF (استيراد/عرض/حذف) |
 | `/branch list` | عرض الفروع المتاحة ★ |
