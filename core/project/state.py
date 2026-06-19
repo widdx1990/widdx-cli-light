@@ -159,11 +159,42 @@ def save_project_config(config: dict, project_dir: str | Path | None = None):
 # ── session persistence ──────────────────────────────────────────────────
 
 def save_session(messages: list, state: dict, project_dir: str | Path | None = None, branch: str | None = None):
-    """Save conversation messages + runtime state to .widdx/session_<branch>.json."""
+    """Save conversation messages + runtime state.
+
+    Dual-persistence: SQLite (primary) + JSON (backward compat).
+    """
     if project_dir is None:
         project_dir = Path().resolve()
     if branch is None:
         branch = get_current_branch(project_dir)
+
+    # ── SQLite persistence (primary) ─────────────────────
+    try:
+        from core.session_v2 import SessionV2, get_current_session, create_new_session
+        sess = get_current_session()
+        if sess is None:
+            sess = create_new_session(name=f"session_{branch}", branch=branch)
+        # Sync messages
+        for msg in messages[-50:]:  # last 50 messages
+            role = msg.get("role", "system")
+            content = msg.get("content", "")
+            tc = msg.get("tool_calls")
+            if role in ("user", "assistant", "system", "tool"):
+                try:
+                    sess.add_message(role, content, tc)
+                except Exception:
+                    pass
+        # Save metadata
+        sess.save({
+            "model": state.get("model", ""),
+            "cost": state.get("cost", 0.0),
+            "turns": state.get("turns", 0),
+            "tools_used": state.get("tools_used", []),
+        })
+    except Exception as e:
+        logger.debug("SQLite session save skipped: %s", e)
+
+    # ── JSON persistence (backward compat) ────────────────
     data = {
         "messages": _serializable_messages(messages),
         "state": {
@@ -177,11 +208,36 @@ def save_session(messages: list, state: dict, project_dir: str | Path | None = N
 
 
 def load_session(project_dir: str | Path | None = None, branch: str | None = None) -> dict | None:
-    """Load previous session. Returns None if no session exists."""
+    """Load previous session. Tries SQLite first, falls back to JSON.
+
+    Returns None if no session exists.
+    """
     if project_dir is None:
         project_dir = Path().resolve()
     if branch is None:
         branch = get_current_branch(project_dir)
+
+    # ── Try SQLite first ─────────────────────────────────
+    try:
+        from core.session_v2 import SessionV2, set_current_session
+        sessions = SessionV2.list_sessions(branch=branch, limit=1)
+        if sessions:
+            sess = SessionV2(session_id=sessions[0]["id"])
+            set_current_session(sess)
+            msgs = sess.messages
+            if msgs:
+                return {
+                    "messages": msgs,
+                    "state": {
+                        "model": sess.metadata.get("model", ""),
+                        "cost": sess.metadata.get("cost", 0.0),
+                        "turns": sess.metadata.get("turns", 0),
+                    },
+                }
+    except Exception as e:
+        logger.debug("SQLite session load skipped: %s", e)
+
+    # ── JSON fallback ────────────────────────────────────
     path = _session_path(project_dir, branch)
     if not path.exists():
         return None

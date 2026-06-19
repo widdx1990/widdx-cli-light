@@ -90,9 +90,21 @@ async def lifespan(app: FastAPI):
     state.cfg = load_config()
     state.provider = create_provider(state.cfg)
     state.state["model"] = f"{state.provider.name}/{state.provider.model}"
+    # Start MCP manager so tools are available
+    try:
+        state.mcp_mgr.load_from_config(state.cfg)
+        state.mcp_mgr.start()
+        logger.info("MCP manager started — %d servers", len(state.mcp_mgr.servers))
+    except Exception as e:
+        logger.warning("MCP manager start skipped: %s", e)
     ensure_docs(Path.cwd().resolve())
     logger.info("WIDDX API started — provider: %s/%s", state.provider.name, state.provider.model)
     yield
+    # Shutdown
+    try:
+        state.mcp_mgr.stop()
+    except Exception:
+        pass
 
 app = FastAPI(
     title="WIDDX Cortex API",
@@ -138,16 +150,16 @@ async def chat(req: ChatRequest):
         if ctx:
             msgs = [m for m in msgs if not m.get("_project_context")]
             msgs.insert(0, {"role": "system", "content": ctx, "_project_context": True})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Scanner context skipped: %s", e)
 
     try:
         pt_ctx = build_context_block(Path.cwd().resolve())
         if pt_ctx:
             msgs = [m for m in msgs if not m.get("_project_docs")]
             msgs.insert(0, {"role": "system", "content": pt_ctx, "_project_docs": True})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Project docs context skipped: %s", e)
 
     try:
         ml = MemoryLearner(provider=state.provider)
@@ -155,19 +167,22 @@ async def chat(req: ChatRequest):
         if mem_ctx:
             msgs = [m for m in msgs if not m.get("_memory_context")]
             msgs.insert(0, {"role": "system", "content": mem_ctx, "_memory_context": True})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Memory context skipped: %s", e)
 
     msgs.append({"role": "user", "content": req.message})
 
     td = list(tools.TOOL_DEFINITIONS)
     try:
         td.extend(state.mcp_mgr.get_all_tool_definitions())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("MCP tool defs skipped: %s", e)
 
     try:
-        msgs_out, state_out = run_stream_turn(state.provider, msgs, state.state, td, state.cfg)
+        # Offload synchronous chat to a thread so the event loop stays free
+        msgs_out, state_out = await asyncio.to_thread(
+            run_stream_turn, state.provider, msgs, state.state, td, state.cfg
+        )
     except Exception as e:
         raise HTTPException(500, f"Chat failed: {e}")
 
@@ -182,8 +197,8 @@ async def chat(req: ChatRequest):
 
     try:
         project_state.save_session(state.messages, state.state)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Session save skipped: %s", e)
 
     return ChatResponse(
         response=last_content or "",

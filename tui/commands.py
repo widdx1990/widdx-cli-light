@@ -86,6 +86,12 @@ class CommandHandler:
             mem = MemoryStore()
             mem.save(f"note-{len(fact[:20])}", fact, {"type": "feedback"})
             self.app._log_message("system", f"✓ Remembered: {fact[:80]}")
+            # Feed to MemoryLearner for pattern extraction
+            try:
+                learner = MemoryLearner(provider=state.provider)
+                learner.learn(fact)
+            except Exception:
+                pass
             self.app._show_chat()
 
         # ── Debug ─────────────────────────────────────────
