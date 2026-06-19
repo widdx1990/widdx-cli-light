@@ -104,7 +104,7 @@ class CommandHandler:
             await self.app._do_doctor()
 
         elif cmd == "/branch":
-            from core.project.state import list_branches, get_current_branch, create_branch, set_current_branch, load_session
+            from core.project.state import list_branches, get_current_branch, create_branch
             sub = parts[1].split() if len(parts) > 1 else []
             action = sub[0] if sub else "list"
             if action == "list":
@@ -116,36 +116,17 @@ class CommandHandler:
                 name = sub[1]
                 if create_branch(name):
                     self.app._log_message("system", f"🌿 Branch '{name}' created")
+                    try:
+                        from tui.widgets.header import HeaderWidget
+                        self.app.query_one(HeaderWidget).refresh_branches(name)
+                    except Exception:
+                        pass
                 else:
                     self.app._log_message("system", f"Branch '{name}' already exists")
             elif action == "switch" and len(sub) > 1:
                 name = sub[1]
-                state.save_session()
-                if set_current_branch(name):
-                    session = load_session(branch=name)
-                    if session:
-                        state.messages = session.get("messages", [])
-                        s = session.get("state", {})
-                        state.cost = s.get("cost", 0.0)
-                        state.turns = s.get("turns", 0)
-                    else:
-                        state.messages = []
-                        state.turns = 0
-                        state.cost = 0.0
-                    self.app._log_message("system", f"🌿 Switched to branch: {name}")
-                    if self.app._chat_log:
-                        self.app._chat_log.clear()
-                        for m in state.messages[-20:]:
-                            role = m.get("role", "?")
-                            if role in ("user", "assistant", "system"):
-                                self.app._log_message(role, (m.get("content") or "")[:300])
-                    try:
-                        self.app.query_one("HeaderWidget").update_branch(name)
-                    except Exception:
-                        pass
-                    self.app._update_status()
-                else:
-                    self.app._log_message("system", f"❌ Branch '{name}' not found")
+                if not self.app._switch_session_branch(name):
+                    pass
             else:
                 self.app._log_message("system", "Usage: /branch list|create|switch")
 
@@ -160,7 +141,9 @@ class CommandHandler:
                 cfg["cli_theme"] = new
                 save(cfg)
                 state.cfg = cfg
-                self.app._log_message("system", f"🎨 Theme set to {new}")
+                applied = self.app._apply_theme(cfg)
+                self.app._log_message("system", f"🎨 Theme set to {applied}")
+                self.app._show_toast(f"Theme: {applied}")
 
         elif cmd == "/version":
             self.app._log_message("system", "WIDDX Cortex v3.0.0 — Terminal AI Workspace")

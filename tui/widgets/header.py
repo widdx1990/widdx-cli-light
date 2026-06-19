@@ -2,6 +2,7 @@
 from textual.widgets import Static, Button, Select
 from textual.containers import Horizontal
 from core.project.state import list_branches, get_current_branch
+from tui.theme_util import PROVIDER_OPTIONS
 import logging
 
 logger = logging.getLogger("widdx.tui")
@@ -27,13 +28,7 @@ class HeaderWidget(Horizontal):
         with Horizontal(classes="header-right-section"):
             yield Static("Provider:", classes="header-selector-label")
             yield Select(
-                options=[
-                    ("🌐 OpenCode Zen", "opencode-zen"),
-                    ("🔵 DeepSeek", "deepseek"),
-                    ("⚪ OpenAI", "openai"),
-                    ("🟠 Ollama", "ollama"),
-                    ("📦 GGUF", "gguf"),
-                ],
+                options=list(PROVIDER_OPTIONS),
                 id="header-provider",
                 classes="header-selector"
             )
@@ -96,11 +91,19 @@ class HeaderWidget(Horizontal):
         except Exception as e:
             logger.exception(f"[HeaderWidget] Error updating provider selector: {e}")
 
-    def update_branch(self, new_branch: str):
-        """Update branch selector value without triggering event."""
+    def refresh_branches(self, select: str | None = None):
+        """Repopulate branch list and optionally select a branch."""
         try:
             branch_sel = self.query_one("#header-branch", Select)
-            with branch_sel.prevent(Select.Changed):
-                branch_sel.value = new_branch
+            branches = list_branches()
+            branch_sel.set_options([(f"🌿 {b}", b) for b in branches])
+            target = select or get_current_branch()
+            if target in branches:
+                with branch_sel.prevent(Select.Changed):
+                    branch_sel.value = target
         except Exception as e:
-            logger.exception(f"[HeaderWidget] Error updating branch selector: {e}")
+            logger.exception("[HeaderWidget] refresh_branches failed: %s", e)
+
+    def update_branch(self, new_branch: str):
+        """Update branch selector value without triggering event."""
+        self.refresh_branches(select=new_branch)

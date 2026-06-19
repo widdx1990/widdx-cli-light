@@ -36,7 +36,7 @@ def _find_sessions() -> list[dict]:
                 "branch": sess.get("branch", "main"),
                 "size_str": "DB",
                 "modified": modified_at.strftime("%Y-%m-%d %H:%M"),
-                "msg_count": len(SessionV2(sess["id"]).messages),
+                "msg_count": None,
             })
     except Exception as e:
         logger.debug("Failed to load SQLite sessions: %s", e)
@@ -216,7 +216,11 @@ class SessionListScreen(Screen):
             except Exception:
                 pass
 
-    def action_go_back(self): self.dismiss()
+    def action_go_back(self):
+        if len(self.app.screen_stack) > 1:
+            self.app.pop_screen()
+        else:
+            self.dismiss()
     def action_refresh(self): self._load_sessions()
     def action_new_session(self):
         self.app.push_screen(SessionRenameScreen("New Session"), self._on_new_session_result)

@@ -747,3 +747,35 @@ UbuntuGrid {
     border-top: solid $border;
     padding-top: 1;
 }
+
+/* ── Light theme (via App.theme-light class) ── */
+App.theme-light, App.theme-light Screen {
+    background: #eff1f5;
+    color: #1e2030;
+}
+App.theme-light #header {
+    background: #e6e9ef;
+    border-bottom: solid #4f46e5;
+}
+App.theme-light #header-info { color: #1e2030; }
+App.theme-light .header-logo { color: #4f46e5; }
+App.theme-light .header-selector-label { color: #7a8999; }
+App.theme-light #processing { background: #4f46e5; color: #eff1f5; }
+App.theme-light #processing.thinking { background: #0891b2; }
+App.theme-light #chat-log { background: #eff1f5; }
+App.theme-light #view-panel { background: #e6e9ef; border-left: solid #ccd0da; }
+App.theme-light #view-panel #view-title { background: #eff1f5; border-bottom: solid #ccd0da; color: #b56800; }
+App.theme-light #input-container { background: #e6e9ef; border-top: solid #4f46e5; }
+App.theme-light #input { background: rgba(0, 0, 0, 0.04); color: #1e2030; }
+App.theme-light #status { background: #e6e9ef; border-top: solid #ccd0da; color: #7a8999; }
+App.theme-light #view-panel #view-list Button { background: #e6e9ef; color: #1e2030; border: solid #ccd0da; }
+App.theme-light #view-panel #view-list Button:hover { background: #dce0e8; color: #4f46e5; border: solid #4f46e5; }
+App.theme-light #view-panel #view-back { background: #e6e9ef; border: solid #ccd0da; color: #7a8999; }
+App.theme-light #toast { background: #dce0e8; border-top: solid #4f46e5; color: #1e2030; }
+App.theme-light Button { color: #4c4f69; }
+App.theme-light Input { background: #eff1f5; color: #1e2030; border: solid #ccd0da; }
+App.theme-light Select { background: #eff1f5; color: #1e2030; border: solid #ccd0da; }
+App.theme-light .grid-icon-btn { background: #e6e9ef; border: round #ccd0da; color: #4f46e5; }
+App.theme-light .grid-icon-btn:hover { background: #dce0e8; border: round #4f46e5; color: #6366f1; }
+App.theme-light .sess-btn { border: solid #ccd0da; }
+App.theme-light .sess-btn:hover { background: #dce0e8; border: solid #4f46e5; color: #6366f1; }

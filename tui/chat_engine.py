@@ -193,7 +193,8 @@ class ChatEngine:
             state.cost += estimate_turn_cost(model_name, 500, 1000)
 
             if not calls:
-                self.app.post_message(ResultMsg(content))
+                msgs.append({"role": "assistant", "content": content})
+                self.app.post_message(StreamEndMsg(content, msgs))
                 state.messages = msgs
                 state.save_session()
                 return
@@ -316,8 +317,16 @@ class ChatEngine:
             )
             if report.criticals:
                 msg = "🔴 " + "\n".join(f.message[:80] for f in report.criticals[:3])
-                self.app._log_message("system", f"Verification CRITICAL:\n{msg}")
+                self.app.call_from_thread(
+                    self.screen._log_message,
+                    "system",
+                    f"Verification CRITICAL:\n{msg}",
+                )
             elif report.errors:
-                self.app._log_message("system", f"⚠️ Verification: {len(report.errors)} issue(s)")
+                self.app.call_from_thread(
+                    self.screen._log_message,
+                    "system",
+                    f"⚠️ Verification: {len(report.errors)} issue(s)",
+                )
         except Exception:
             pass  # verification is advisory in TUI

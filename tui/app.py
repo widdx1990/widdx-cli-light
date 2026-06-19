@@ -34,6 +34,7 @@ from .chat_engine import ChatEngine, ResultMsg, ErrorMsg, StreamEndMsg, Thinking
 from .commands import CommandHandler
 from .widgets import HeaderWidget
 from .screens.ubuntu_grid import UbuntuGrid
+from .theme_util import apply_app_theme
 
 logger = logging.getLogger("widdx.tui")
 logger.setLevel(logging.DEBUG)
@@ -125,8 +126,76 @@ class MainScreen(Screen):
         self._set_processing(False)
         # Refresh header
         hw = self.query_one(HeaderWidget)
-        hw.initialize_provider(self.state.model.split("/")[0])
+        hw.initialize_provider(self.state.provider.name)
         self._update_status()
+
+    def _apply_theme(self, cfg: dict | None = None):
+        """Apply dark/light theme from config."""
+        cfg = cfg or self.state.cfg
+        name = apply_app_theme(self.app, cfg)
+        self.state.cfg = cfg
+        return name
+
+    def _sync_provider_from_model(self):
+        """Recreate provider object when model string changes."""
+        from core.providers.providers import create_provider
+        if "/" not in self.state.model:
+            return
+        prov_name, model_name = self.state.model.split("/", 1)
+        cfg = self.state.cfg
+        all_prov = cfg.get("all_providers", {})
+        ap = all_prov.get(prov_name, cfg.get("provider", {}))
+        cfg["provider"] = {
+            "name": prov_name,
+            "model": model_name,
+            "base_url": ap.get("base_url", cfg.get("provider", {}).get("base_url", "")),
+            "api_key": ap.get("api_key", cfg.get("provider", {}).get("api_key", "public")),
+        }
+        self.state.cfg = cfg
+        self.state.provider = create_provider(cfg)
+        self.state._rebuild_tool_defs()
+
+    def _switch_session_branch(self, new_branch: str) -> bool:
+        """Switch project session branch and reload chat state."""
+        from core.project.state import set_current_branch, get_current_branch, load_session
+
+        if new_branch == get_current_branch():
+            return True
+        self.state.save_session()
+        if not set_current_branch(new_branch):
+            self._log_message("system", f"❌ Session branch '{new_branch}' not found")
+            return False
+
+        session = load_session(branch=new_branch)
+        if session:
+            self.state.messages = session.get("messages", [])
+            s = session.get("state", {})
+            self.state.cost = s.get("cost", 0.0)
+            self.state.turns = s.get("turns", 0)
+            if s.get("model"):
+                self.state.model = s["model"]
+                self._sync_provider_from_model()
+        else:
+            self.state.messages = []
+            self.state.turns = 0
+            self.state.cost = 0.0
+
+        self._log_message("system", f"🌿 Switched to session branch: {new_branch}")
+        if self._chat_log:
+            self._chat_log.clear()
+            for m in self.state.messages[-20:]:
+                role = m.get("role", "?")
+                content = (m.get("content") or "")[:300]
+                if role in ("user", "assistant", "system"):
+                    self._log_message(role, content)
+        try:
+            hw = self.query_one(HeaderWidget)
+            hw.refresh_branches(new_branch)
+            hw.update_provider(self.state.provider.name)
+        except Exception:
+            pass
+        self._update_status()
+        return True
 
     def _update_status(self):
         """Refresh footer status bar and header info strip."""
@@ -334,21 +403,28 @@ class MainScreen(Screen):
 
     async def _do_doctor(self):
         import subprocess
+        from core.skills import skill_manager
         self._log_message("system", "🩺 Running doctor checks...")
-        git_v, node_v = "?", "?"
+        checks = []
         try:
             r = subprocess.run(["git", "--version"], capture_output=True, text=True, timeout=5)
-            git_v = r.stdout.strip() if r.returncode == 0 else "not found"
+            checks.append(f"Git: {r.stdout.strip()[:40] if r.returncode == 0 else 'not found'}")
         except Exception:
-            git_v = "not found"
+            checks.append("Git: not found")
         try:
             r = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5)
-            node_v = r.stdout.strip() if r.returncode == 0 else "not found"
+            checks.append(f"Node: {r.stdout.strip() if r.returncode == 0 else 'not found'}")
         except Exception:
-            node_v = "not found"
-        self._log_message("system", f"🩺 Git: {git_v}  |  Node: {node_v}")
-        self._log_message("system", f"🩺 Provider: {self.state.model}  |  Turns: {self.state.turns}")
-        self._log_message("system", f"🩺 Memory: {MemoryStore().total()} facts  |  Tools: {len(self.state.tool_defs)}")
+            checks.append("Node: not found")
+        checks.append(f"Provider: {self.state.provider.name}/{self.state.provider.model}")
+        checks.append(f"Project: {Path.cwd().name}")
+        checks.append(f"Memory: {MemoryStore().total()} facts")
+        checks.append(f"MCP: {get_mcp_manager().server_count} servers")
+        checks.append(f"Skills: {len(skill_manager.list_all())}")
+        checks.append(f"Tools: {len(self.state.tool_defs)}")
+        checks.append(f"Theme: {self.state.cfg.get('cli_theme', 'dark')}")
+        for c in checks:
+            self._log_message("system", f"  • {c}")
 
     # ── Message handlers (from ChatEngine) ─────────────────
     def on_result_msg(self, msg: ResultMsg):
@@ -580,43 +656,7 @@ class MainScreen(Screen):
                 pass
             self._update_status()
         elif sid == "header-branch" and event.value and event.value != Select.BLANK:
-            from core.project.state import (
-                set_current_branch, get_current_branch, load_session,
-            )
-            new_branch = str(event.value)
-            current = get_current_branch()
-            if new_branch == current:
-                return
-            self.state.save_session()
-            if not set_current_branch(new_branch):
-                self._log_message("system", f"❌ Session branch '{new_branch}' not found")
-                return
-            session = load_session(branch=new_branch)
-            if session:
-                self.state.messages = session.get("messages", [])
-                s = session.get("state", {})
-                self.state.cost = s.get("cost", 0.0)
-                self.state.turns = s.get("turns", 0)
-                if s.get("model"):
-                    self.state.model = s["model"]
-            else:
-                self.state.messages = []
-                self.state.turns = 0
-                self.state.cost = 0.0
-            self._log_message("system", f"🌿 Switched to session branch: {new_branch}")
-            if self._chat_log:
-                self._chat_log.clear()
-                for m in self.state.messages[-20:]:
-                    role = m.get("role", "?")
-                    content = (m.get("content") or "")[:300]
-                    if role in ("user", "assistant", "system"):
-                        self._log_message(role, content)
-            try:
-                hw = self.query_one(HeaderWidget)
-                hw.update_branch(new_branch)
-            except Exception:
-                pass
-            self._update_status()
+            self._switch_session_branch(str(event.value))
 
     def _on_grid_result(self, action: str | None) -> None:
         """Handle result from UbuntuGrid launcher."""
@@ -638,6 +678,7 @@ class WIDDXTUI(App):
 
     def on_mount(self):
         self.main_screen = MainScreen()
+        apply_app_theme(self, self.main_screen.state.cfg)
         self.push_screen(self.main_screen)
 
 
