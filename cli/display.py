@@ -12,7 +12,10 @@ from rich.table import Table
 from rich import box as rich_box
 from rich.rule import Rule
 
-from core.ui_visual import *
+from core.ui_visual import (
+    CYAN, DIM, GREEN, ORANGE, PURPLE, RED, WHITE,
+    Panel, Table, console, header_bar, rich_box, role_panel,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────

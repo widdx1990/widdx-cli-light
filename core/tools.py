@@ -327,7 +327,7 @@ def _bash(command: str, description: str | None = None) -> str:
                 proc.kill()
                 proc.wait(timeout=3)
             except Exception:
-                pass
+                logger.debug("bash: cleanup error suppressed")
             raise
     except Exception as e:
         logger.warning("bash tool error: %s | command: %s", e, command[:100])
@@ -443,9 +443,9 @@ def _validate(file_path: str) -> str:
             else:
                 return f"❌ PHP syntax error:\n{r.stderr.strip()[:500]}"
         except FileNotFoundError:
-            pass  # php not installed, fall through
+            logger.debug("linter: php not installed")
         except subprocess.TimeoutExpired:
-            pass
+            logger.debug("linter: php timed out")
 
     # Python
     if ext == ".py":
@@ -456,7 +456,7 @@ def _validate(file_path: str) -> str:
         except py_compile.PyCompileError as e:
             return f"❌ Python syntax error:\n{e}"
         except Exception:
-            pass
+            logger.debug("linter: python check skipped")
 
     # JavaScript
     if ext in (".js", ".mjs", ".cjs"):
@@ -468,9 +468,9 @@ def _validate(file_path: str) -> str:
             else:
                 return f"❌ JavaScript syntax error:\n{r.stderr.strip()[:500]}"
         except FileNotFoundError:
-            pass
+            logger.debug("linter: node not installed")
         except subprocess.TimeoutExpired:
-            pass
+            logger.debug("linter: js check timed out")
 
     # JSON
     if ext == ".json":
@@ -500,7 +500,7 @@ def _validate(file_path: str) -> str:
                     else:
                         return f"❌ TypeScript error:\n{(r.stderr or r.stdout).strip()[:500]}"
                 except Exception:
-                    pass
+                    logger.debug("linter: ts check skipped")
 
     # Ruby
     if ext == ".rb":
@@ -512,7 +512,7 @@ def _validate(file_path: str) -> str:
             else:
                 return f"❌ Ruby syntax error:\n{r.stderr.strip()[:500]}"
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+            logger.debug("linter: ruby not installed / timed out")
 
     # Go (gofmt checks syntax without compiling)
     if ext == ".go":
@@ -524,7 +524,7 @@ def _validate(file_path: str) -> str:
             else:
                 return f"❌ Go syntax error:\n{(r.stderr or r.stdout).strip()[:500]}"
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+            logger.debug("linter: go not installed / timed out")
 
     # Dart
     if ext == ".dart":
@@ -536,7 +536,7 @@ def _validate(file_path: str) -> str:
             else:
                 return f"❌ Dart issue:\n{(r.stderr or r.stdout).strip()[:500]}"
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+            logger.debug("linter: dart not installed / timed out")
 
     # CSS
     if ext == ".css":
@@ -559,7 +559,7 @@ def _validate(file_path: str) -> str:
             yaml.safe_load(content)
             return f"✅ YAML: Valid in {file_path}"
         except ImportError:
-            pass  # pyyaml not installed
+            logger.debug("linter: pyyaml not installed")
         except yaml.YAMLError as e:
             return f"❌ YAML error:\n{e}"
 

@@ -9,7 +9,10 @@ from rich.text import Text
 from rich.style import Style
 from rich.box import ROUNDED, MINIMAL
 
-from core.ui_visual import *
+from core.ui_visual import (
+    CYAN, DIM, DIM_STYLE, GOLD, GOLD_STYLE, GREEN, ORANGE, PURPLE, RED,
+    ROLE_META_ASCII, Style, TOOL,
+)
 
 
 # ── Rich Style Objects (CLI-specific overrides) ──────────────

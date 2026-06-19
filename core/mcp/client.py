@@ -174,7 +174,7 @@ class MCPServerConnection:
                 self._proc.stdin.write(notif)
                 self._proc.stdin.flush()
             except Exception:
-                pass
+                logger.debug("MCP server %s: initialized notification failed", self._name)
 
             # List tools
             tools_result = self._send_jsonrpc("tools/list", msg_id=2)
@@ -198,7 +198,7 @@ class MCPServerConnection:
             try:
                 self._proc.kill()
             except Exception:
-                pass
+                logger.debug("MCP server %s: process kill failed", self._name)
         self._proc = None
 
     def _convert_tools(self, raw_tools: list[dict]) -> list[dict]:
@@ -283,7 +283,7 @@ class MCPServerConnection:
                     self._proc.kill()
                     self._proc.wait(timeout=2)
                 except Exception:
-                    pass
+                    logger.debug("MCP server %s: force kill failed", self._name)
         self._proc = None
         self._tools = []
         self._error = None
@@ -335,8 +335,8 @@ def generate_project_mcp_config(cwd: Path) -> list[dict]:
     if config_path.exists():
         try:
             return json.loads(config_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("MCP: config_path load failed: %s", e)
 
     cwd_str = str(cwd.resolve()).replace("\\", "/")
     servers = _resolve_placeholders(DEFAULT_MCP_SERVERS, cwd_str)
@@ -532,8 +532,8 @@ def discover_mcp_servers(force_refresh: bool = False) -> list[dict]:
         widdx_servers = json.loads((Path.cwd() / ".widdx" / "mcp_servers.json").read_text())
         for s in widdx_servers:
             _add(s["name"], s["command"], s.get("args", []))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("MCP: .widdx/mcp_servers.json load failed: %s", e)
 
     # 3. WIDDX config
     for widdx_config in [
@@ -548,8 +548,8 @@ def discover_mcp_servers(force_refresh: bool = False) -> list[dict]:
                     args = config.get("args", [])
                     if cmd:
                         _add(name, cmd, args)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("MCP: config load failed for %s: %s", widdx_config, e)
 
     # 4. Detect npm global packages
     try:
@@ -560,8 +560,8 @@ def discover_mcp_servers(force_refresh: bool = False) -> list[dict]:
         if npm_list.returncode == 0:
             deps = npm_list.stdout
             # We just note it, don't auto-add unknown packages
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("MCP: npm list failed: %s", e)
 
     _DISCOVERED_CACHE = discovered
     _DISCOVERED_CACHE_TIME = now
