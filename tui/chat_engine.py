@@ -5,6 +5,7 @@ Synchronous core logic.  The UI layer (MainScreen) wraps calls in
 """
 
 import json
+from pathlib import Path
 from textual.message import Message
 from core import tools as core_tools
 from core.chat import _valid_tool_call_id, _build_tc_list, _sanitize_tool_call_ids
@@ -59,8 +60,11 @@ class ChatEngine:
 
     def __init__(self, screen):
         self.screen = screen
-        self.app = screen.app  # Textual App instance (has call_from_thread)
         self._processing = False
+
+    @property
+    def app(self):
+        return self.screen.app
 
     # ── Main entry ──────────────────────────────────────────
     def start(self, text: str, state):

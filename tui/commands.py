@@ -41,7 +41,7 @@ class CommandHandler:
         cmd = parts[0].lower()
 
         if cmd in ("/exit", "/quit"):
-            self.app.exit()
+            self.app.app.exit()
         elif cmd == "/clear":
             self.app._chat_log.clear()
             self.app._show_chat()
@@ -92,7 +92,7 @@ class CommandHandler:
 
         # ── Doctor ────────────────────────────────────────
         elif cmd == "/doctor":
-            self.app._run_doctor_checks()
+            await self.app._do_doctor()
 
         # ── Search messages ───────────────────────────────
         elif cmd == "/search" and len(parts) > 1:

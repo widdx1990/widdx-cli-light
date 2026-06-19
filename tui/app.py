@@ -17,7 +17,7 @@ if ROOT not in sys.path:
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import RichLog, Input, Static, Button
+from textual.widgets import RichLog, Input, Static, Button, Select
 from textual.containers import Horizontal, ScrollableContainer
 from textual.screen import Screen
 from textual import work
@@ -95,6 +95,7 @@ class MainScreen(Screen):
         self._stream_buffer = ""
         self._command_history: list[str] = []
         self._history_index = -1
+        self._active_view: str | None = None  # tracks current view-panel mode
 
     def compose(self) -> ComposeResult:
         yield HeaderWidget()
@@ -248,7 +249,7 @@ class MainScreen(Screen):
             self.app.push_screen(SessionCRUDScreen(), self._on_session_result)
         elif action == "settings":
             from .screens.settings import SettingsScreen
-            self.app.push_screen(SettingsScreen(self.state.provider), self._on_settings_result)
+            self.app.push_screen(SettingsScreen(), self._on_settings_result)
         elif action == "export":
             self._export_chat()
         elif action == "doctor":
@@ -332,23 +333,58 @@ class MainScreen(Screen):
 
     # ── Navigation screens callbacks ───────────────────────
     def _on_help_result(self, cmd: str | None):
+        if cmd:
+            # Execute the selected quick-action command
+            import asyncio
+            asyncio.create_task(self.cmds.handle(cmd, self.state))
         self.query_one("#input", Input).focus()
 
     def _on_settings_result(self, result: dict | None):
         if result:
-            self.state.provider = result.get("provider", self.state.provider)
+            # Reload config and recreate provider from saved settings
+            from core.config.settings import load as reload_config
+            from core.providers.providers import create_provider
+            new_cfg = reload_config()
+            self.state.cfg = new_cfg
+            self.state.provider = create_provider(new_cfg)
             self.state.model = f"{self.state.provider.name}/{self.state.provider.model}"
             self.state._rebuild_tool_defs()
+            # Refresh header with new provider name
+            try:
+                hw = self.query_one(HeaderWidget)
+                hw.initialize_provider(self.state.provider.name)
+            except Exception:
+                pass
         self.query_one("#input", Input).focus()
 
     def _on_session_result(self, result: tuple | None):
+        if result:
+            action = result[0]
+            if action == "loaded" and len(result) > 1:
+                msgs = result[1]
+                self.state.messages = msgs
+                self.state.turns = len(msgs)
+                self._log_message("system", f"📂 Session loaded: {len(msgs)} messages")
+                if self._chat_log:
+                    self._chat_log.clear()
+                    self._show_chat()
+                    for m in msgs[-20:]:
+                        role = m.get("role", "?")
+                        content = m.get("content", "")[:300]
+                        if role in ("user", "assistant", "system"):
+                            self._log_message(role, content)
+            elif action == "new" and len(result) > 1:
+                self.state.messages = []
+                self.state.turns = 0
+                self._log_message("system", "✨ New session started")
         self.query_one("#input", Input).focus()
 
-    def cancel_or_focus(self):
+    def action_cancel_or_focus(self):
         self.query_one("#input", Input).focus()
 
     def action_show_help(self):
-        self.app.post_message(self.app.push_screen("help"))
+        from .screens.help import HelpScreen
+        self.app.push_screen(HelpScreen(), self._on_help_result)
 
     def action_clear_chat(self):
         if self._chat_log:
@@ -362,7 +398,7 @@ class MainScreen(Screen):
         self._log_message("system", f"🧠 Thinking display: {status}")
         self._show_toast(f"Thinking: {status}")
 
-    def history_prev(self):
+    def action_history_prev(self):
         if self._command_history:
             # Move further back: -1→0→1→2... (0 = most recent)
             max_idx = len(self._command_history) - 1
@@ -372,7 +408,7 @@ class MainScreen(Screen):
             if 0 <= idx < len(self._command_history):
                 inp.value = self._command_history[-(idx + 1)]
 
-    def history_next(self):
+    def action_history_next(self):
         if self._command_history and self._history_index >= 0:
             # Move forward: 2→1→0→-1 (back to current input)
             self._history_index -= 1
@@ -392,6 +428,117 @@ class MainScreen(Screen):
 
     def _hide_toast(self):
         self.query_one("#toast", Static).set_class(True, "toast-hidden")
+
+    # ── Header & View Panel event handlers ──────────────────
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses from header, nav, and view panel."""
+        bid = event.button.id or ""
+        if bid == "btn-grid":
+            # Open Ubuntu Grid launcher
+            main_nav = self.NAV_BUTTONS
+            act_btns = [
+                ("act-doctor", "🩺", "Doctor", "doctor", "info"),
+                ("act-export", "📤", "Export", "export", "success"),
+                ("act-clear", "🧹", "Clear", "clear", "warn"),
+                ("act-search", "🔍", "Search", "search", "info"),
+            ]
+            help_btns = [
+                ("help-help", "❓", "Help", "help", "info"),
+                ("help-about", "ℹ️", "About", "about", "info"),
+            ]
+            self.app.push_screen(
+                UbuntuGrid(nav_buttons=main_nav, act_buttons=act_btns, help_buttons=help_btns),
+                self._on_grid_result
+            )
+            return
+
+        # View panel button handlers
+        if bid and bid.startswith("tool-"):
+            idx = int(bid.split("-")[1])
+            td = self.state.tool_defs[idx] if idx < len(self.state.tool_defs) else None
+            if td:
+                from .screens.tool_detail import ToolDetailScreen
+                self.app.push_screen(ToolDetailScreen(td))
+            return
+
+        if bid and bid.startswith("sk-"):
+            skill_name = bid[3:]
+            self.cmds._do_skill(skill_name, self.state)
+            return
+
+        if bid and bid.startswith("hist-"):
+            idx = int(bid.split("-")[1])
+            # idx is relative to the last 50 shown
+            shown = self.state.messages[-50:]
+            if 0 <= idx < len(shown):
+                m = shown[idx]
+                from .screens.detail import TextDetailScreen
+                title = f"Message [{m.get('role', '?')}]"
+                body = m.get("content", "")
+                self.app.push_screen(TextDetailScreen(title, body))
+            return
+
+        if bid and bid.startswith("mem-"):
+            mem_name = bid[4:]
+            mem = MemoryStore()
+            content = mem.get(mem_name)
+            if content:
+                from .screens.detail import TextDetailScreen
+                self.app.push_screen(TextDetailScreen(mem_name, content))
+            return
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle provider and branch selector changes from header."""
+        sid = event.select.id or ""
+        if sid == "header-provider" and event.value and event.value != Select.BLANK:
+            from core.providers.providers import create_provider
+            from core.config.settings import load as reload_config
+            new_name = str(event.value)
+            cfg = reload_config()
+            all_prov = cfg.get("all_providers", {})
+            ap = all_prov.get(new_name, {})
+            cfg["provider"] = {
+                "name": new_name,
+                "model": ap.get("model", ""),
+                "base_url": ap.get("base_url", ""),
+                "api_key": ap.get("api_key", "public"),
+            }
+            from core.config.settings import save as save_config
+            save_config(cfg)
+            self.state.cfg = cfg
+            self.state.provider = create_provider(cfg)
+            self.state.model = f"{self.state.provider.name}/{self.state.provider.model}"
+            self.state._rebuild_tool_defs()
+            self._log_message("system", f"🔄 Switched to {self.state.provider.name}/{self.state.provider.model}")
+        elif sid == "header-branch" and event.value and event.value != Select.BLANK:
+            new_branch = str(event.value)
+            import subprocess
+            try:
+                result = subprocess.run(
+                    ["git", "checkout", new_branch],
+                    capture_output=True, text=True, timeout=30, cwd=Path.cwd()
+                )
+                if result.returncode == 0:
+                    self._log_message("system", f"🌿 Switched to branch: {new_branch}")
+                    self.state.save_session()
+                    # Refresh branch list in header
+                    try:
+                        hw = self.query_one(HeaderWidget)
+                        hw._populate_header_selectors()
+                    except Exception:
+                        pass
+                else:
+                    self._log_message("system", f"❌ Branch switch failed: {result.stderr.strip()}")
+            except Exception as e:
+                self._log_message("system", f"❌ Branch switch failed: {e}")
+
+    def _on_grid_result(self, action: str | None) -> None:
+        """Handle result from UbuntuGrid launcher."""
+        if action:
+            import asyncio
+            asyncio.create_task(self._do_action(action))
+        self.query_one("#input", Input).focus()
 
 
 # ── App Entry ────────────────────────────────────────────────

@@ -202,10 +202,11 @@ class ProviderTab(ScrollableContainer):
     def _fetch_models_bg(self, force_refresh: bool = False):
         pi = self._pi
         pid = self._pid
+        app_ref = self.app  # capture before entering thread
 
         def _run():
             try:
-                self.call_from_thread(
+                app_ref.call_from_thread(
                     self.query_one(f"#model-status-{pid}", Static).update,
                     "[dim]⟳ Fetching models…[/]"
                 )
@@ -254,7 +255,7 @@ class ProviderTab(ScrollableContainer):
                 except Exception:
                     pass
 
-            self.call_from_thread(_apply)
+            app_ref.call_from_thread(_apply)
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -359,6 +360,7 @@ class GGUFTab(ScrollableContainer):
     def _do_scan(self):
         status = self.query_one("#gguf-status", Static)
         status.update("[dim]🔍 Scanning your computer for .gguf files…[/]")
+        app_ref = self.app
         import threading
         def _run():
             try:
@@ -366,7 +368,7 @@ class GGUFTab(ScrollableContainer):
                 from rich.table import Table
                 found = scan_gguf_files(force_refresh=True)
                 if not found:
-                    self.call_from_thread(status.update, "[dim]No .gguf files found. Try importing manually.[/]")
+                    app_ref.call_from_thread(status.update, "[dim]No .gguf files found. Try importing manually.[/]")
                     return
                 lines = [f"[bold #10b981]✅ Found {len(found)} GGUF files:[/]"]
                 for f in found[:10]:
@@ -375,9 +377,9 @@ class GGUFTab(ScrollableContainer):
                     lines.append(f"    [dim]{f['path']}[/]")
                 if len(found) > 10:
                     lines.append(f"  … and {len(found)-10} more")
-                self.call_from_thread(status.update, "\n".join(lines))
+                app_ref.call_from_thread(status.update, "\n".join(lines))
             except Exception as e:
-                self.call_from_thread(status.update, f"[bold #e74c3c]❌ Scan failed: {e}[/]")
+                app_ref.call_from_thread(status.update, f"[bold #e74c3c]❌ Scan failed: {e}[/]")
         threading.Thread(target=_run, daemon=True).start()
 
     def _do_import(self):
