@@ -208,6 +208,7 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
     """Run the inner AI conversation loop (max_turns iterations).
     Returns (messages, state)."""
     max_turns = cfg.get("max_turns", 10)
+    last_error = None
     for turn in range(max_turns):
         _sanitize_tool_call_ids(messages)  # ensure valid tool_call_ids before API call
         try:
@@ -216,6 +217,7 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
             )
         except Exception as e:
             print_system_msg(f"Error: {e}")
+            last_error = str(e)
             break
         state["cost"] += estimate_turn_cost(_get_model(state), 500, 1000)
         if content and content.startswith("[thinking]"):
@@ -236,6 +238,16 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
             break
     else:
         print_system_msg("Max turns reached")
+
+    # ── Self-improvement: learn from errors ─────────────────
+    if last_error:
+        try:
+            from core.self_improve import get_improver
+            improver = get_improver()
+            improver.learn_from_error(last_error, state.get("model", ""))
+        except Exception:
+            pass
+
     return messages, state
 
 

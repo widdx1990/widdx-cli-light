@@ -81,8 +81,35 @@ class SessionV2:
         db = get_db()
         db.delete_session(session_id)
     
-    def save(self):
-        pass
+    def save(self, state: dict | None = None):
+        """Persist session metadata and optional state to SQLite.
+
+        Messages are already persisted in real time via ``add_message()``.
+        This method syncs everything else: metadata, timestamps, and
+        arbitrary state (cost, turns, model, etc.).
+
+        ``update_session`` (database.py:136) automatically bumps
+        ``updated_at`` when any field is passed.
+        """
+        if state:
+            merged = dict(self.metadata)
+            merged.update(state)
+            self.metadata = merged
+
+        self.db.update_session(self.id, metadata=self.metadata)
+
+    def create_checkpoint(self, label: str = "") -> str:
+        """Create a named restore point for this session."""
+        from core.checkpoint import checkpoint_manager
+        cpm = checkpoint_manager(Path.cwd())
+        return cpm.create(label or f"session_{self.id}", self.messages, self.metadata)
+
+    @staticmethod
+    def search(query: str, branch: str | None = None, limit: int = 20) -> list[dict]:
+        """Full-text search across sessions."""
+        from core.session_search import SessionSearcher
+        searcher = SessionSearcher()
+        return searcher.search(query, branch=branch, limit=limit)
 
 
 _current_session = None

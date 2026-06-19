@@ -143,6 +143,7 @@ def build_context_block(project_dir: Path) -> str | None:
     """Build a ``[PROJECT DOCS]`` string for injection as system message.
 
     Returns None if no docs exist yet.
+    Augmented with RAG-relevant project context when available.
     """
     docs = load_docs(project_dir)
     if not docs:
@@ -159,6 +160,23 @@ def build_context_block(project_dir: Path) -> str | None:
         # Keep the full content (it's all relevant context)
         body = content.strip()
         lines.append(body)
+
+    # ── RAG augmentation: search project docs ─────────────────
+    try:
+        from core.rag import RAGStore
+        rag = RAGStore(project_dir)
+        # Build a query from the concatenated docs
+        query = " ".join(docs.get(n, "")[:200] for n in _DOC_NAMES if docs.get(n, "").strip())
+        if query:
+            rags = rag.search(query, top_k=3)
+            if rags:
+                lines.append("\n=== RAG Context ===")
+                for r in rags:
+                    snippet = r.get("content", "")[:300]
+                    if snippet:
+                        lines.append(f"  • {snippet}")
+    except Exception:
+        pass
 
     if not lines:
         return None

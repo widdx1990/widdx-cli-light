@@ -260,6 +260,7 @@ class ProjectScanner:
         """Build a [PROJECT STATE] string for injection as system message.
 
         Returns None if nothing meaningful to report.
+        Augmented with RepoMapper structural overview when available.
         """
         if self.quick_check() or self._card is None:
             self.scan(extra_ignore)
@@ -295,5 +296,16 @@ class ProjectScanner:
         # TODOs
         if card.todos_found > 0:
             lines.append(f"  TODOs: {card.todos_found} markers found")
+
+        # ── RepoMapper structural overview ─────────────────
+        try:
+            from core.repo_mapper import RepoMapper
+            mapper = RepoMapper(self._root)
+            mapper.scan()
+            top_files = mapper.select(card.root_name, top_k=8)
+            if top_files:
+                lines.append(f"  Key files: {', '.join(top_files)}")
+        except Exception:
+            pass
 
         return "\n".join(lines)

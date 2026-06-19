@@ -12,6 +12,13 @@ Key migration:
   - get_skill_registry() → use `skills.skill_manager`
 """
 
+import warnings
+warnings.warn(
+    "core.skills_v2 is deprecated. Use core.skills instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import sys
 from pathlib import Path
 

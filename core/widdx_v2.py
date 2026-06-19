@@ -10,6 +10,13 @@ Key migration:
   - WIDDXV2.add_memory()  → use `core.memory.MemoryStore.save()`
 """
 
+import warnings
+warnings.warn(
+    "core.widdx_v2 is deprecated. Use core.chat, core.session_v2, core.memory instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from .session_v2 import (
     SessionV2,
     get_current_session,

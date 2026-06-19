@@ -951,6 +951,127 @@ register(
     handle_update_project_doc,
 )
 
+# ── Linter tool ───────────────────────────────────────────────────────────
+def _handle_run_linter(file_path: str, language: str = "auto") -> str:
+    """Run linter on a file and return issues."""
+    from core.linter import LinterRunner
+    runner = LinterRunner()
+    result = runner.check(Path(file_path), language if language != "auto" else None)
+    return result.format_for_agent()
+
+register(
+    "run_linter",
+    "Run a code linter on the given file. Detects language automatically or accepts 'python', 'javascript', 'typescript', 'rust', 'go'.",
+    {
+        "type": "object",
+        "properties": {
+            "file_path": {"type": "string", "description": "Path to the file to lint"},
+            "language": {"type": "string", "description": "Language override (auto-detect if 'auto')", "default": "auto"},
+        },
+        "required": ["file_path"],
+    },
+    _handle_run_linter,
+)
+
+# ── Sandbox executor tool ──────────────────────────────────────────────────
+def _handle_sandbox_exec(command: str, timeout: int = 60, cwd: str = "") -> str:
+    """Execute a command in a sandboxed subprocess."""
+    from core.sandbox import SandboxExecutor, ResourceLimits
+    limits = ResourceLimits(max_cpu_seconds=timeout)
+    sb = SandboxExecutor(mode="subprocess", limits=limits)
+    result = sb.execute(command, timeout=timeout, cwd=Path(cwd) if cwd else None)
+    out = result.stdout[:3000] if result.stdout else ""
+    err = result.stderr[:1000] if result.stderr else ""
+    status = f"exit={result.exit_code}" + (" [TIMEOUT]" if result.was_timeout else "")
+    return f"[{status}]\n{out}\n{('STDERR:\\n'+err) if err else ''}".strip()
+
+register(
+    "sandbox_exec",
+    "Execute a shell command in a resource-limited sandbox. Safer than raw bash for untrusted commands.",
+    {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "The shell command to execute"},
+            "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)", "default": 60},
+            "cwd": {"type": "string", "description": "Working directory for the command", "default": ""},
+        },
+        "required": ["command"],
+    },
+    _handle_sandbox_exec,
+)
+
+# ── Multi-file editor tool ─────────────────────────────────────────────────
+def _handle_edit_files(files: list[dict]) -> str:
+    """Apply multiple surgical file edits atomically (old_string → new_string)."""
+    from core.multi_editor import MultiFileEditor
+    editor = MultiFileEditor()
+    try:
+        from core.diff_engine import DiffEngine
+        differ = DiffEngine()
+    except Exception:
+        differ = None
+
+    results = []
+    for i, edit in enumerate(files):
+        path = Path(edit["path"])
+        old_str = edit["old_string"]
+        new_str = edit["new_string"]
+
+        if not path.exists():
+            results.append(f"[{i}] SKIP: {path} does not exist")
+            continue
+
+        current = path.read_text(encoding="utf-8")
+        if old_str not in current:
+            results.append(f"[{i}] SKIP: old_string not found in {path}")
+            continue
+
+        new_content = current.replace(old_str, new_str, 1)
+
+        # Preview diff
+        if differ:
+            diff_preview = differ.unified_diff(path.name, current, new_content)[:300]
+            results.append(f"[{i}] DIFF {path}:\n{diff_preview}")
+        else:
+            results.append(f"[{i}] EDIT {path}")
+
+        editor.add(str(path), new_content)
+
+    if editor.staged_count == 0:
+        return "\n".join(results) if results else "No files to edit"
+
+    result = editor.commit()
+    if result.ok:
+        results.append(f"\n✓ Atomic commit: {result.files_written} files written")
+    else:
+        results.append(f"\n✗ FAILED: {', '.join(result.errors)} (rolled back)")
+    return "\n".join(results)
+
+register(
+    "edit_files",
+    "Apply multiple surgical file edits in a single atomic operation. Each edit: {path, old_string, new_string}. Supports rollback on failure. Uses diff preview.",
+    {
+        "type": "object",
+        "properties": {
+            "files": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path to edit"},
+                        "old_string": {"type": "string", "description": "Text to replace"},
+                        "new_string": {"type": "string", "description": "Replacement text"},
+                    },
+                    "required": ["path", "old_string", "new_string"],
+                },
+                "description": "List of file edits to apply atomically",
+            },
+        },
+        "required": ["files"],
+    },
+    _handle_edit_files,
+)
+
 _SAFE_DIR: str | None = None
 
 

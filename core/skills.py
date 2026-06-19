@@ -237,6 +237,16 @@ class SkillManager:
         except Exception as e:
             return f"Skill tool error: {e}"
 
+    def start_hot_reload(self):
+        """Start watching the skills directory for changes (auto-reload)."""
+        try:
+            from core.plugin_loader import get_hot_reloader
+            reloader = get_hot_reloader()
+            reloader.start()
+            logger.info("Skill hot reload started")
+        except Exception as e:
+            logger.debug("Hot reload not available: %s", e)
+
 
 # Singleton
 skill_manager = SkillManager()

@@ -42,9 +42,6 @@ class CommandHandler:
 
         if cmd in ("/exit", "/quit"):
             self.app.app.exit()
-        elif cmd == "/clear":
-            self.app._chat_log.clear()
-            self.app._show_chat()
         elif cmd == "/help":
             await self.app._do_action("help")
         elif cmd == "/tools":
@@ -64,9 +61,15 @@ class CommandHandler:
         elif cmd == "/save":
             state.save_session()
             self.app._log_message("system", "💾 Session saved")
-        elif cmd == "/clear" and len(parts) > 1:
-            state.clear_session()
-            self.app._log_message("system", "🧹 Session cleared")
+        elif cmd == "/clear":
+            if len(parts) > 1:
+                # /clear session → wipe session data
+                state.clear_session()
+                self.app._log_message("system", "🧹 Session cleared")
+            else:
+                # /clear → clear chat log only
+                self.app._chat_log.clear()
+                self.app._show_chat()
 
         # ── Model ─────────────────────────────────────────
         elif cmd == "/model":

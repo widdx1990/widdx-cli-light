@@ -119,8 +119,25 @@ class MemoryStore:
             })
         return memories
 
-    def search(self, query: str) -> list[dict]:
-        """Search memory contents by keyword."""
+    def search(self, query: str, semantic: bool = False) -> list[dict]:
+        """Search memory contents by keyword. Set semantic=True for vector similarity search."""
+        # ── Semantic search (vector_memory) ─────────────────
+        if semantic:
+            try:
+                from core.vector_memory import VectorMemoryStore
+                vstore = VectorMemoryStore()
+                results = vstore.search(query, top_k=10)
+                if results:
+                    return [{
+                        "name": r.get("name", "?"),
+                        "description": r.get("content", "")[:80],
+                        "snippet": r.get("content", "")[:200],
+                        "score": r.get("score", 0.0),
+                    } for r in results]
+            except Exception:
+                pass
+
+        # ── Keyword fallback ────────────────────────────────
         query_lower = query.lower()
         results = []
         for f in self.memory_dir.glob("*.md"):

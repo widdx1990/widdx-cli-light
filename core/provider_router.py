@@ -10,6 +10,13 @@ Key migration:
   - ProviderRouter.fallback → already handled by `OpenCodeZenProvider._next_model()`
 """
 
+import warnings
+warnings.warn(
+    "core.provider_router is deprecated. Use core.providers.providers.create_provider() instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import time
 
 
