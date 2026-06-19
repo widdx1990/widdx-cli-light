@@ -149,31 +149,6 @@ def test_knowledge_five_executions_answer_avg_time():
     )
 
 
-if __name__ == "__main__":
-    print("=" * 55)
-    print("Phase 2 — Knowledge Base Tests")
-    print("=" * 55)
-    test_knowledge_record_and_query()
-    print("  PASS: K1 — record, get_similar, get_stats")
-    test_knowledge_brain_auto_records()
-    print("  PASS: K2 — brain auto-record integration")
-    test_knowledge_five_executions_answer_avg_time()
-    print("  PASS: K3 — 5 CODE_WRITE execs → avg_time")
-    test_knowledge_suggest_insufficient_data()
-    print("  PASS: K4 — suggest_mode with <3 records → None")
-    test_knowledge_suggest_expert_team_after_failures()
-    print("  PASS: K5 — 3 failed AUTONOMOUS → EXPERT_TEAM")
-    test_knowledge_suggest_autonomous_for_slow()
-    print("  PASS: K6 — slow+incomplete → AUTONOMOUS")
-    test_router_knowledge_mode_override()
-    print("  PASS: K7 — Router overrides mode via knowledge")
-    test_router_knowledge_backward_compat()
-    print("  PASS: K8 — Router knowledge=None backward compat")
-    print("\n" + "=" * 55)
-    print("ALL 8 TESTS PASSED — Phase 2.1 complete")
-    print("=" * 55)
-
-
 # =====================================================================
 # K4 — Unit: suggest_mode with < 3 records → None
 # =====================================================================
@@ -433,3 +408,50 @@ def test_direct_tool_executor_prefers_bash():
         tool_defs = []
 
     assert "No tools available" in run_direct_tool(EmptyCtx(), "test")
+
+
+def _clean_knowledge_cache():
+    """Remove cached knowledge.json to prevent state leakage between tests."""
+    cache = Path(".widdx/knowledge.json")
+    if cache.exists():
+        cache.unlink()
+
+
+if __name__ == "__main__":
+    _clean_knowledge_cache()
+
+    print("=" * 55)
+    print("Phase 2 — Knowledge Base Tests")
+    print("=" * 55)
+    test_knowledge_record_and_query()
+    print("  PASS: K1 — record, get_similar, get_stats")
+    _clean_knowledge_cache()
+    test_knowledge_brain_auto_records()
+    print("  PASS: K2 — brain auto-record integration")
+    _clean_knowledge_cache()
+    test_knowledge_five_executions_answer_avg_time()
+    print("  PASS: K3 — 5 CODE_WRITE execs → avg_time")
+    _clean_knowledge_cache()
+    test_knowledge_suggest_insufficient_data()
+    print("  PASS: K4 — suggest_mode with <3 records → None")
+    _clean_knowledge_cache()
+    test_knowledge_suggest_expert_team_after_failures()
+    print("  PASS: K5 — 3 failed AUTONOMOUS → EXPERT_TEAM")
+    _clean_knowledge_cache()
+    test_knowledge_suggest_autonomous_for_slow()
+    print("  PASS: K6 — slow+incomplete → AUTONOMOUS")
+    _clean_knowledge_cache()
+    test_router_knowledge_mode_override()
+    print("  PASS: K7 — Router overrides mode via knowledge")
+    _clean_knowledge_cache()
+    test_router_knowledge_backward_compat()
+    print("  PASS: K8 — Router knowledge=None backward compat")
+    _clean_knowledge_cache()
+    test_knowledge_suggest_expert_team_after_verify_failures()
+    print("  PASS: K9 — Verify failures → EXPERT_TEAM")
+    _clean_knowledge_cache()
+    test_direct_tool_executor_prefers_bash()
+    print("  PASS: K10 — Direct tool prefers bash")
+    print("\n" + "=" * 55)
+    print("ALL 10 TESTS PASSED — Phase 2.1 complete")
+    print("=" * 55)

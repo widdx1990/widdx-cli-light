@@ -103,6 +103,68 @@ class CommandHandler:
         elif cmd == "/doctor":
             await self.app._do_doctor()
 
+        elif cmd == "/branch":
+            from core.project.state import list_branches, get_current_branch, create_branch, set_current_branch, load_session
+            sub = parts[1].split() if len(parts) > 1 else []
+            action = sub[0] if sub else "list"
+            if action == "list":
+                current = get_current_branch()
+                for b in list_branches():
+                    marker = " *" if b == current else ""
+                    self.app._log_message("system", f"  {b}{marker}")
+            elif action == "create" and len(sub) > 1:
+                name = sub[1]
+                if create_branch(name):
+                    self.app._log_message("system", f"🌿 Branch '{name}' created")
+                else:
+                    self.app._log_message("system", f"Branch '{name}' already exists")
+            elif action == "switch" and len(sub) > 1:
+                name = sub[1]
+                state.save_session()
+                if set_current_branch(name):
+                    session = load_session(branch=name)
+                    if session:
+                        state.messages = session.get("messages", [])
+                        s = session.get("state", {})
+                        state.cost = s.get("cost", 0.0)
+                        state.turns = s.get("turns", 0)
+                    else:
+                        state.messages = []
+                        state.turns = 0
+                        state.cost = 0.0
+                    self.app._log_message("system", f"🌿 Switched to branch: {name}")
+                    if self.app._chat_log:
+                        self.app._chat_log.clear()
+                        for m in state.messages[-20:]:
+                            role = m.get("role", "?")
+                            if role in ("user", "assistant", "system"):
+                                self.app._log_message(role, (m.get("content") or "")[:300])
+                    try:
+                        self.app.query_one("HeaderWidget").update_branch(name)
+                    except Exception:
+                        pass
+                    self.app._update_status()
+                else:
+                    self.app._log_message("system", f"❌ Branch '{name}' not found")
+            else:
+                self.app._log_message("system", "Usage: /branch list|create|switch")
+
+        elif cmd == "/theme":
+            from core.config.settings import load, save
+            cfg = load()
+            current = str(cfg.get("cli_theme", "dark")).lower()
+            new = parts[1].strip().lower() if len(parts) > 1 else ("light" if current == "dark" else "dark")
+            if new not in ("dark", "light"):
+                self.app._log_message("system", "Usage: /theme [dark|light]")
+            else:
+                cfg["cli_theme"] = new
+                save(cfg)
+                state.cfg = cfg
+                self.app._log_message("system", f"🎨 Theme set to {new}")
+
+        elif cmd == "/version":
+            self.app._log_message("system", "WIDDX Cortex v3.0.0 — Terminal AI Workspace")
+
         # ── Search messages ───────────────────────────────
         elif cmd == "/search" and len(parts) > 1:
             query = parts[1].strip().lower()

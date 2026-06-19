@@ -18,7 +18,7 @@ if ROOT not in sys.path:
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import RichLog, Input, Static, Button, Select
-from textual.containers import Horizontal, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
 from textual import work
 from rich.text import Text
@@ -54,11 +54,14 @@ def _fix_rtl(text: str) -> str:
 
 
 # ── View Panel ──────────────────────────────────────────────
-class ViewPanel(ScrollableContainer):
+class ViewPanel(Vertical):
     """Side panel for tools, skills, history, memories."""
+
     def compose(self):
         yield Static(id="view-title")
         yield ScrollableContainer(id="view-list")
+        yield Button("← Back to chat (Ctrl+B)", id="view-back", classes="btn-sm")
+
     def set_title(self, text: str):
         self.query_one("#view-title", Static).update(f"  [bold #f5a623]{text}[/]")
 
@@ -74,6 +77,7 @@ class MainScreen(Screen):
         Binding("escape", "cancel_or_focus", "Cancel/Focus", show=False),
         Binding("ctrl+l", "clear_chat", "Clear", show=False),
         Binding("ctrl+p", "show_help", "Help", show=False),
+        Binding("ctrl+b", "show_chat", "Back to Chat", show=False),
         Binding("ctrl+t", "toggle_thinking", "𖥔 Thinking", show=False, tooltip="Toggle reasoning content display"),
         Binding("ctrl+up", "history_prev", "Previous Cmd", show=False),
         Binding("ctrl+down", "history_next", "Next Cmd", show=False),
@@ -101,11 +105,11 @@ class MainScreen(Screen):
         yield HeaderWidget()
         yield Static("", id="processing", classes="hidden")
         with Horizontal(id="body"):
-            yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True, max_lines=500)
+            yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True, max_lines=500, auto_scroll=True)
             yield ViewPanel(id="view-panel")
         with Horizontal(id="input-container"):
             yield Static("❯", id="prompt-label")
-            yield Input(placeholder="Type a message… (/help)", id="input")
+            yield Input(placeholder="اكتب رسالة…  /help  •  !skill  •  Ctrl+P", id="input")
         yield Static(id="status")
         yield Static("", id="toast", classes="toast-hidden")
 
@@ -118,10 +122,36 @@ class MainScreen(Screen):
             self._log_message("system", log_line)
 
         self.query_one("#input", Input).focus()
-        self.query_one("#processing", Static).set_class(False, "active")
+        self._set_processing(False)
         # Refresh header
         hw = self.query_one(HeaderWidget)
         hw.initialize_provider(self.state.model.split("/")[0])
+        self._update_status()
+
+    def _update_status(self):
+        """Refresh footer status bar and header info strip."""
+        try:
+            model_short = self.state.model.split("/")[-1] if "/" in self.state.model else self.state.model
+            self.query_one("#status", Static).update(
+                f"  {model_short}  │  turns: {self.state.turns}  │  "
+                f"cost: ${self.state.cost:.4f}  │  tools: {len(self.state.tool_defs)}  │  "
+                f"Ctrl+P help  •  Ctrl+B chat"
+            )
+            hw = self.query_one(HeaderWidget)
+            hw.update_info(
+                Path.cwd().name,
+                self.state.model,
+                self.state.cost,
+                self.state.turns,
+            )
+        except Exception:
+            pass
+
+    def _set_processing(self, active: bool, label: str = "  ◈  WIDDX is thinking…  "):
+        proc = self.query_one("#processing", Static)
+        proc.update(label)
+        proc.set_class(active, "active")
+        proc.set_class(active, "thinking")
 
     # ── Input handling ─────────────────────────────────────
     async def on_input_submitted(self, event: Input.Submitted):
@@ -140,7 +170,7 @@ class MainScreen(Screen):
         if not is_cmd:
             self._log_message("user", text)
             self.query_one("#input", Input).disabled = True
-            self.query_one("#processing", Static).set_class(True, "active")
+            self._set_processing(True)
             self.run_chat(text)
         else:
             # Slash command handled — re-enable input immediately
@@ -169,42 +199,64 @@ class MainScreen(Screen):
     def _finish_chat(self):
         self.query_one("#input", Input).disabled = False
         self.query_one("#input", Input).focus()
-        self.query_one("#processing", Static).set_class(False, "active")
+        self._set_processing(False)
+        self._update_status()
 
     def on_input_changed(self, event: Input.Changed):
         cc = self.query_one("#prompt-label", Static)
-        cc.update(f"❯ {len(event.value)}" if event.value else "❯")
+        n = len(event.value)
+        cc.update(f"❯ {n}" if n else "❯")
 
     # ── UI helpers ─────────────────────────────────────────
     def _log_message(self, role: str, content: str):
         if not self._chat_log:
             return
-        from datetime import datetime
         ts = datetime.now().strftime("%H:%M")
         content = _fix_rtl(content)
         panel = role_panel(role, content, ts)
         self._chat_log.write(panel)
+        self._chat_log.scroll_end(animate=False)
 
     def _log(self, text: str):
         if self._chat_log:
             self._chat_log.write(text)
+            self._chat_log.scroll_end(animate=False)
 
     def _show_chat(self):
+        body = self.query_one("#body", Horizontal)
         vp = self.query_one("#view-panel", ViewPanel)
-        cl = self.query_one("#chat-log", RichLog)
-        cl.display = True
+        body.remove_class("sidebar-open")
+        vp.remove_class("active")
         vp.display = False
+        self._active_view = None
 
     def _show_view(self, title: str):
+        body = self.query_one("#body", Horizontal)
         vp = self.query_one("#view-panel", ViewPanel)
-        cl = self.query_one("#chat-log", RichLog)
-        cl.display = False
+        body.add_class("sidebar-open")
         vp.display = True
+        vp.add_class("active")
         vp.set_title(title)
+        self._active_view = title
 
     # ── Navigation actions ─────────────────────────────────
     async def _do_action(self, action: str):
-        if action == "help":
+        if action == "chat":
+            self._show_chat()
+            self._log_message("system", "💬 Back to chat")
+        elif action == "clear":
+            self.action_clear_chat()
+        elif action == "search":
+            self._log_message("system", "🔍 Type /search <query> in the input bar")
+            self._show_chat()
+        elif action == "about":
+            self._log_message(
+                "system",
+                "◈ WIDDX Cortex v3.0 — Terminal AI\n"
+                "by Muhammad Muslih  •  Palestine 🇵🇸",
+            )
+            self._show_chat()
+        elif action == "help":
             from .screens.help import HelpScreen
             self.app.push_screen(HelpScreen(), self._on_help_result)
         elif action == "tools":
@@ -303,14 +355,15 @@ class MainScreen(Screen):
         display = msg.text or "[execution complete]"
         self._log_message("assistant", display)
         self._show_chat()
-        self.query_one("#processing", Static).set_class(False, "active")
+        self._set_processing(False)
+        self._update_status()
 
     def on_error_msg(self, msg: ErrorMsg):
         self._log_message("system", f"❌ {msg.text}")
-        self.query_one("#processing", Static).set_class(False, "active")
+        self._set_processing(False)
+        self._update_status()
 
     def on_tool_step_msg(self, msg: ToolStepMsg):
-        from rich.text import Text as RText
         from core.ui_visual import TOOL, DIM
         self._log(f"  🔧 [bold {TOOL}]{msg.tool}[/] → [{DIM}]{msg.detail[:120]}[/]")
 
@@ -320,7 +373,8 @@ class MainScreen(Screen):
         self.state.messages = msg.msgs
         self.state.save_session()
         self._show_chat()
-        self.query_one("#processing", Static).set_class(False, "active")
+        self._set_processing(False)
+        self._update_status()
 
     def on_thinking_msg(self, msg: ThinkingMsg):
         """Show reasoning content only when toggle is on, and format it cleanly."""
@@ -386,6 +440,10 @@ class MainScreen(Screen):
         from .screens.help import HelpScreen
         self.app.push_screen(HelpScreen(), self._on_help_result)
 
+    def action_show_chat(self):
+        self._show_chat()
+        self.query_one("#input", Input).focus()
+
     def action_clear_chat(self):
         if self._chat_log:
             self._chat_log.clear()
@@ -434,6 +492,10 @@ class MainScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses from header, nav, and view panel."""
         bid = event.button.id or ""
+        if bid == "view-back":
+            self._show_chat()
+            self.query_one("#input", Input).focus()
+            return
         if bid == "btn-grid":
             # Open Ubuntu Grid launcher
             main_nav = self.NAV_BUTTONS
@@ -511,27 +573,50 @@ class MainScreen(Screen):
             self.state.model = f"{self.state.provider.name}/{self.state.provider.model}"
             self.state._rebuild_tool_defs()
             self._log_message("system", f"🔄 Switched to {self.state.provider.name}/{self.state.provider.model}")
-        elif sid == "header-branch" and event.value and event.value != Select.BLANK:
-            new_branch = str(event.value)
-            import subprocess
             try:
-                result = subprocess.run(
-                    ["git", "checkout", new_branch],
-                    capture_output=True, text=True, timeout=30, cwd=Path.cwd()
-                )
-                if result.returncode == 0:
-                    self._log_message("system", f"🌿 Switched to branch: {new_branch}")
-                    self.state.save_session()
-                    # Refresh branch list in header
-                    try:
-                        hw = self.query_one(HeaderWidget)
-                        hw._populate_header_selectors()
-                    except Exception:
-                        pass
-                else:
-                    self._log_message("system", f"❌ Branch switch failed: {result.stderr.strip()}")
-            except Exception as e:
-                self._log_message("system", f"❌ Branch switch failed: {e}")
+                hw = self.query_one(HeaderWidget)
+                hw.update_provider(self.state.provider.name)
+            except Exception:
+                pass
+            self._update_status()
+        elif sid == "header-branch" and event.value and event.value != Select.BLANK:
+            from core.project.state import (
+                set_current_branch, get_current_branch, load_session,
+            )
+            new_branch = str(event.value)
+            current = get_current_branch()
+            if new_branch == current:
+                return
+            self.state.save_session()
+            if not set_current_branch(new_branch):
+                self._log_message("system", f"❌ Session branch '{new_branch}' not found")
+                return
+            session = load_session(branch=new_branch)
+            if session:
+                self.state.messages = session.get("messages", [])
+                s = session.get("state", {})
+                self.state.cost = s.get("cost", 0.0)
+                self.state.turns = s.get("turns", 0)
+                if s.get("model"):
+                    self.state.model = s["model"]
+            else:
+                self.state.messages = []
+                self.state.turns = 0
+                self.state.cost = 0.0
+            self._log_message("system", f"🌿 Switched to session branch: {new_branch}")
+            if self._chat_log:
+                self._chat_log.clear()
+                for m in self.state.messages[-20:]:
+                    role = m.get("role", "?")
+                    content = (m.get("content") or "")[:300]
+                    if role in ("user", "assistant", "system"):
+                        self._log_message(role, content)
+            try:
+                hw = self.query_one(HeaderWidget)
+                hw.update_branch(new_branch)
+            except Exception:
+                pass
+            self._update_status()
 
     def _on_grid_result(self, action: str | None) -> None:
         """Handle result from UbuntuGrid launcher."""

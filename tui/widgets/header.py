@@ -37,7 +37,7 @@ class HeaderWidget(Horizontal):
                 id="header-provider",
                 classes="header-selector"
             )
-            yield Static("Branch:", classes="header-selector-label")
+            yield Static("Session:", classes="header-selector-label")
             yield Select(
                 options=[],
                 id="header-branch",
@@ -75,6 +75,17 @@ class HeaderWidget(Horizontal):
             logger.info("[HeaderWidget] Header selectors populated successfully")
         except Exception as e:
             logger.exception(f"[HeaderWidget] Error populating header selectors: {e}")
+
+    def update_info(self, project_name: str, model: str, cost: float, turns: int):
+        """Update the center info strip."""
+        try:
+            model_short = model.split("/")[-1] if "/" in model else model
+            self.query_one("#header-info", Static).update(
+                f"  [bold]{project_name}[/]  •  {model_short}  •  "
+                f"turns {turns}  •  ${cost:.4f}"
+            )
+        except Exception as e:
+            logger.debug("[HeaderWidget] update_info failed: %s", e)
 
     def update_provider(self, new_provider: str):
         """Update provider selector value without triggering event."""

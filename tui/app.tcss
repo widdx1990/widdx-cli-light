@@ -128,14 +128,22 @@ Screen { layout: vertical; background: $bg; color: $text; }
     content-align: center middle; 
 }
 #processing.active { display: block; }
+#processing.thinking {
+    background: $secondary;
+}
 #body {
     height: 1fr;
 }
-#body > * {
-    width: 1fr;
+#body.sidebar-open #chat-log {
+    width: 62%;
+}
+#body.sidebar-open #view-panel {
+    width: 38%;
+    display: block;
 }
 #chat-log {
     height: 1fr;
+    width: 1fr;
     background: $bg;
     padding: 1 2;
     border: none;
@@ -151,13 +159,19 @@ Screen { layout: vertical; background: $bg; color: $text; }
 }
 #view-panel {
     height: 1fr;
-    background: $bg;
+    width: 0;
+    background: $panel-bg;
     display: none;
-    padding: 1 2;
+    padding: 0 1;
+    border-left: solid $border;
+    overflow: hidden;
+    layout: vertical;
 }
 #view-panel.active { display: block; }
-#view-panel #view-title { height: 3; background: $panel-bg; border: solid $border; color: $accent; text-style: bold; content-align: center middle; margin-bottom: 1; }
+#view-panel #view-title { height: 3; background: $bg; border-bottom: solid $border; color: $accent; text-style: bold; content-align: center middle; margin-bottom: 1; }
 #view-panel #view-list { height: 1fr; padding: 0; }
+#view-panel #view-back { height: 3; width: 100%; margin-top: 1; background: $panel-bg; border: solid $border; color: $muted; }
+#view-panel #view-back:hover { color: $phover; border: solid $primary; }
 #view-panel #view-list Button { height: 3; background: $panel-bg; color: $text; border: solid $border; content-align: left middle; padding: 0 2; margin-bottom: 1; }
 #view-panel #view-list Button:hover { background: #1e293b; color: $primary; border: solid $primary; }
 #view-panel #view-list Button.active { background: #1e1b4b; color: $phover; border: solid $primary; }

@@ -1038,7 +1038,8 @@ def _handle_sandbox_exec(command: str, timeout: int = 60, cwd: str = "") -> str:
     out = result.stdout[:3000] if result.stdout else ""
     err = result.stderr[:1000] if result.stderr else ""
     status = f"exit={result.exit_code}" + (" [TIMEOUT]" if result.was_timeout else "")
-    return f"[{status}]\n{out}\n{('STDERR:\\n'+err) if err else ''}".strip()
+    stderr_part = f"STDERR:\n{err}" if err else ""
+    return f"[{status}]\n{out}\n{stderr_part}".strip()
 
 register(
     "sandbox_exec",

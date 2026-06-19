@@ -56,9 +56,17 @@ class HelpScreen(ModalScreen):
             ("Ctrl+Q",          "Quit application"),
             ("Ctrl+L",          "Clear chat"),
             ("Ctrl+P",          "Open this help"),
+            ("Ctrl+B",          "Back to chat / close sidebar"),
+            ("Ctrl+T",          "Toggle thinking display"),
             ("Esc",             "Close modals / Back"),
             ("!skill_name",     "Activate skill"),
             ("!off",            "Deactivate skill"),
+        ],
+        "🌿 Session Branches": [
+            ("/branch list",    "List session branches"),
+            ("/branch create",  "Create a new branch"),
+            ("/branch switch",  "Switch session branch"),
+            ("/theme",          "Toggle dark/light theme"),
         ],
     }
 
