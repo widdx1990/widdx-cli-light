@@ -244,6 +244,7 @@ def test_session_v2_create_save_search():
         assert cpid
 
         dbm.get_db_path = orig
+        dbm._db = None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -254,10 +255,14 @@ def test_session_v2_create_save_search():
 
 def test_v2_modules_emit_deprecation_warning():
     """Phase 1: deprecated v2 modules emit DeprecationWarning."""
+    import importlib
+    import sys
     import warnings
+
+    sys.modules.pop("core.widdx_v2", None)
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        from core import widdx_v2
+        import core.widdx_v2  # noqa: F401
         deprecations = [x for x in w if issubclass(x.category, DeprecationWarning)]
         assert len(deprecations) > 0, "widdx_v2 should emit DeprecationWarning"
 

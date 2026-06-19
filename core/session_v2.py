@@ -10,8 +10,8 @@ from .database import get_db
 
 
 class SessionV2:
-    def __init__(self, session_id=None, name="New Session", branch="main"):
-        self.db = get_db()
+    def __init__(self, session_id=None, name="New Session", branch="main", db=None):
+        self.db = db if db is not None else get_db()
         if session_id:
             existing = self.db.get_session(session_id)
             if existing:
@@ -99,20 +99,27 @@ class SessionV2:
         self.db.update_session(self.id, metadata=self.metadata)
 
     def create_checkpoint(self, label: str = "") -> str:
-        """Create a named restore point for this session."""
-        from core.checkpoint import checkpoint_manager
-        cpm = checkpoint_manager(Path.cwd())
-        return cpm.create(label or f"session_{self.id}", self.messages, self.metadata)
+        """Create a file-based project checkpoint (safe snapshot before edits)."""
+        from core.checkpoint import CheckpointManager
+        cpm = CheckpointManager(Path.cwd())
+        cid = cpm.save(label or f"session_{self.id}")
+        return cid or ""
 
     @staticmethod
     def search(query: str, branch: str | None = None, limit: int = 20) -> list[dict]:
         """Full-text search across sessions."""
         from core.session_search import SessionSearcher
         searcher = SessionSearcher()
-        try:
-            return searcher.search(query, branch=branch, limit=limit)
-        except TypeError:
-            return searcher.search(query, limit=limit)
+        results = searcher.search(query, top_k=limit)
+        if not branch:
+            return results
+        db = get_db()
+        filtered = []
+        for r in results:
+            sess = db.get_session(r.get("session_id", ""))
+            if sess and sess.get("branch") == branch:
+                filtered.append(r)
+        return filtered
 
 
 _current_session = None
@@ -124,8 +131,8 @@ def set_current_session(session):
     global _current_session
     _current_session = session
 
-def create_new_session(name="New Session", branch="main"):
-    session = SessionV2(name=name, branch=branch)
+def create_new_session(name="New Session", branch="main", db=None):
+    session = SessionV2(name=name, branch=branch, db=db)
     set_current_session(session)
     return session
 

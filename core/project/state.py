@@ -158,6 +158,43 @@ def save_project_config(config: dict, project_dir: str | Path | None = None):
 
 # ── session persistence ──────────────────────────────────────────────────
 
+def _project_db(project_dir: Path):
+    """SQLite database scoped to a project directory."""
+    from core.database import Database, get_db_path
+    return Database(get_db_path(project_dir))
+
+
+def _sync_sqlite_session(messages: list, state: dict, project_dir: Path, branch: str):
+    """Persist messages to the project-scoped SQLite database."""
+    from core.session_v2 import SessionV2, set_current_session
+
+    db = _project_db(project_dir)
+    sessions = db.list_sessions(branch=branch, limit=1)
+    if sessions:
+        sess = SessionV2(session_id=sessions[0]["id"], db=db)
+        sess.clear()
+    else:
+        sess = SessionV2(name=f"session_{branch}", branch=branch, db=db)
+
+    for msg in messages[-50:]:
+        role = msg.get("role", "system")
+        content = msg.get("content", "")
+        tc = msg.get("tool_calls")
+        if role in ("user", "assistant", "system", "tool"):
+            sess.add_message(role, content, tc)
+
+    sess.save({
+        "model": state.get("model", ""),
+        "cost": state.get("cost", 0.0),
+        "turns": state.get("turns", 0),
+        "tools_used": state.get("tools_used", []),
+    })
+
+    if project_dir.resolve() == Path.cwd().resolve():
+        set_current_session(sess)
+    return sess
+
+
 def save_session(messages: list, state: dict, project_dir: str | Path | None = None, branch: str | None = None):
     """Save conversation messages + runtime state.
 
@@ -165,32 +202,14 @@ def save_session(messages: list, state: dict, project_dir: str | Path | None = N
     """
     if project_dir is None:
         project_dir = Path().resolve()
+    else:
+        project_dir = Path(project_dir).resolve()
     if branch is None:
         branch = get_current_branch(project_dir)
 
     # ── SQLite persistence (primary) ─────────────────────
     try:
-        from core.session_v2 import SessionV2, get_current_session, create_new_session
-        sess = get_current_session()
-        if sess is None:
-            sess = create_new_session(name=f"session_{branch}", branch=branch)
-        # Sync messages
-        for msg in messages[-50:]:  # last 50 messages
-            role = msg.get("role", "system")
-            content = msg.get("content", "")
-            tc = msg.get("tool_calls")
-            if role in ("user", "assistant", "system", "tool"):
-                try:
-                    sess.add_message(role, content, tc)
-                except Exception:
-                    pass
-        # Save metadata
-        sess.save({
-            "model": state.get("model", ""),
-            "cost": state.get("cost", 0.0),
-            "turns": state.get("turns", 0),
-            "tools_used": state.get("tools_used", []),
-        })
+        _sync_sqlite_session(messages, state, project_dir, branch)
     except Exception as e:
         logger.debug("SQLite session save skipped: %s", e)
 
@@ -214,18 +233,22 @@ def load_session(project_dir: str | Path | None = None, branch: str | None = Non
     """
     if project_dir is None:
         project_dir = Path().resolve()
+    else:
+        project_dir = Path(project_dir).resolve()
     if branch is None:
         branch = get_current_branch(project_dir)
 
-    # ── Try SQLite first ─────────────────────────────────
+    # ── Try SQLite first (project-scoped) ────────────────
     try:
         from core.session_v2 import SessionV2, set_current_session
-        sessions = SessionV2.list_sessions(branch=branch, limit=1)
+        db = _project_db(project_dir)
+        sessions = db.list_sessions(branch=branch, limit=1)
         if sessions:
-            sess = SessionV2(session_id=sessions[0]["id"])
-            set_current_session(sess)
+            sess = SessionV2(session_id=sessions[0]["id"], db=db)
             msgs = sess.messages
             if msgs:
+                if project_dir.resolve() == Path.cwd().resolve():
+                    set_current_session(sess)
                 return {
                     "messages": msgs,
                     "state": {

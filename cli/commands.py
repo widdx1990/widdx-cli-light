@@ -62,10 +62,17 @@ class CLICommands:
         if handler:
             arg = parts[1] if len(parts) > 1 else ""
             result = handler(arg, provider, state, messages)
-            if isinstance(result, tuple) and len(result) == 2:
-                new_provider, new_state = result
-                self.app.provider = new_provider
-                self.app.state = new_state
+            if isinstance(result, tuple):
+                if len(result) == 3:
+                    new_provider, new_state, new_messages = result
+                    self.app.provider = new_provider
+                    self.app.state = new_state
+                    messages.clear()
+                    messages.extend(new_messages)
+                elif len(result) == 2:
+                    new_provider, new_state = result
+                    self.app.provider = new_provider
+                    self.app.state = new_state
             return True
 
         # Skill activation: !name
