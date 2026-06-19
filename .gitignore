@@ -8,6 +8,7 @@ __pycache__/
 # Node
 node_modules/
 package-lock.json
+.venv/
 
 # IDE
 .vscode/

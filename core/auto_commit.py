@@ -44,10 +44,11 @@ class AutoCommitManager:
             return None
 
         changed = self._changed_files()
-        if not changed:
+        new_changes = changed - self._files_before
+        if not new_changes:
             return None
 
-        return self._commit(f"[WIDDX] {description}", list(changed))
+        return self._commit(f"[WIDDX] {description}", list(new_changes))
 
     def rollback_if_failure(self) -> bool:
         """Restore files that were changed during the task.

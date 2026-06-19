@@ -106,10 +106,10 @@ def _read(file_path: str, offset: int = 0, limit: int = 0) -> str:
         offset: 1-based starting line (0 or negative = from end).
         limit: Max lines to show (0 = all).
     """
-    p = Path(file_path).resolve()
-    # Sandbox check (consistent with write/edit)
-    if _SAFE_DIR and not str(p.resolve()).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
+    p = Path(file_path)
+    if not _is_safe_path(p):
         return f"Sandbox: read of {file_path} denied — not inside {_SAFE_DIR}"
+    p = p.resolve()
     if not p.exists():
         return f"File not found: {file_path}"
     if p.stat().st_size > 1024 * 1024:
@@ -148,9 +148,10 @@ def _read(file_path: str, offset: int = 0, limit: int = 0) -> str:
 
 
 def _write(file_path: str, content: str):
-    p = Path(file_path).resolve()
-    if _SAFE_DIR and not str(p.resolve()).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
+    p = Path(file_path)
+    if not _is_safe_path(p):
         return f"Sandbox: write to {file_path} denied — not inside {_SAFE_DIR}"
+    p = p.resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
     try:
         p.write_text(content, encoding="utf-8")
@@ -170,9 +171,10 @@ def _edit(file_path: str, old_string: str, new_string: str,
         replace_all: Replace ALL occurrences instead of the first.
         preview: If True, return diff without making changes.
     """
-    p = Path(file_path).resolve()
-    if _SAFE_DIR and not str(p.resolve()).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
+    p = Path(file_path)
+    if not _is_safe_path(p):
         return f"Sandbox: edit of {file_path} denied — not inside {_SAFE_DIR}"
+    p = p.resolve()
     if not p.exists():
         return f"File not found: {file_path}"
     try:
@@ -635,8 +637,7 @@ def _project_validate(project_dir: str) -> str:
     if not p.is_dir():
         return f"Project directory not found: {project_dir}"
 
-    # Sandbox check — same as read/write/edit
-    if _SAFE_DIR and not str(p).startswith(str(Path(_SAFE_DIR).resolve()) + os.sep):
+    if not _is_safe_path(p):
         return f"Sandbox: project_validate denied — {project_dir} not inside {_SAFE_DIR}"
 
     results = []
@@ -961,6 +962,22 @@ def configure(sandbox_dir: str | None):
     """
     global _SAFE_DIR
     _SAFE_DIR = str(Path(sandbox_dir).resolve()) if sandbox_dir else None
+
+
+def _is_safe_path(p: Path) -> bool:
+    """Check if a resolved path is inside the configured sandbox directory.
+
+    Uses Path.relative_to() for proper parent-child comparison —
+    immune to case-mismatch tricks (Windows), string-level traversal
+    attacks, and symlink-based escapes since both sides are resolved.
+    """
+    if _SAFE_DIR is None:
+        return True
+    try:
+        p.resolve().relative_to(Path(_SAFE_DIR).resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def get_read_tool_def() -> dict:
