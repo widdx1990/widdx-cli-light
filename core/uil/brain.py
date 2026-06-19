@@ -5,7 +5,9 @@ Orchestrates the UIL pipeline:
   2. Route (select mode + filter tools)
   3. Plan (optional cognitive enhancer)
   4. Execute (delegate to executor via ExecutionContext)
-  5. Feedback (wrap result in ExecutionResult)
+  5. Verify (post-execution quality checks — Phase VERIFY)
+  6. Feedback (wrap result in ExecutionResult)
+  7. Knowledge (record execution outcome)
 
 Contains NO classification logic.
 Contains NO tool selection logic.
@@ -13,14 +15,18 @@ Pure orchestration — delegates everything.
 """
 
 import time
+import logging
+
+logger = logging.getLogger("widdx.uil.brain")
 
 from .analyzer import TaskAnalyzer
 from .router import DecisionRouter
 from .planner import TaskPlanner
 from .contract import (ExecutionMode, ExecutionPlan, RoutingDecision,
                        DecisionStep, ExecutionContext, ExecutionResult,
-                       StepResult, ExecutionMetrics)
+                       StepResult, ExecutionMetrics, VerificationSeverity)
 from .knowledge import KnowledgeBase
+from .verifier import get_verifier
 
 
 # -------------------------------------------------------------------
@@ -164,6 +170,80 @@ class UnifiedIntelligenceLayer:
             )
         elapsed = time.perf_counter() - t0
 
+        # Step 4.5: Verify — post-execution quality checks (Phase VERIFY)
+        # Runs on the raw output before wrapping it in ExecutionResult.
+        # Non-blocking: findings are attached, but execution continues.
+        # Critical findings set result.success = False later.
+        verify_t0 = time.perf_counter()
+        verifier = get_verifier(classification)
+        verifier_context = {}
+        if isinstance(raw, str):
+            # For string output, try to detect HTML content
+            if raw.strip().startswith("<!DOCTYPE html") or raw.strip().startswith("<html"):
+                verifier_context["html_content"] = raw
+            elif "rm " in raw or "chmod " in raw or "wget " in raw:
+                verifier_context["bash_commands"] = raw
+            else:
+                verifier_context["code_content"] = raw
+        verification_report = verifier.verify(
+            result=ExecutionResult(
+                success=True,
+                summary=str(raw) if not isinstance(raw, ExecutionResult) else raw.summary,
+                error=err_msg,
+            ),
+            classification=classification,
+            context=verifier_context if verifier_context else None,
+        )
+        verification_report.execution_time = round(time.perf_counter() - verify_t0, 4)
+
+        # Log verification findings
+        if verification_report.findings:
+            logger.info(
+                "Verification (%s): %s",
+                verification_report.verifier_name,
+                verification_report.summarize(),
+            )
+            for f in verification_report.findings:
+                if not f.passed:
+                    level = (logging.ERROR if f.severity == VerificationSeverity.CRITICAL
+                             else logging.WARNING)
+                    logger.log(level, "  [%s] %s — %s", f.severity.value, f.check_name, f.message)
+
+        # Auto-retry on critical verification failures
+        if verification_report.criticals and not isinstance(raw, ExecutionResult):
+            logger.warning(
+                "Verification CRITICAL — retrying execution with error context. "
+                "(%d criticals)", len(verification_report.criticals)
+            )
+            # Build an error message summarizing critical findings
+            error_hint = "VERIFICATION FAILED:\n" + "\n".join(
+                f"  - {f.message}" for f in verification_report.criticals
+            )
+            try:
+                raw = executor(ctx, user_input + "\n\n" + error_hint, messages)
+                elapsed = time.perf_counter() - t0
+                # Re-run verification on the retry output
+                verifier_context = {}
+                if isinstance(raw, str):
+                    if raw.strip().startswith("<!DOCTYPE html") or raw.strip().startswith("<html"):
+                        verifier_context["html_content"] = raw
+                    elif "rm " in raw or "chmod " in raw or "wget " in raw:
+                        verifier_context["bash_commands"] = raw
+                    else:
+                        verifier_context["code_content"] = raw
+                verification_report = verifier.verify(
+                    result=ExecutionResult(
+                        success=True,
+                        summary=str(raw) if not isinstance(raw, ExecutionResult) else raw.summary,
+                    ),
+                    classification=classification,
+                    context=verifier_context if verifier_context else None,
+                )
+                verification_report.execution_time = round(time.perf_counter() - verify_t0, 4)
+                logger.info("Retry verification: %s", verification_report.summarize())
+            except Exception as retry_err:
+                logger.warning("Retry also failed: %s", retry_err)
+
         # Step 5: Feedback — build ExecutionResult + populate telemetry
         steps_count = len(plan.steps) if plan and plan.steps else 0
         if isinstance(raw, tuple) and len(raw) >= 3:
@@ -195,6 +275,16 @@ class UnifiedIntelligenceLayer:
                 error=err_msg,
             )
         result.execution_time = round(elapsed, 3)
+
+        # Attach verification report to result
+        result.verification = verification_report
+        # If verification found critical issues, mark execution as failed
+        if verification_report.criticals and result.success:
+            result.success = False
+            result.error = (
+                f"Verification failed: {len(verification_report.criticals)} critical "
+                f"issue(s). Run with /debug or check logs for details."
+            )
 
         # Mark step_results as completed/failed based on execution outcome
         if ctx.step_results:

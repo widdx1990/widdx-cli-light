@@ -7,6 +7,7 @@ __pycache__/
 
 # Node
 node_modules/
+**/node_modules/
 package-lock.json
 .venv/
 
@@ -21,8 +22,12 @@ package-lock.json
 # Test workdir
 .test_workdir/
 
-# WIDDX local data
-.widdx/
+# WIDDX local data (but track planning docs)
+.widdx/*
+!.widdx/DESIGN.md
+!.widdx/PLAN.md
+!.widdx/TASKS.md
+!.widdx/ROADMAP.md
 .qoder/
 
 # Claude Code local settings
@@ -52,3 +57,8 @@ chat_*.json
 # Private developer docs (removed from history)
 PLAN_PHASE*.md
 TASKS_PHASE*.md
+
+# Temp test / debug files
+_run_tests.py
+skill.md
+*.backup

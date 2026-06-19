@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>WIDDX Cortex — Intelligent Terminal AI Assistant</title>
+<meta name="description" content="WIDDX Cortex: A sophisticated AI-powered terminal assistant with Unified Intelligence Layer, multi-provider support, and self-learning capabilities.">
+<meta name="keywords" content="AI terminal, CLI assistant, WIDDX, terminal AI, open source, Arabic terminal, UIL">
+<meta name="author" content="Muhammad Muslih">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="product">
+<meta property="og:title" content="WIDDX Cortex">
+<meta property="og:description" content="AI-powered terminal assistant with UIL, multi-provider, and self-learning.">
+<meta property="og:url" content="https://github.com/widdx1990/widdx-cli-light">
+<meta property="og:site_name" content="WIDDX Cortex">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ar_SA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="WIDDX Cortex">
+<meta name="twitter:description" content="100% free AI-powered terminal assistant with UIL intelligence, Arabic RTL, and self-learning.">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"WIDDX Cortex","applicationCategory":"DeveloperApplication","operatingSystem":"Windows,macOS,Linux","description":"AI-powered terminal assistant.","url":"https://github.com/widdx1990/widdx-cli-light","author":{"@type":"Person","name":"Muhammad Muslih"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet"></noscript>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--primary:#00d4aa;--primary-dark:#00a888;--primary-glow:rgba(0,212,170,0.15);--secondary:#7c3aed;--secondary-glow:rgba(124,58,237,0.15);--accent:#f59e0b;--bg-deep:#030712;--bg-dark:#0f172a;--bg-card:#1e293b;--bg-elevated:#334155;--text-primary:#f1f5f9;--text-secondary:#94a3b8;--text-muted:#64748b;--border-subtle:#1e293b;--border-medium:#334155;--radius-sm:6px;--radius-md:12px;--radius-lg:20px;--font-sans:'Inter',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace;--font-arabic:'Cairo',sans-serif}
+html{scroll-behavior:smooth}
+body{background:var(--bg-deep);color:var(--text-primary);font-family:var(--font-sans);line-height:1.6;overflow-x:hidden}
+body.rtl{font-family:var(--font-arabic);direction:rtl}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg-deep)}
+::-webkit-scrollbar-thumb{background:var(--bg-elevated);border-radius:3px}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.gradient-text{background:linear-gradient(135deg,var(--primary),var(--secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.neural-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+
+.scene-hook{position:relative;z-index:1;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.scene-hook .content{text-align:center;position:relative;z-index:2}
+.scene-hook .glow{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60vmin;height:60vmin;background:radial-gradient(circle,rgba(0,212,170,0.08),transparent 70%);animation:gp 4s ease-in-out infinite;pointer-events:none}
+@keyframes gp{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:0.5}50%{transform:translate(-50%,-50%) scale(1.2);opacity:1}}
+.scene-hook .brand{font-family:var(--font-mono);font-weight:800;font-size:clamp(3rem,10vw,8rem);letter-spacing:0.05em;background:linear-gradient(135deg,var(--text-primary),var(--primary),var(--secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;opacity:0;transform:scale(0.8);transition:all 1.5s cubic-bezier(0.34,1.56,0.64,1)}
+.scene-hook .brand.revealed{opacity:1;transform:scale(1)}
+.scene-hook .tagline{font-size:clamp(1rem,2vw,1.4rem);color:var(--text-secondary);margin-top:1.5rem;height:2em;font-weight:300;letter-spacing:0.1em}
+.scene-hook .tagline .cur{display:inline-block;width:2px;height:1.2em;background:var(--primary);margin-left:2px;animation:bl 0.8s step-end infinite;vertical-align:text-bottom}
+@keyframes bl{50%{opacity:0}}
+.scene-hook .hint{position:absolute;bottom:3rem;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:0.5rem;color:var(--text-muted);font-size:0.75rem;font-family:var(--font-mono);opacity:0;animation:fu 1s ease 3s forwards;cursor:pointer}
+.scene-hook .hint .mouse{width:24px;height:38px;border:2px solid var(--text-muted);border-radius:12px;display:flex;justify-content:center;padding-top:6px}
+.scene-hook .hint .mouse .w{width:2px;height:8px;background:var(--primary);border-radius:2px;animation:sw 1.5s ease-in-out infinite}
+@keyframes sw{0%{transform:translateY(0);opacity:1}100%{transform:translateY(10px);opacity:0}}
+@keyframes fu{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
+.ambient-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;background:linear-gradient(180deg,rgba(3,7,18,0.9),transparent);opacity:0;transform:translateY(-100%);transition:all 1s cubic-bezier(0.4,0,0.2,1);pointer-events:none}
+.ambient-nav.visible{opacity:1;transform:translateY(0);pointer-events:auto}
+.ambient-nav .logo{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-weight:700;font-size:1.1rem}
+.ambient-nav .logo .m{width:32px;height:32px;border-radius:6px;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#fff}
+.ambient-nav .links a{color:var(--text-muted);text-decoration:none;font-size:0.85rem;font-weight:500;margin:0 1rem;transition:color 0.3s}
+.ambient-nav .links a:hover{color:var(--text-primary)}
+.ambient-nav .lang-btn{padding:6px 14px;border:1px solid var(--border-subtle);border-radius:6px;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:0.8rem;font-weight:600;transition:all 0.3s}
+.ambient-nav .lang-btn:hover{border-color:var(--primary);color:var(--primary)}
+
+.scene-world{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6rem 2rem}
+.tw{width:100%;max-width:800px;opacity:0;transform:translateY(40px) scale(0.95);transition:all 1.2s cubic-bezier(0.34,1.56,0.64,1)}
+.tw.visible{opacity:1;transform:translateY(0) scale(1)}
+.tw .win{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);overflow:hidden}
+.tw .hdr{display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--bg-dark);border-bottom:1px solid var(--border-subtle)}
+.tw .hdr .d{width:10px;height:10px;border-radius:50%}
+.tw .hdr .dr{background:#ef4444}.tw .hdr .dy{background:#f59e0b}.tw .hdr .dg{background:#22c55e}
+.tw .hdr .lbl{flex:1;text-align:center;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted)}
+.tw .body{padding:1.5rem;font-family:var(--font-mono);font-size:0.85rem;line-height:1.8;min-height:260px}
+.tl{opacity:0;transform:translateX(-10px);transition:all 0.5s ease;margin-bottom:0.25rem}
+.tl.show{opacity:1;transform:translateX(0)}
+.tl .pr{color:var(--primary)}.tl .cm{color:var(--text-primary)}
+.tl .ot{color:var(--text-secondary);margin-left:1.2rem}
+.tl .hl{color:var(--primary)}
+.tl .sc{color:var(--primary);font-weight:600}
+.ws{margin-top:4rem;text-align:center;opacity:0;transform:translateY(20px);transition:all 1s ease 0.5s}
+.ws.visible{opacity:1;transform:translateY(0)}
+.ws p{color:var(--text-secondary);font-size:1.1rem;max-width:600px;margin:0 auto;line-height:1.8}
+
+.scene-explore{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6rem 2rem}
+.term-scroll{width:100%;max-width:750px}
+.tf{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:1rem;opacity:0;transform:translateX(-30px);transition:all 0.8s cubic-bezier(0.4,0,0.2,1)}
+.tf.revealed{opacity:1;transform:translateX(0)}
+.tf:nth-child(even){transform:translateX(30px)}.tf:nth-child(even).revealed{transform:translateX(0)}
+.tf .hd{padding:0.75rem 1.25rem;background:var(--bg-dark);border-bottom:1px solid var(--border-subtle);font-family:var(--font-mono);font-size:0.8rem;display:flex;align-items:center;gap:0.75rem}
+.tf .hd .ic{font-size:1.1rem}.tf .hd .tt{color:var(--primary);font-weight:600}
+.tf .hd .st{margin-left:auto;font-size:0.7rem;padding:2px 8px;border-radius:4px;background:var(--primary-glow);color:var(--primary)}
+.tf .bd{padding:1rem 1.25rem;font-family:var(--font-mono);font-size:0.82rem;line-height:1.7;color:var(--text-secondary)}
+.tf .bd .ac{color:var(--primary)}.tf .bd .sc{color:var(--secondary)}
+
+.scene-uil{position:relative;z-index:1;min-height:120vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8rem 2rem}
+.uc{width:100%;max-width:900px}
+.uh{text-align:center;margin-bottom:4rem;opacity:0;transform:translateY(30px);transition:all 1s ease}
+.uh.visible{opacity:1;transform:translateY(0)}
+.uh h2{font-size:clamp(2rem,4vw,3rem);font-weight:800;margin-bottom:1rem;background:linear-gradient(135deg,var(--text-primary),var(--text-secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.uh p{color:var(--text-secondary);font-size:1rem;max-width:500px;margin:0 auto}
+.up{display:flex;flex-direction:column;gap:1rem}
+.us{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:1.5rem;position:relative;overflow:hidden;opacity:0;transform:translateY(20px) scale(0.98);transition:all 0.8s cubic-bezier(0.4,0,0.2,1)}
+.us.visible{opacity:1;transform:translateY(0) scale(1)}
+.us::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;background:var(--border-subtle);transition:all 0.6s}
+.us.active::before{background:linear-gradient(180deg,var(--primary),var(--secondary))}
+.usr{display:flex;align-items:center;gap:1rem}
+.usn{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:0.85rem;font-weight:700;background:var(--bg-dark);border:2px solid var(--border-subtle);color:var(--text-muted);flex-shrink:0;transition:all 0.6s}
+.us.active .usn{border-color:var(--primary);color:var(--primary);background:var(--primary-glow);box-shadow:0 0 20px var(--primary-glow)}
+.usi{flex:1}.usi .nm{font-weight:700;font-size:1.05rem;margin-bottom:0.2rem}.usi .ds{color:var(--text-secondary);font-size:0.85rem}
+.usd{max-height:0;overflow:hidden;transition:max-height 0.6s ease,opacity 0.6s ease;opacity:0}
+.us.active .usd{max-height:200px;opacity:1;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border-subtle)}
+.usd .cd{font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary);line-height:1.8}
+.usd .cd .c1{color:var(--primary)}.usd .cd .c2{color:var(--secondary)}
+.usd .tg{display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem}
+.usd .tg span{padding:3px 10px;border-radius:4px;font-size:0.7rem;background:var(--bg-dark);color:var(--text-muted);font-family:var(--font-mono)}
+
+.scene-im{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6rem 2rem}
+.ih{text-align:center;margin-bottom:4rem;opacity:0;transform:translateY(30px);transition:all 1s ease}
+.ih.visible{opacity:1;transform:translateY(0)}
+.ih h2{font-size:clamp(2rem,4vw,3rem);font-weight:800;background:linear-gradient(135deg,var(--text-primary),var(--text-secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.bg{width:100%;max-width:900px;opacity:0;transform:translateY(30px);transition:all 1s ease}
+.bg.visible{opacity:1;transform:translateY(0)}
+.br{display:flex;align-items:center;padding:0.75rem 0;border-bottom:1px solid rgba(30,41,59,0.5);opacity:0;transform:translateX(-20px);transition:all 0.6s ease}
+.br.show{opacity:1;transform:translateX(0)}
+.bl{width:120px;flex-shrink:0;font-size:0.85rem;font-weight:600;color:var(--text-primary)}
+.bb{flex:1;display:flex;gap:4px;align-items:center;height:32px}
+.bv{height:20px;border-radius:4px;transition:all 1s cubic-bezier(0.34,1.56,0.64,1);min-width:4px}
+.bv.w{background:linear-gradient(90deg,var(--primary),var(--secondary));box-shadow:0 0 12px var(--primary-glow)}
+.bv.o{background:var(--bg-elevated)}
+.bn{flex-shrink:0;font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono);margin-left:0.75rem;width:80px;text-align:right}
+
+.scene-tr{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6rem 2rem}
+.tt{width:100%;max-width:750px;opacity:0;transform:translateY(40px);transition:all 1s cubic-bezier(0.34,1.56,0.64,1)}
+.tt.visible{opacity:1;transform:translateY(0)}
+.tt .win{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);overflow:hidden}
+.tt .hdr{display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--bg-dark);border-bottom:1px solid var(--border-subtle)}
+.tt .hdr .ds{display:flex;gap:6px}.tt .hdr .ds span{width:10px;height:10px;border-radius:50%}
+.tt .hdr .ds .r{background:#ef4444}.tt .hdr .ds .y{background:#f59e0b}.tt .hdr .ds .g{background:#22c55e}
+.tt .hdr .tl{flex:1;text-align:center;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted)}
+.tt .body{padding:1.5rem;font-family:var(--font-mono);font-size:0.85rem;line-height:1.8;min-height:300px}
+.tt .body .ty{margin-bottom:0.3rem}
+.tf2{text-align:center;margin-top:3rem;max-width:500px;opacity:0;transition:all 1s ease 0.5s}
+.tf2.visible{opacity:1}
+.tf2 p{color:var(--text-secondary);font-size:0.95rem;line-height:1.8}
+
+.scene-fi{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;overflow:hidden}
+.scene-fi .bg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:80vmin;height:80vmin;background:radial-gradient(circle,rgba(0,212,170,0.08),rgba(124,58,237,0.04),transparent 70%);animation:gp 6s ease-in-out infinite;pointer-events:none}
+.scene-fi .content{position:relative;z-index:2}
+.scene-fi .cl{font-family:var(--font-mono);font-weight:800;font-size:clamp(2.5rem,6vw,5rem);background:linear-gradient(135deg,var(--text-primary),var(--primary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;opacity:0;transform:scale(0.9);transition:all 1.5s cubic-bezier(0.34,1.56,0.64,1)}
+.scene-fi .cl.r{opacity:1;transform:scale(1)}
+.scene-fi .cc{margin-top:2rem;opacity:0;transition:all 1s ease 0.5s}
+.scene-fi .cc.visible{opacity:1}
+.scene-fi .cc code{display:block;padding:1rem 2rem;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:clamp(0.8rem,1.5vw,1rem);color:var(--primary);margin:1rem auto;max-width:500px;box-shadow:0 0 30px var(--primary-glow);cursor:pointer;transition:all 0.3s}
+.scene-fi .cc code:hover{border-color:var(--primary);box-shadow:0 0 50px var(--primary-glow)}
+.scene-fi .cta{display:inline-flex;align-items:center;gap:0.75rem;padding:1rem 2.5rem;border-radius:var(--radius-md);background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;font-weight:700;font-size:1rem;text-decoration:none;box-shadow:0 4px 30px var(--primary-glow);transition:all 0.4s;margin-top:2rem}
+.scene-fi .cta:hover{transform:translateY(-3px);box-shadow:0 8px 40px var(--primary-glow)}
+.scene-fi .ft{position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);color:var(--text-muted);font-size:0.75rem;opacity:0.5}
+.scene-fi .ft a{color:var(--primary);text-decoration:none}
+
+@media(max-width:768px){
+  .ambient-nav .links{display:none}
+  .scene-hook .brand{font-size:clamp(2rem,12vw,4rem)}
+  .tw .body{padding:1rem;font-size:0.75rem;min-height:200px}
+  .bl{width:80px;font-size:0.75rem}
+  .scene-fi .cc code{font-size:0.75rem;padding:0.75rem 1rem}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.scene-hook .brand{opacity:1;transform:scale(1)}.scene-hook .hint{display:none}}
+</style>
+</head>
+<body>
+<div class="neural-canvas"><canvas id="nc"></canvas></div>
+
+<section class="scene-hook" id="hook">
+  <div class="glow"></div>
+  <div class="content">
+    <div class="brand" id="br">WIDDX</div>
+    <div class="tagline"><span id="tag"></span><span class="cur"></span></div>
+  </div>
+  <div class="hint" onclick="document.getElementById('world').scrollIntoView({behavior:'smooth'})">
+    <div class="mouse"><div class="w"></div></div><span>ENTER</span>
+  </div>
+</section>
+
+<nav class="ambient-nav" id="nav">
+  <div class="logo"><div class="m">W</div><span>WIDDX</span></div>
+  <div class="links">
+    <a href="#world">Awaken</a><a href="#explore">Discover</a><a href="#core">Intelligence</a><a href="#im">Compare</a><a href="#trust">Install</a>
+  </div>
+  <button class="lang-btn" onclick="tl()" id="lb">&#127482;&#127480; EN</button>
+</nav>
+
+<section class="scene-world" id="world">
+  <div class="tw" id="tw">
+    <div class="win">
+      <div class="hdr">
+        <span class="d dr"></span><span class="d dy"></span><span class="d dg"></span>
+        <span class="lbl">widdx@cortex:~$ system/init</span>
+      </div>
+      <div class="body" id="tb"></div>
+    </div>
+  </div>
+  <div class="ws" id="ws">
+    <p>WIDDX Cortex is an AI-powered terminal intelligence layer that thinks, routes, plans, executes, reflects, and learns — all within your command line.</p>
+  </div>
+</section>
+
+<section class="scene-explore" id="explore">
+  <div class="term-scroll">
+    <div class="tf" data-d="0"><div class="hd"><span class="ic">&#129504;</span><span class="tt">UIL Intelligence</span><span class="st">EXCLUSIVE</span></div><div class="bd"><span class="ac">13</span> task classifiers &middot; intelligent router &middot; planner &middot; knowledge base &middot; <span class="sc">self-learning</span><br><span style="font-size:0.8em;color:var(--text-muted)">→ 5 providers with automatic fallback</span></div></div>
+    <div class="tf" data-d="150"><div class="hd"><span class="ic">&#129302;</span><span class="tt">Agent System</span><span class="st"></span></div><div class="bd">Autonomous mode + expert team for <span class="ac">parallel execution</span>.<br><span style="font-size:0.8em;color:var(--text-muted)">→ 9+ tools: read, write, edit, bash, web, MCP...</span></div></div>
+    <div class="tf" data-d="300"><div class="hd"><span class="ic">&#127760;</span><span class="tt">Arabic RTL & Bilingual</span><span class="st">EXCLUSIVE</span></div><div class="bd">The <span class="ac">only</span> AI terminal with full Arabic RTL.<br><span style="font-size:0.8em;color:var(--text-muted)">→ Instant language switching</span></div></div>
+    <div class="tf" data-d="450"><div class="hd"><span class="ic">&#129434;</span><span class="tt">Self-Reflection</span><span class="st">EXCLUSIVE</span></div><div class="bd">Reviews its work, extracts lessons, <span class="ac">improves over time</span>.<br><span style="font-size:0.8em;color:var(--text-muted)">→ Pattern recognition &middot; Error analysis</span></div></div>
+    <div class="tf" data-d="600"><div class="hd"><span class="ic">&#128260;</span><span class="tt">Session Branching</span><span class="st">EXCLUSIVE</span></div><div class="bd">Experiment without losing progress. Fork, test, <span class="ac">merge</span>.<br><span style="font-size:0.8em;color:var(--text-muted)">→ Non-destructive experimentation</span></div></div>
+    <div class="tf" data-d="750"><div class="hd"><span class="ic">&#128737;</span><span class="tt">5 Safety Layers</span><span class="st"></span></div><div class="bd">Command guard &middot; sandbox &middot; checkpoints &middot; budget &middot; API protection.</div></div>
+  </div>
+</section>
+
+<section class="scene-uil" id="core">
+  <div class="uc">
+    <div class="uh" id="uh"><h2>Unified Intelligence Layer</h2><p>Watch WIDDX think. Each layer activates as you scroll.</p></div>
+    <div class="up">
+      <div class="us" data-s="0"><div class="usr"><div class="usn">01</div><div class="usi"><div class="nm">Analyze <span style="font-weight:400;font-size:0.8rem;color:var(--text-muted)">— 13 classifiers</span></div><div class="ds">Every request classified by intent and complexity.</div></div></div><div class="usd"><div class="cd">→ Class: <span class="c1">Web Design</span><br>→ Intent: Create product page<br>→ Complexity: <span class="c2">High</span></div><div class="tg"><span>NLP</span><span>Classification</span></div></div></div>
+      <div class="us" data-s="1"><div class="usr"><div class="usn">02</div><div class="usi"><div class="nm">Route <span style="font-weight:400;font-size:0.8rem;color:var(--text-muted)">— Smart routing</span></div><div class="ds">Directed to optimal execution mode.</div></div></div><div class="usd"><div class="cd">→ Mode: <span class="c1">Expert Team</span><br>→ Agents: Designer &middot; Developer &middot; UX</div><div class="tg"><span>Autonomous</span><span>Expert Team</span></div></div></div>
+      <div class="us" data-s="2"><div class="usr"><div class="usn">03</div><div class="usi"><div class="nm">Plan <span style="font-weight:400;font-size:0.8rem;color:var(--text-muted)">— Decomposition</span></div><div class="ds">Complex tasks broken into structured steps.</div></div></div><div class="usd"><div class="cd">→ <span class="c1">6 steps</span> identified<br>→ <span class="c2">Parallel execution ready</span></div><div class="tg"><span>Decomposition</span><span>Dependency Graph</span></div></div></div>
+      <div class="us" data-s="3"><div class="usr"><div class="usn">04</div><div class="usi"><div class="nm">Execute <span style="font-weight:400;font-size:0.8rem;color:var(--text-muted)">— Parallel engine</span></div><div class="ds">Multiple agents working simultaneously.</div></div></div><div class="usd"><div class="cd">→ Palette: <span class="c1">#00d4aa</span>, <span class="c2">#7c3aed</span><br>→ <span class="c1">All steps completed</span></div><div class="tg"><span>Read/Write</span><span>Bash</span><span>MCP</span></div></div></div>
+      <div class="us" data-s="4"><div class="usr"><div class="usn">05</div><div class="usi"><div class="nm">Reflect <span style="font-weight:400;font-size:0.8rem;color:var(--text-muted)">— Quality</span></div><div class="ds">Reviews outputs and identifies improvements.</div></div></div><div class="usd"><div class="cd">→ Quality: <span class="c1">Passed</span><br>→ <span class="c2">Improvement:</span> Add micro-interactions</div><div class="tg"><span>Quality Check</span><span>Error Analysis</span></div></div></div>
+      <div class="us" data-s="5"><div class="usr"><div class="usn">06</div><div class="usi"><div class="nm">Learn <span style="font-weight:400;font-size:0.8rem;color:var(--text-muted)">— Knowledge</span></div><div class="ds">Patterns stored for continuous improvement.</div></div></div><div class="usd"><div class="cd">→ <span class="c1">3 new patterns</span> stored<br>→ Applied to future projects</div><div class="tg"><span>Vector Memory</span><span>RAG</span></div></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="scene-im" id="im">
+  <div class="ih" id="ih"><h2>How WIDDX Compares</h2><p>Scroll to see the data unfold.</p></div>
+  <div class="bg" id="bg"></div>
+</section>
+
+<section class="scene-tr" id="trust">
+  <div class="tt" id="tt">
+    <div class="win">
+      <div class="hdr"><div class="ds"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="tl">widdx@cortex:~$ install/live</div></div>
+      <div class="body" id="t2b"></div>
+    </div>
+  </div>
+  <div class="tf2" id="tf2"><p>One command. Zero config. Start building with AI.</p></div>
+</section>
+
+<section class="scene-fi" id="final">
+  <div class="bg"></div>
+  <div class="content">
+    <div class="cl" id="cl">WIDDX</div>
+    <div class="cc" id="cc">
+      <code onclick="navigator.clipboard.writeText('pip install widdx-cortex');this.textContent='✓ Copied!'">pip install widdx-cortex</code><br>
+      <a href="https://github.com/widdx1990/widdx-cli-light" target="_blank" rel="noopener noreferrer" class="cta"><span>→</span> Enter the Intelligence</a>
+    </div>
+  </div>
+  <div class="ft">MIT &middot; <a href="https://github.com/widdx1990" target="_blank" rel="noopener noreferrer">Muhammad Muslih</a></div>
+</section>
+
+<script>
+(function(){
+  const c=document.getElementById('nc');if(!c)return;
+  const x=c.getContext('2d');let n=[],p=[],l=!1,w,h;
+  function r(){
+    w=c.width=window.innerWidth;h=c.height=window.innerHeight;
+    const m=w<768,rm=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+    l=m||rm||(navigator.deviceMemory&&navigator.deviceMemory<4);
+    c.style.display=rm?'none':'block';i();
+  }
+  function i(){n=[];const cnt=Math.min(Math.floor((w*h)/(l?60000:25000)),l?30:80);for(let i=0;i<cnt;i++)n.push({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-0.5)*(l?0.2:0.5),vy:(Math.random()-0.5)*(l?0.2:0.5),r:Math.random()*(l?1:2)+1,ph:Math.random()*Math.PI*2})}
+  function d(){
+    x.clearRect(0,0,w,h);
+    n.forEach(o=>{o.x+=o.vx;o.y+=o.vy;o.ph+=0.02;if(o.x<0||o.x>w)o.vx*=-1;if(o.y<0||o.y>h)o.vy*=-1;const p=Math.sin(o.ph)*0.5+1,g=x.createRadialGradient(o.x,o.y,0,o.x,o.y,o.r*p*2);g.addColorStop(0,'rgba(0,212,170,0.8)');g.addColorStop(0.5,'rgba(0,212,170,0.3)');g.addColorStop(1,'rgba(0,212,170,0)');x.beginPath();x.arc(o.x,o.y,o.r*p*2,0,Math.PI*2);x.fillStyle=g;x.fill()});
+    for(let i=0;i<n.length;i++){for(let j=i+1;j<n.length;j++){const dx=n[i].x-n[j].x,dy=n[i].y-n[j].y,d=Math.sqrt(dx*dx+dy*dy);if(d<150){x.strokeStyle=`rgba(0,212,170,${(1-d/150)*0.3})`;x.lineWidth=0.5;x.beginPath();x.moveTo(n[i].x,n[i].y);x.lineTo(n[j].x,n[j].y);x.stroke()}}}
+    if(Math.random()<0.08&&n.length>1){const s=n[Math.floor(Math.random()*n.length)],e=n[Math.floor(Math.random()*n.length)];p.push({x:s.x,y:s.y,tx:e.x,ty:e.y,p:0,s:0.015+Math.random()*0.02})}
+    p=p.filter(o=>{o.p+=o.s;if(o.p>=1)return false;const x2=o.x+(o.tx-o.x)*o.p,y2=o.y+(o.ty-o.y)*o.p;x.beginPath();x.arc(x2,y2,2,0,Math.PI*2);x.fillStyle='rgba(124,58,237,0.8)';x.fill();return true});
+    requestAnimationFrame(d);
+  }
+  window.addEventListener('resize',r);r();d();
+})();
+
+const sl=ms=>new Promise(r=>setTimeout(r,ms));
+
+(async function(){
+  await sl(800);document.getElementById('br').classList.add('revealed');await sl(1500);
+  const t=document.getElementById('tag'),s='Intelligent Terminal AI Assistant';
+  for(let i=0;i<s.length;i++){t.textContent+=s[i];await sl(45)}
+})();
+
+(async function(){
+  const o=new IntersectionObserver(async e=>{for(let a of e){if(a.isIntersecting){
+    document.getElementById('nav').classList.add('visible');
+    document.getElementById('tw').classList.add('visible');await sl(600);
+    const b=document.getElementById('tb');
+    const ls=['<span class="tl show"><span class="pr">$</span> <span class="cm">system/init</span></span>','<span class="tl show"><span class="ot"><span class="hl">✓</span> cortex kernel loaded</span></span>','<span class="tl show"><span class="ot"><span class="hl">✓</span> 13 classifiers active</span></span>','<span class="tl show"><span class="ot"><span class="hl">✓</span> router initialized</span></span>','<span class="tl show"><span class="ot"><span class="hl">✓</span> knowledge base connected</span></span>','<span class="tl show"><span class="ot"><span class="sc">✓ WIDDX Cortex ready</span></span></span>','<span class="tl show"><span class="ot">Awaiting your commands...</span></span>'];
+    b.innerHTML='';for(let l of ls){b.innerHTML+=l;await sl(200)}
+    await sl(400);document.getElementById('ws').classList.add('visible');o.disconnect();
+  }}},{threshold:0.2});o.observe(document.getElementById('world'));
+})();
+
+document.querySelectorAll('.tf').forEach(f=>{
+  const o=new IntersectionObserver(e=>{e.forEach(a=>{if(a.isIntersecting){setTimeout(()=>f.classList.add('revealed'),parseInt(f.dataset.d)||0)}})},{threshold:0.15});o.observe(f);
+});
+
+(function(){
+  const h=document.getElementById('uh'),ss=document.querySelectorAll('.us');let a=!1;
+  new IntersectionObserver(e=>{e.forEach(o=>{if(o.isIntersecting&&!a){a=!0;h.classList.add('visible');ss.forEach((s,i)=>{setTimeout(()=>s.classList.add('visible'),i*200)})}})},{threshold:0.1}).observe(document.getElementById('core'));
+  new IntersectionObserver(e=>{e.forEach(o=>{if(o.isIntersecting){const i=parseInt(o.target.dataset.s);o.target.classList.add('active');ss.forEach((s,j)=>{if(j>i)s.classList.remove('active')})}})},{threshold:0.5}).observe(document.getElementById('core'));
+  ss.forEach(s=>{new IntersectionObserver(e=>{e.forEach(o=>{if(o.isIntersecting){const i=parseInt(o.target.dataset.s);o.target.classList.add('active');ss.forEach((x,j)=>{if(j>i)x.classList.remove('active')})}})},{threshold:0.5}).observe(s)});
+})();
+
+(function(){
+  const data=[{l:'Price',w:100,o:[20,20,30,40,100,100]},{l:'Open Source',w:100,o:[0,0,0,0,100,100]},{l:'No Account',w:100,o:[0,0,0,0,0,0]},{l:'Arabic RTL',w:100,o:[0,0,0,0,0,0],x:!0},{l:'UIL Intel.',w:100,o:[0,0,0,0,0,0],x:!0},{l:'Self-Learn',w:100,o:[0,0,0,20,0,0],x:!0},{l:'Sandbox',w:100,o:[0,0,0,0,0,0]},{l:'Local GGUF',w:100,o:[0,0,0,0,50,100]},{l:'Auto Proxy',w:100,o:[0,0,0,0,0,0],x:!0}];
+  const names=['Claude Code','Cursor','Windsurf','Copilot','Open Interpreter','Continue'];
+  const g=document.getElementById('bg');
+  data.forEach((d,i)=>{
+    const r=document.createElement('div');r.className='br';
+    const sc=100/Math.max(d.w,Math.max(...d.o,1));
+    let b=`<div class="bv w" style="width:${d.w*sc}%">${d.x?'<span style="position:absolute;right:-16px;top:-10px;font-size:0.6rem;color:var(--accent)">&#10022;</span>':''}</div>`;
+    d.o.forEach(v=>{b+=`<div class="bv o" style="width:${v*sc}%"></div>`});
+    r.innerHTML=`<div class="bl">${d.l}</div><div class="bb">${b}</div><div class="bn" style="opacity:${i===0?1:0}">${i===0?names.map(n=>`<div style="margin:2px 0;font-size:0.65rem;color:var(--text-muted)">${n}</div>`).join(''):''}</div>`;
+    g.appendChild(r);
+  });
+  new IntersectionObserver(e=>{e.forEach(o=>{if(o.isIntersecting){document.getElementById('ih').classList.add('visible');g.classList.add('visible');g.querySelectorAll('.br').forEach((r,i)=>{setTimeout(()=>r.classList.add('show'),i*100)})}})},{threshold:0.1}).observe(document.getElementById('im'));
+})();
+
+(async function(){
+  new IntersectionObserver(async e=>{for(let a of e){if(a.isIntersecting){
+    document.getElementById('tt').classList.add('visible');await sl(400);
+    const b=document.getElementById('t2b');
+    const ls=['<span class="ty"><span style="color:var(--primary)">$</span> pip install widdx-cortex</span>','<span class="ty"><span style="color:var(--text-secondary)">Collecting widdx-cortex...</span></span>','<span class="ty"><span style="color:var(--text-secondary)">Downloading 2.4 MB...</span></span>','<span class="ty"><span style="color:var(--text-secondary)">Installing dependencies...</span></span>','<span class="ty"><span style="color:var(--text-secondary)">✓ 12 dependencies satisfied</span></span>','<span class="ty"><span style="color:var(--text-secondary)">Building UIL kernel...</span></span>','<span class="ty"><span style="color:var(--primary);font-weight:600">✓ Successfully installed</span></span>','<span class="ty"><br></span>','<span class="ty"><span style="color:var(--primary)">$</span> widdx-tui</span>','<span class="ty"><span style="color:var(--primary)">✓ WIDDX Cortex initialized</span></span>','<span class="ty"><span style="color:var(--text-secondary)">✓ UIL Pipeline active</span></span>','<span class="ty"><span style="color:var(--text-secondary)">✓ Ready. <span style="color:var(--primary)">Type a command</span>.</span></span>'];
+    b.innerHTML='';for(let l of ls){b.innerHTML+=l;await sl(200)}
+    await sl(500);document.getElementById('tf2').classList.add('visible');
+  }}})()
+  .observe(document.getElementById('trust'));
+})();
+
+(function(){
+  new IntersectionObserver(e=>{e.forEach(o=>{if(o.isIntersecting){setTimeout(()=>document.getElementById('cl').classList.add('r'),300);setTimeout(()=>document.getElementById('cc').classList.add('visible'),1500)}})},{threshold:0.3}).observe(document.getElementById('final'));
+})();
+
+let cl='en';
+function tl(){
+  cl=cl==='en'?'ar':'en';const ar=cl==='ar';
+  document.body.classList.toggle('rtl',ar);
+  document.documentElement.lang=ar?'ar':'en';
+  document.documentElement.dir=ar?'rtl':'ltr';
+  document.getElementById('lb').textContent=ar?'&#127464;&#127464; &#1593;&#1585;&#1576;&#1610;':'&#127482;&#127480; EN';
+}
+</script>
+</body>
+</html>

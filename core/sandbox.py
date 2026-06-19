@@ -18,10 +18,12 @@ Usage:
 
 from __future__ import annotations
 
-import os, platform, shutil, subprocess, time
+import os, platform, shutil, subprocess, time, shlex, logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("widdx.sandbox")
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +153,29 @@ class SandboxExecutor:
 
         return self._run(docker_cmd, timeout, env, mode="docker")
 
+    @staticmethod
+    def _split_command(command: str) -> tuple[list[str] | str, bool]:
+        """Split a command string safely.
+
+        Returns:
+            (command_list_or_string, needs_shell)
+            - If the command has no shell metacharacters, returns a list + False.
+            - If it has pipes/redirects/variables, returns the string + True.
+        """
+        # Shell metacharacters that require shell=True
+        SHELL_CHARS = {"|", ">", "<", "&&", "||", ";", "$", "`", "*", "?", "[", "]", "~", "!", "{", "}"}
+        try:
+            parts = shlex.split(command)
+            # Check each part for embedded shell metacharacters
+            for part in parts:
+                for char in SHELL_CHARS:
+                    if char in part:
+                        return command, True  # needs shell
+            return parts, False  # safe for list-based execution
+        except ValueError:
+            # shlex couldn't parse — likely unbalanced quotes, use shell
+            return command, True
+
     def _execute_subprocess(
         self, command: str, timeout: int, env: dict | None,
     ) -> SandboxResult:
@@ -159,10 +184,15 @@ class SandboxExecutor:
         if env:
             merged_env.update(env)
 
+        # Safely split command — avoid shell=True when possible
+        cmd, needs_shell = self._split_command(command)
+        if needs_shell:
+            logger.debug("shell=True required for: %.100s", command)
+
         try:
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                cmd,
+                shell=needs_shell,
                 cwd=str(self._cwd),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -190,6 +220,30 @@ class SandboxExecutor:
                 mode="subprocess",
             )
         except FileNotFoundError:
+            # FileNotFoundError means the command is a shell built-in
+            # (e.g. echo, dir on Windows) or not in PATH.
+            # Retry with shell=True as fallback.
+            if not needs_shell:
+                logger.debug("shell=False failed, retrying with shell=True: %.100s", command)
+                try:
+                    proc = subprocess.Popen(
+                        command,  # original string
+                        shell=True,
+                        cwd=str(self._cwd),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        env=merged_env,
+                    )
+                    stdout, stderr = proc.communicate(timeout=timeout)
+                    return SandboxResult(
+                        stdout=stdout or "",
+                        stderr=stderr or "",
+                        exit_code=proc.returncode,
+                        mode="subprocess",
+                    )
+                except Exception as retry_err:
+                    logger.debug("Shell fallback also failed: %s", retry_err)
             return SandboxResult(
                 stderr="Command not found",
                 exit_code=127,

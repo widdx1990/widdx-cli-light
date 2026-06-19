@@ -14,19 +14,74 @@ import json
 import time
 import logging
 import asyncio
+import os
+import secrets
 from typing import Optional
 from contextlib import asynccontextmanager
+from collections import OrderedDict
 
 try:
-    from fastapi import FastAPI, HTTPException, Query
+    from fastapi import FastAPI, HTTPException, Query, Depends
+    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
 except ImportError:
     print("❌ FastAPI required. Install: pip install fastapi uvicorn")
     sys.exit(1)
 
-# ── WIDDX Core imports ──────────────────────────────────────
-from core import config, tools
+logger = logging.getLogger("widdx.api")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s %(message)s")
+
+# ── API Security ───────────────────────────────────────────────
+
+_API_KEY: str = os.environ.get("WIDDX_API_KEY", "")
+if not _API_KEY:
+    _API_KEY = secrets.token_urlsafe(32)
+    logger.info("No WIDDX_API_KEY set. Generated ephemeral key for this session:")
+    logger.info("  API Key: %s", _API_KEY)
+    logger.info("  Use header: Authorization: Bearer %s", _API_KEY)
+
+security_scheme = HTTPBearer(auto_error=False)
+
+
+def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)) -> None:
+    """Dependency: require valid API key on every endpoint."""
+    if credentials is None or credentials.credentials != _API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
+# ── Rate Limiter (in-memory sliding window) ────────────────────
+
+class RateLimiter:
+    """Simple in-memory rate limiter using sliding window."""
+
+    def __init__(self, max_requests: int = 60, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self._buckets: dict[str, list[float]] = {}
+
+    def check(self, key: str) -> bool:
+        now = time.monotonic()
+        cutoff = now - self.window
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            self._buckets[key] = [now]
+            return True
+        self._buckets[key] = [t for t in bucket if t > cutoff]
+        if len(self._buckets[key]) >= self.max_requests:
+            return False
+        self._buckets[key].append(now)
+        return True
+
+
+_rate_limiter = RateLimiter()
+
+
+def rate_limit(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)) -> None:
+    """Dependency: apply rate limiting per API key (or IP if no key)."""
+    client_id = credentials.credentials if credentials else "anonymous"
+    if not _rate_limiter.check(client_id):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded.")
 from core.config.settings import load as load_config, save as save_config
 from core.providers.providers import (
     create_provider, get_available_models, resolve_model,
@@ -41,9 +96,6 @@ from core.auto_setup import detect_project_deps, learn_project
 from core.skills import skill_manager
 from core.mcp.client import get_mcp_manager
 from core.chat import run_stream_turn
-
-logger = logging.getLogger("widdx.api")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s %(message)s")
 
 # ── App State ────────────────────────────────────────────────
 class AppState:
@@ -113,17 +165,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Restrict CORS to local origins by default; override via WIDDX_CORS_ORIGINS env var
+_allowed_origins = os.environ.get("WIDDX_CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _allowed_origins.split(",") if o.strip()],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ─── Health ──────────────────────────────────────────────────
 @app.get("/api/health")
-async def health():
+async def health(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     return {
         "status": "ok",
         "version": "3.0.0",
@@ -135,7 +189,7 @@ async def health():
 
 # ─── Chat ────────────────────────────────────────────────────
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     if not req.message.strip():
         raise HTTPException(400, "message is required")
 
@@ -209,7 +263,7 @@ async def chat(req: ChatRequest):
 
 # ─── Providers ───────────────────────────────────────────────────
 @app.get("/api/providers")
-async def list_providers():
+async def list_providers(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     return {
         "current": state.provider.name,
         "model": state.provider.model,
@@ -218,7 +272,7 @@ async def list_providers():
     }
 
 @app.post("/api/providers/switch")
-async def switch_provider(req: ProviderSwitch):
+async def switch_provider(req: ProviderSwitch, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     global state
     try:
         new_provider = create_provider({
@@ -237,38 +291,38 @@ async def switch_provider(req: ProviderSwitch):
         raise HTTPException(400, f"Failed to switch provider: {e}")
 
 @app.get("/api/sessions")
-async def list_sessions():
+async def list_sessions(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     return {"messages": len(state.messages), "turns": state.state.get("turns", 0)}
 
 @app.delete("/api/sessions")
-async def clear_session():
+async def clear_session(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     state.messages = []
     state.state["turns"] = 0
     state.state["cost"] = 0.0
     return {"status": "cleared"}
 
 @app.get("/api/memory")
-async def list_memory(query: str = ""):
+async def list_memory(query: str = "", _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     mem = MemoryStore()
     if query:
         return {"facts": mem.search(query)}
     return {"facts": mem.list_all(), "total": mem.total()}
 
 @app.post("/api/memory")
-async def save_memory(fact: MemoryFact):
+async def save_memory(fact: MemoryFact, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     mem = MemoryStore()
     mem.save(fact.name, fact.content, {"type": fact.type})
     return {"status": "saved", "name": fact.name}
 
 @app.delete("/api/memory/{name}")
-async def delete_memory(name: str):
+async def delete_memory(name: str, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     mem = MemoryStore()
     if mem.delete(name):
         return {"status": "deleted"}
     raise HTTPException(404, f"Memory '{name}' not found")
 
 @app.get("/api/tools")
-async def list_tools():
+async def list_tools(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     base = [{"name": t["name"], "description": t.get("description", "")[:100]} for t in tools.TOOL_DEFINITIONS]
     try:
         mcp_tools = [{"name": t["name"], "description": t.get("description", "")[:100]} for t in state.mcp_mgr.get_all_tool_definitions()]
@@ -277,11 +331,11 @@ async def list_tools():
     return {"base": base, "mcp": mcp_tools, "total": len(base) + len(mcp_tools)}
 
 @app.get("/api/project/docs")
-async def get_docs():
+async def get_docs(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     return load_docs(Path.cwd().resolve())
 
 @app.post("/api/project/docs")
-async def update_docs(update: DocUpdate):
+async def update_docs(update: DocUpdate, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     valid = ("PLAN.md", "DESIGN.md", "TASKS.md", "ROADMAP.md")
     if update.doc not in valid:
         raise HTTPException(400, f"Invalid doc. Use: {', '.join(valid)}")
@@ -291,7 +345,7 @@ async def update_docs(update: DocUpdate):
     raise HTTPException(500, "Failed to update doc")
 
 @app.get("/api/project/status")
-async def project_status():
+async def project_status(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     ctx = state.scanner.build_context_block()
     deps = detect_project_deps(Path.cwd().resolve())
     return {
@@ -302,9 +356,10 @@ async def project_status():
 def main():
     import uvicorn
     port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 8000
-    print(f"🚀 WIDDX API running at http://localhost:{port}")
-    print(f"   Docs: http://localhost:{port}/docs")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    host = os.environ.get("WIDDX_API_HOST", "127.0.0.1")
+    print(f"🚀 WIDDX API running at http://{host}:{port}")
+    print(f"   Docs: http://{host}:{port}/docs")
+    uvicorn.run(app, host=host, port=port)
 
 if __name__ == "__main__":
     main()

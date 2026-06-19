@@ -14,6 +14,10 @@ import subprocess
 import threading
 import time
 import os
+import base64
+import hashlib
+import socket
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -25,7 +29,7 @@ USER_HOME = os.environ.get("USERPROFILE", "").replace("\\", "/") or os.environ.g
 
 DEFAULT_MCP_SERVERS = [
     {"name": "filesystem", "command": "node",
-     "args": ["{PROJECT_ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js", "{CWD}", "{USER_HOME}"]},
+     "args": ["{PROJECT_ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js", "{CWD}"]},
     {"name": "memory", "command": "node",
      "args": ["{PROJECT_ROOT}/node_modules/@modelcontextprotocol/server-memory/dist/index.js"]},
     {"name": "fetch", "command": "uvx",
@@ -577,10 +581,64 @@ def get_mcp_manager() -> MCPClientManager:
 
 
 # ---------------------------------------------------------------------------
-# OAuth token storage for MCP servers
+# OAuth token storage for MCP servers — encrypted at rest
 # ---------------------------------------------------------------------------
 
 _MCP_TOKENS: dict[str, str] = {}
+_MCP_KEY: bytes | None = None
+
+
+def _derive_key() -> bytes:
+    """Derive a machine-local encryption key using PBKDF2.
+
+    Uses MAC address + hostname as the seed, so the key is:
+    - Deterministic for the same machine (tokens survive restarts)
+    - Not portable to another machine (security boundary)
+    - Resistant to casual file reading
+
+    Returns:
+        32 bytes (256 bits) for AES-256-compatible key.
+    """
+    seed = f"{uuid.getnode():016x}-{socket.gethostname()}"
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        seed.encode("utf-8"),
+        salt=b"widdx-mcp-token-v1",
+        iterations=600_000,  # OWASP 2023 recommendation for PBKDF2-HMAC-SHA256
+        dklen=32,
+    )
+
+
+def _get_key() -> bytes:
+    """Get the cached encryption key."""
+    global _MCP_KEY
+    if _MCP_KEY is None:
+        _MCP_KEY = _derive_key()
+    return _MCP_KEY
+
+
+def _encrypt_token(plaintext: str) -> str:
+    """Encrypt a token string using XOR with derived key + base64.
+
+    Format: base64(salt(16) + ciphertext)
+    Each encryption uses a random salt, so the same token
+    produces different ciphertext each time.
+    """
+    key = _get_key()
+    salt = os.urandom(16)
+    data = plaintext.encode("utf-8")
+    # XOR each byte with a derived keystream byte
+    cipher = bytes(data[i] ^ key[i % len(key)] ^ salt[i % len(salt)] for i in range(len(data)))
+    return base64.b64encode(salt + cipher).decode("ascii")
+
+
+def _decrypt_token(encoded: str) -> str:
+    """Reverse _encrypt_token()."""
+    key = _get_key()
+    raw = base64.b64decode(encoded)
+    salt, cipher = raw[:16], raw[16:]
+    data = bytes(cipher[i] ^ key[i % len(key)] ^ salt[i % len(salt)] for i in range(len(cipher)))
+    return data.decode("utf-8")
 
 
 def _get_token_path() -> Path:
@@ -588,21 +646,30 @@ def _get_token_path() -> Path:
 
 
 def load_mcp_tokens():
-    """Load stored OAuth tokens from .widdx/mcp_tokens.json."""
+    """Load and decrypt stored OAuth tokens from .widdx/mcp_tokens.json."""
     global _MCP_TOKENS
     path = _get_token_path()
     if path.exists():
         try:
-            _MCP_TOKENS = json.loads(path.read_text())
+            raw: dict[str, str] = json.loads(path.read_text())
+            decrypted = {}
+            for server, token in raw.items():
+                try:
+                    decrypted[server] = _decrypt_token(token)
+                except Exception:
+                    logger.debug("MCP: failed to decrypt token for %s, skipping", server)
+                    continue
+            _MCP_TOKENS = decrypted
         except Exception:
             _MCP_TOKENS = {}
 
 
 def save_mcp_token(server_name: str, token: str):
-    """Store an OAuth token for a server."""
+    """Encrypt and store an OAuth token for a server."""
     load_mcp_tokens()
     _MCP_TOKENS[server_name] = token
-    _get_token_path().write_text(json.dumps(_MCP_TOKENS, indent=2))
+    encrypted = {s: _encrypt_token(t) for s, t in _MCP_TOKENS.items()}
+    _get_token_path().write_text(json.dumps(encrypted, indent=2))
 
 
 def get_mcp_token(server_name: str) -> Optional[str]:

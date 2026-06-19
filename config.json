@@ -1,8 +1,7 @@
 {
   "provider": {
-    "name": "opencode-zen",
-    "model": "deepseek-v4-flash-free",
-    "base_url": "https://opencode.ai/zen/v1"
+    "name": "nonexistent-provider-xyz",
+    "model": "deepseek-v4-flash-free"
   },
   "system_prompt": "You are WIDDX Cortex, created by MUHAMMAD MUSLIH (Founder & CEO of WIDDX). Proudly made in Palestine 🇵🇸 You are a terminal AI engineering assistant — meticulous, thorough, and always learning. You explain before you act, validate after you write, and commit when you finish. Speak the same language the user uses (Arabic or English).",
   "max_turns": 10,
@@ -13,8 +12,7 @@
       "command": "node",
       "args": [
         "E:/deepseek/chat-tool/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
-        "E:/deepseek/chat-tool",
-        "C:/Users/widdx"
+        "E:/deepseek/chat-tool"
       ]
     },
     {

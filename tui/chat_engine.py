@@ -242,6 +242,9 @@ class ChatEngine:
             state.turns = agent.state.get("turns", state.turns)
             state.messages.append({"role": "assistant", "content": summary})
             state.save_session()
+
+            # Verify agent output
+            self._verify_output(summary, state)
             self.app.post_message(ResultMsg(summary))
         except Exception as e:
             self.app.post_message(ErrorMsg(str(e)))
@@ -258,8 +261,47 @@ class ChatEngine:
             summary = team.run(task)
             state.messages.append({"role": "assistant", "content": summary})
             state.save_session()
+
+            # Verify expert team output
+            self._verify_output(summary, state)
             self.app.post_message(ResultMsg(summary))
         except Exception as e:
             self.app.post_message(ErrorMsg(str(e)))
         finally:
             self.app.call_from_thread(self._finish)
+
+    # ── Verification helper ─────────────────────────────────
+    def _verify_output(self, summary: str, state) -> None:
+        """Run UIL verification on agent/expert output and post warnings."""
+        try:
+            from core.uil.verifier import get_verifier
+            from core.uil.contract import (
+                ClassificationResult, ExecutionResult, TaskType, Domain,
+            )
+            # Use a generic classification for verification
+            cls = ClassificationResult(
+                task_type=TaskType.CODE_WRITE,
+                domain=Domain.CODE,
+                confidence=0.8,
+                complexity=0.5,
+                reasoning="TUI output verification",
+            )
+            verifier = get_verifier(cls)
+            ctx = {}
+            if "<!DOCTYPE html" in summary or "<html" in summary[:200]:
+                ctx["html_content"] = summary
+            elif "rm " in summary or "wget " in summary or "chmod " in summary:
+                ctx["bash_commands"] = summary
+            else:
+                ctx["code_content"] = summary
+            report = verifier.verify(
+                ExecutionResult(success=True, summary=summary),
+                classification=cls, context=ctx or None,
+            )
+            if report.criticals:
+                msg = "🔴 " + "\n".join(f.message[:80] for f in report.criticals[:3])
+                self.app._log_message("system", f"Verification CRITICAL:\n{msg}")
+            elif report.errors:
+                self.app._log_message("system", f"⚠️ Verification: {len(report.errors)} issue(s)")
+        except Exception:
+            pass  # verification is advisory in TUI

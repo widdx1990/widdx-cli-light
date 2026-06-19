@@ -413,7 +413,8 @@ def _validate(file_path: str) -> str:
 
     Supports: PHP (php -l), Python (compile), JavaScript (node --check),
     TypeScript (tsc --noEmit), Ruby (ruby -c), Go (gofmt), Dart (dart analyze),
-    JSON (json module), CSS (cssutils), YAML (yaml.safe_load),
+    C (gcc/clang -fsyntax-only), C++ (g++/clang++ -fsyntax-only),
+    C# (csc/mcs), JSON (json module), CSS (cssutils), YAML (yaml.safe_load),
     and basic bracket matching fallback.
 
     When a CLI tool is missing, tries to auto-install it (e.g. TypeScript via npm).
@@ -525,6 +526,60 @@ def _validate(file_path: str) -> str:
                 return f"❌ Go syntax error:\n{(r.stderr or r.stdout).strip()[:500]}"
         except (FileNotFoundError, subprocess.TimeoutExpired):
             logger.debug("linter: go not installed / timed out")
+
+    # C (gcc -fsyntax-only)
+    if ext in (".c", ".h"):
+        for compiler in ("gcc", "clang"):
+            try:
+                r = subprocess.run(
+                    [compiler, "-fsyntax-only", "-Wall", "-Werror", str(p)],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    return f"✅ C syntax: No errors in {file_path} ({compiler})"
+                return f"❌ C syntax error ({compiler}):\n{(r.stderr or r.stdout).strip()[:500]}"
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                logger.debug("linter: %s timed out on %s", compiler, file_path)
+                continue
+        logger.debug("linter: no C compiler found (tried gcc, clang)")
+
+    # C++ (g++ -fsyntax-only)
+    if ext in (".cpp", ".cc", ".cxx", ".hpp"):
+        for compiler in ("g++", "clang++"):
+            try:
+                r = subprocess.run(
+                    [compiler, "-fsyntax-only", "-Wall", "-Werror", "-std=c++17", str(p)],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    return f"✅ C++ syntax: No errors in {file_path} ({compiler})"
+                return f"❌ C++ syntax error ({compiler}):\n{(r.stderr or r.stdout).strip()[:500]}"
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                logger.debug("linter: %s timed out on %s", compiler, file_path)
+                continue
+        logger.debug("linter: no C++ compiler found (tried g++, clang++)")
+
+    # C# (csc / mcs)
+    if ext == ".cs":
+        for runner, args in [
+            ("csc", ["csc", "-nologo", "-target:exe", str(p)]),
+            ("mcs", ["mcs", "-target:exe", str(p)]),
+        ]:
+            try:
+                r = subprocess.run(args, capture_output=True, text=True, timeout=30)
+                if r.returncode == 0:
+                    return f"✅ C# syntax: No errors in {file_path} ({runner})"
+                return f"❌ C# syntax error ({runner}):\n{(r.stderr or r.stdout).strip()[:500]}"
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                logger.debug("linter: %s timed out on %s", runner, file_path)
+                continue
+        logger.debug("linter: no C# compiler found (tried csc, mcs)")
 
     # Dart
     if ext == ".dart":

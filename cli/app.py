@@ -342,6 +342,22 @@ class CLIApp:
         try:
             result, decision = uil.process(user_input, messages=self.messages, executors=executors)
             summary = result.summary
+
+            # Show verification warnings/errors to user
+            if result and result.verification and result.verification.findings:
+                criticals = result.verification.criticals
+                errors = result.verification.errors
+                warnings = result.verification.warnings
+                if criticals:
+                    self.show_error(
+                        f"🔴 Verification: {len(criticals)} critical issue(s):\n"
+                        + "\n".join(f"  • {f.message}" for f in criticals[:3])
+                    )
+                if errors and not criticals:
+                    self.show_system(
+                        f"⚠️ Verification: {len(errors)} issue(s) found\n"
+                        + "\n".join(f"  • {f.message}" for f in errors[:3])
+                    )
         except Exception as e:
             show_error(str(e))
             summary = f"Error: {e}"

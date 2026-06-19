@@ -245,8 +245,8 @@ class MainScreen(Screen):
         elif action == "memories":
             await self._show_memories()
         elif action == "sessions":
-            from .screens.session_crud import SessionCRUDScreen
-            self.app.push_screen(SessionCRUDScreen(), self._on_session_result)
+            from .screens.session_crud import SessionListScreen
+            self.app.push_screen(SessionListScreen(), self._on_session_result)
         elif action == "settings":
             from .screens.settings import SettingsScreen
             self.app.push_screen(SettingsScreen(), self._on_settings_result)

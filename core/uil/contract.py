@@ -159,6 +159,7 @@ class ExecutionResult:
     cost: float = 0.0
     execution_time: float = 0.0                # seconds, measured by brain wrapper
     error: Optional[str] = None
+    verification: "VerificationReport | None" = None  # Phase VERIFY
 
 
 # -------------------------------------------------------------------
@@ -265,3 +266,81 @@ class ExecutionMetrics:
     completed_steps: int = 0
     failed_steps: int = 0
     tools_used_count: int = 0
+
+
+# -------------------------------------------------------------------
+# Verification Contracts (Phase VERIFY)
+# -------------------------------------------------------------------
+
+class VerificationSeverity(Enum):
+    """How serious a verification finding is."""
+    CRITICAL = "critical"     # Output is broken — must fix
+    ERROR = "error"           # Functional problem
+    WARNING = "warning"       # Should improve
+    INFO = "info"             # Nice-to-have
+
+
+@dataclass
+class VerificationFinding:
+    """A single thing the verifier found."""
+    check_name: str                              # e.g. "html_structure", "js_css_binding"
+    severity: VerificationSeverity
+    message: str                                 # Human-readable description
+    location: str = ""                           # e.g. file path, component name
+    suggestion: str = ""                         # How to fix it
+    passed: bool = True                          # True = this check passed
+
+
+@dataclass
+class VerificationReport:
+    """Complete verification output for one execution."""
+    findings: list[VerificationFinding] = field(default_factory=list)
+    verifier_name: str = "generic"               # Which verifier ran
+    execution_time: float = 0.0                  # Seconds spent verifying
+    passed_all: bool = True                      # True if no errors/criticals
+
+    @property
+    def criticals(self) -> list[VerificationFinding]:
+        return [f for f in self.findings if f.severity == VerificationSeverity.CRITICAL]
+
+    @property
+    def errors(self) -> list[VerificationFinding]:
+        return [f for f in self.findings if f.severity == VerificationSeverity.ERROR]
+
+    @property
+    def warnings(self) -> list[VerificationFinding]:
+        return [f for f in self.findings if f.severity == VerificationSeverity.WARNING]
+
+    def add(self, check_name: str, severity: VerificationSeverity,
+            message: str, location: str = "", suggestion: str = "",
+            passed: bool = True) -> "VerificationFinding":
+        """Add a finding and return it."""
+        f = VerificationFinding(
+            check_name=check_name,
+            severity=severity,
+            message=message,
+            location=location,
+            suggestion=suggestion,
+            passed=passed,
+        )
+        self.findings.append(f)
+        if severity in (VerificationSeverity.CRITICAL, VerificationSeverity.ERROR) and not passed:
+            self.passed_all = False
+        return f
+
+    def summarize(self) -> str:
+        """One-line summary of verification results."""
+        total = len(self.findings)
+        passed = sum(1 for f in self.findings if f.passed)
+        failed = total - passed
+        if total == 0:
+            return "[verify] No checks ran"
+        return (
+            f"[verify] {self.verifier_name}: "
+            f"{passed}/{total} passed, "
+            f"{failed} failed "
+            f"({len(self.criticals)} critical, "
+            f"{len(self.errors)} errors, "
+            f"{len(self.warnings)} warnings) "
+            f"in {self.execution_time:.2f}s"
+        )
