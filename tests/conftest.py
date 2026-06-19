@@ -10,6 +10,13 @@ if str(_project_root) not in sys.path:
 import pytest
 
 
+def pytest_configure(config):
+    """Register asyncio markers for Textual-based TUI tests."""
+    config.addinivalue_line(
+        "markers", "asyncio: mark test as an async test (Textual, etc.)"
+    )
+
+
 @pytest.fixture(autouse=True)
 def clear_knowledge():
     """Clear persistent KnowledgeBase before each test to avoid cross-test contamination."""

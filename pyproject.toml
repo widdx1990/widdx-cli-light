@@ -69,6 +69,10 @@ core = ["py.typed"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
+markers = [
+    "asyncio: mark test as async (uses asyncio event loop)",
+]
 
 [tool.coverage.run]
 source = ["core", "tui"]

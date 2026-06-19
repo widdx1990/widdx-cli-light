@@ -15,6 +15,7 @@ from rich.rule import Rule
 from core.ui_visual import (
     CYAN, DIM, GREEN, ORANGE, PURPLE, RED, WHITE,
     Panel, Table, console, header_bar, rich_box, role_panel,
+    show_divider, show_table, show_panel, show_error, show_success,
 )
 
 

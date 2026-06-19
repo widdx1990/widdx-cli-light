@@ -48,6 +48,10 @@ class HeaderWidget(Horizontal):
         """Initialize provider selector value."""
         try:
             provider_sel = self.query_one("#header-provider", Select)
+            # Validate that provider_name is a valid option
+            valid_values = {v for _, v in provider_sel._options}
+            if provider_name not in valid_values:
+                provider_name = "opencode-zen"
             with provider_sel.prevent(Select.Changed):
                 provider_sel.value = provider_name
         except Exception as e:

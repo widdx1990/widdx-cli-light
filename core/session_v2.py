@@ -109,7 +109,10 @@ class SessionV2:
         """Full-text search across sessions."""
         from core.session_search import SessionSearcher
         searcher = SessionSearcher()
-        return searcher.search(query, branch=branch, limit=limit)
+        try:
+            return searcher.search(query, branch=branch, limit=limit)
+        except TypeError:
+            return searcher.search(query, limit=limit)
 
 
 _current_session = None
