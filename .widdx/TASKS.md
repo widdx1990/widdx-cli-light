@@ -209,14 +209,20 @@
 |---------|--------|
 | الوحدات الميتة | ✅ 12/12 موصولة |
 | الوحدات المهملة | ✅ 3/3 موسومة |
-| VERIFY Pipeline | ✅ مدمج في brain.py (لكن غير مربوط بالـ executors) |
-| except: pass | ⚠️ 23/25 تم إصلاحها — 2 متبقية في provider_router.py |
-| **اختبارات VERIFY** | ⬜ **0/10** |
+| VERIFY Pipeline | ✅ مدمج في brain.py + مربوط بالـ executors + auto-retry |
+| VERIFY Tests | ✅ 33/33 اختباراً (10 مجموعات) |
+| except: pass | ⚠️ 23/25 — 2 متبقية في provider_router.py (deprecated) |
 | **اختبارات TUI** | ⬜ **0/9 شاشات** |
 | **اختبارات API** | ⬜ **0** |
 | **اختبارات E2E** | ⬜ **0** |
 | **اختبارات الوحدات الكبيرة** | ⬜ **8 وحدات (0 اختبار)** |
-| **API Authentication** | ❌ **غير موجود** |
-| **SessionCRUDScreen** | ❌ **مكسور** |
+| **API Authentication** | ✅ **مُفعّل** (Bearer token + Rate Limiter) |
+| **SessionCRUDScreen** | ✅ **مُصلَح** |
+| **Sandbox shell=True** | ✅ **مُصلَح** (shlex.split + fallback) |
+| **OAuth tokens** | ✅ **مُشفّر** (PBKDF2+XOR+salt) |
+| **MCP filesystem** | ✅ **مقيد** (project dir فقط) |
+| **C/C++/C# Validate** | ✅ **مُضاف** (gcc/g++/csc) |
+| Phase VERIFY | 🚧 90% — يبقى V.4 (UIL Feedback Loop) |
+| Phase SECURITY | ✅ 100% |
 | Production readiness | ⬜ 0% |
 | Ecosystem | ⬜ 0% |
