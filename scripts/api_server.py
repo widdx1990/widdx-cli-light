@@ -82,6 +82,7 @@ def rate_limit(credentials: Optional[HTTPAuthorizationCredentials] = Depends(sec
     client_id = credentials.credentials if credentials else "anonymous"
     if not _rate_limiter.check(client_id):
         raise HTTPException(status_code=429, detail="Rate limit exceeded.")
+from core import config, tools
 from core.config.settings import load as load_config, save as save_config
 from core.providers.providers import (
     create_provider, get_available_models, resolve_model,

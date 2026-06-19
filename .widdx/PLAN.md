@@ -89,7 +89,7 @@
 | Phase 3 | ✅ | **100%** | all except: blocks fixed (2 في provider_router.py) |
 | **Phase VERIFY** 🆕 | 🚧 | **90%** | V.1-V.3 كاملة، يبقى V.4 (UIL Feedback Loop) |
 | **Phase SECURITY** 🆕 | ✅ | **100%** | 5/5 مهام P0/P1 منجزة بالكامل |
-| Phase 4 (Tests) | 🚧 | **~10%** | providers: 13 tests + verifier: 33 tests |
+| Phase 4 (Tests) | 🚧 | **~15%** | providers: 13 + verifier: 33 + API: 13 = 59 new |
 | **C/C++/C# Validate** | ✅ | **100%** | gcc/g++/csc + bracket fallback |
 | Phase 5 (Production) | ⬜ | 0% | Auth + Migrations + Monitoring + Docker |
 | Phase 6 (Docs/Ecosystem) | ⬜ | 0% | README غير متطابق + Web + Team |
