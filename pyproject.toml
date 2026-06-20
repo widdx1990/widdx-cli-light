@@ -1,14 +1,14 @@
 [project]
-name = "widdx-cortex"
+name = "widdx-nexus"
 version = "3.0.0"
-description = "WIDDX Cortex — Terminal AI Workspace with UIL Cognitive Architecture"
+description = "WIDDX Nexus — Terminal AI Workspace | By MUHAMMAD MUSLIH (widdx.com)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-keywords = ["ai", "chat", "cli", "tui", "terminal", "widdx", "assistant"]
+keywords = ["ai", "chat", "cli", "tui", "terminal", "widdx", "assistant", "nexus", "agent"]
 
 authors = [
-    {name = "MUHAMMAD MUSLIH (widdx)", email = "widdx@users.noreply.github.com"},
+    {name = "MUHAMMAD MUSLIH", email = "muhammed@widdx.com"},
 ]
 
 classifiers = [
@@ -46,17 +46,20 @@ api = [
     "uvicorn[standard]>=0.27",
 ]
 gguf = ["llama-cpp-python>=0.2.0"]
-all = ["widdx-cortex[dev,gguf]"]
+all = ["widdx-nexus[dev,gguf,voice,gateway]"]
+voice = ["edge-tts"]
+gateway = ["python-telegram-bot", "discord.py"]
 
 [project.scripts]
 widdx = "core.cli:run"
 widdx-tui = "tui.app:run_tui"
-widdx-api = "api_server:main"
+widdx-api = "scripts.api_server:main"
+widdx-web = "core.web_launcher:run"
 
 [project.urls]
-Homepage = "https://github.com/widdx1990/widdx-cli-light"
-Repository = "https://github.com/widdx1990/widdx-cli-light"
-Documentation = "https://github.com/widdx1990/widdx-cli-light#readme"
+Homepage = "https://widdx.com"
+Repository = "https://github.com/widdx1990/widdx-nexus"
+Documentation = "https://widdx.com/docs"
 
 [tool.setuptools.packages.find]
 include = ["core*", "cli*", "tui*", "tui/screens*", "tui/widgets*"]

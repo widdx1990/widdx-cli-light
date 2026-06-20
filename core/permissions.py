@@ -50,8 +50,9 @@ class PermissionManager:
                 level_str = data.get("level", "permissive")
                 self._level = PermissionLevel(level_str)
                 self._remembered = data.get("remembered", {})
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger("widdx.permissions").warning("Permissions load error: %s", e)
 
     def _save(self):
         path = self._get_path()

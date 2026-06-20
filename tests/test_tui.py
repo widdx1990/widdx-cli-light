@@ -28,7 +28,7 @@ def test_app_creation():
     """App instantiates without errors."""
     from tui.app import WIDDXTUI
     app = WIDDXTUI()
-    assert app.TITLE == "WIDDX Cortex"
+    assert app.TITLE == "WIDDX Nexus"
     assert app.CSS_PATH == "app.tcss"
 
 

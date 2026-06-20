@@ -99,6 +99,131 @@ class ChatEngine:
         except Exception:
             pass
 
+        # ── UIL-powered intent detection ─────────────────
+        try:
+            from core.uil.analyzer import LLMClassifier
+            llm_cls = LLMClassifier(provider=state.provider)
+            cls_result = llm_cls.classify(text)
+            if cls_result:
+                result, steps = cls_result
+                # execution_mode is in keywords[1], complexity in keywords[2]
+                kw = result.keywords or []
+                execution_mode = kw[1] if len(kw) > 1 else "direct"
+                complexity = kw[2] if len(kw) > 2 else "simple"
+
+                # Route based on execution_mode
+                if execution_mode == "cron":
+                    from core.cron.parser import parse_schedule
+                    try:
+                        cron_expr, dt = parse_schedule(text)
+                        from core.cron.scheduler import CronScheduler
+                        sched = CronScheduler()
+                        job_id = sched.create_job(cron_expr, text)
+                        msg = f"✅ Cron job created: {job_id[:8]} — will execute {cron_expr}"
+                        self.app.call_from_thread(self.screen._log_message, "system", msg)
+                        self._finish()
+                        return
+                    except (ValueError, ImportError):
+                        pass
+
+                elif execution_mode == "background":
+                    from core.background import background
+                    task_id = background.run(text, sandbox_mode="auto", on_done=lambda t: (
+                        self.app.call_from_thread(
+                            self.screen._log_message, "system",
+                            f"✅ Background task done: {t.id[:8]} | {t.result[:200]}"
+                        )
+                    ))
+                    msg = f"⏳ Background task started: {task_id[:8]} | Use /tasks to check"
+                    self.app.call_from_thread(self.screen._log_message, "system", msg)
+                    self._finish()
+                    return
+
+                elif execution_mode == "delegation" and complexity == "complex":
+                    from core.delegation import DelegationManager
+                    dlg = DelegationManager()
+                    task_id = dlg.run(text, provider=state.provider,
+                                      tool_defs=state.tool_defs, cfg=state.cfg)
+                    msg = f"🤖 Sub-agent spawned: {task_id[:8]} — decomposing task..."
+                    self.app.call_from_thread(self.screen._log_message, "system", msg)
+                    result = dlg.wait(task_id, timeout=120)
+                    if result and result.status.value == "done":
+                        state.messages.append({"role": "assistant", "content": result.summary})
+                        self.app.call_from_thread(
+                            self.screen._log_message, "system",
+                            f"✅ Agent {task_id[:8]} completed ({result.steps} steps, {result.elapsed_seconds:.1f}s)"
+                        )
+                        self._finish()
+                        return
+
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.tui").debug("UIL routing fallback: %s", e)
+
+        # ── Auto-detect cron scheduling ────────────────────
+        cron_keywords = [
+            "every", "daily", "remind", "schedule", "cron", "morning",
+            "كل", "يوم", "شوف", "راجع", "ذكرني", "تأكد", "راقب", "صباح", "مساء",
+        ]
+        if any(kw in text.lower() for kw in cron_keywords):
+            from core.cron.parser import parse_schedule
+            try:
+                for line in text.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    cron_expr, dt = parse_schedule(line)
+                    from core.cron.scheduler import CronScheduler
+                    sched = CronScheduler()
+                    job_id = sched.create_job(cron_expr, text)
+                    msg = f"✅ Cron job created: `{job_id[:8]}` — will execute `{cron_expr}`"
+                    self.app.call_from_thread(
+                        self.screen._log_message, "system", msg
+                    )
+                    self._finish()
+                    return
+            except (ValueError, ImportError):
+                pass
+
+        # ── Auto-detect background tasks ─────────────────
+        bg_keywords = [
+            "نظف", "install", "download", "update", "upgrade",
+            "compile", "build", "deploy", "backup", "restore",
+            "npx ", "npm install", "pip install", "docker build",
+            "git clone", "wget ", "curl ", "make ",
+        ]
+        is_bg_task = any(kw in text.lower() for kw in bg_keywords)
+
+        if is_bg_task:
+            from core.background import background
+            from core.sandbox import SandboxExecutor
+            task_id = background.run(text, sandbox_mode="auto", on_done=lambda t: (
+                self.app.call_from_thread(
+                    self.screen._log_message, "system",
+                    f"✅ Background task done: {t.id} — {t.prompt[:60]} | {t.result[:200]}"
+                )
+            ))
+            msg = f"⏳ Background task started: {task_id} — running `{text[:80]}` | Use /tasks to check"
+            self.app.call_from_thread(self.screen._log_message, "system", msg)
+            self._finish()
+            return
+
+        # ── Auto-detect browser / web tasks ──────────────
+        browser_keywords = [
+            "open ", "navigate to", "go to ", "browser",
+            "بحث", "تصفح", "افتح", "شوف", "site", "website",
+            "http://", "https://", ".com", ".org",
+        ]
+        is_browser_task = any(kw in text.lower() for kw in browser_keywords)
+        is_url = any(text.lower().startswith(kw) for kw in ["http://", "https://", "www.", "open ", "navigate"])
+
+        if is_browser_task or is_url:
+            # Ensure browser tools are in the tool list
+            browser_tools = [t for t in core_tools.TOOL_DEFINITIONS if t["name"].startswith("browser_")]
+            for bt in browser_tools:
+                if bt not in state.tool_defs:
+                    state.tool_defs.append(bt)
+
         # UIL routing (project-aware)
         decision = None
         try:
@@ -184,6 +309,14 @@ class ChatEngine:
                 self.app.post_message(StreamEndMsg(content, msgs))
                 state.messages = msgs
                 state.save_session()
+                # ── Voice auto-play ──────────────────────
+                if content and content.strip():
+                    try:
+                        from core.voice import tts
+                        if tts.enabled:
+                            tts.speak_sync(content[:500])
+                    except Exception:
+                        pass
                 return
 
         self.app.post_message(StreamEndMsg("[Max iterations]", msgs))

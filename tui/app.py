@@ -24,7 +24,7 @@ from textual import work
 from rich.text import Text
 
 from core import config, tools
-from core.ui_visual import role_panel, reasoning_panel
+from core.ui_visual import (render_user_message, render_assistant_message, render_system_message, render_tool_message, render_reasoning, render_error, render_divider)
 from core.mcp.client import get_mcp_manager
 from core.skills import skill_manager
 from core.memory import MemoryStore
@@ -122,12 +122,35 @@ class MainScreen(Screen):
         for log_line in self.state.startup():
             self._log_message("system", log_line)
 
+        # ── Start cron scheduler ──────────────────────────
+        try:
+            from core.cron.scheduler import CronScheduler
+            self._cron = CronScheduler()
+            self._cron.set_executor(self._cron_executor)
+            self._cron.start()
+        except Exception as e:
+            logger.debug("Cron scheduler start skipped: %s", e)
+
         self.query_one("#input", Input).focus()
         self._set_processing(False)
         # Refresh header
         hw = self.query_one(HeaderWidget)
         hw.initialize_provider(self.state.provider.name)
         self._update_status()
+
+    def _cron_executor(self, job) -> str:
+        """Execute a cron job's prompt."""
+        try:
+            self.call_from_thread(
+                self._log_message, "system",
+                f"⏰ Cron job: {job.id[:8]} — {job.prompt[:100]}"
+            )
+            engine = ChatEngine(self)
+            engine.start(job.prompt, self.state)
+            return f"Executed: {job.prompt[:100]}"
+        except Exception as e:
+            logger.error("Cron executor: %s", e)
+            return f"Error: {e}"
 
     def _apply_theme(self, cfg: dict | None = None):
         """Apply dark/light theme from config."""
@@ -277,19 +300,36 @@ class MainScreen(Screen):
         cc.update(f"❯ {n}" if n else "❯")
 
     # ── UI helpers ─────────────────────────────────────────
-    def _log_message(self, role: str, content: str):
+    def _log_message(self, role: str, content: str,
+                     tool_calls: list[tuple[str, str]] | None = None,
+                     elapsed: float | None = None):
         if not self._chat_log:
             return
         ts = datetime.now().strftime("%H:%M")
         content = _fix_rtl(content)
-        panel = role_panel(role, content, ts)
+
+        if role == "user":
+            panel = render_user_message(content, ts)
+        elif role == "assistant":
+            panel = render_assistant_message(content, ts, elapsed, tool_calls)
+        elif role == "system":
+            panel = render_system_message(content)
+        elif role == "tool":
+            panel = render_tool_message(content[:60], content)
+        elif role == "error":
+            panel = render_error(content)
+        elif role == "reasoning":
+            panel = render_reasoning(content, elapsed)
+        elif role == "divider":
+            panel = render_divider()
+        else:
+            panel = render_system_message(content)
+
         self._chat_log.write(panel)
         self._chat_log.scroll_end(animate=False)
 
     def _log(self, text: str):
-        if self._chat_log:
-            self._chat_log.write(text)
-            self._chat_log.scroll_end(animate=False)
+        pass
 
     def _show_chat(self):
         body = self.query_one("#body", Horizontal)
@@ -321,7 +361,7 @@ class MainScreen(Screen):
         elif action == "about":
             self._log_message(
                 "system",
-                "◈ WIDDX Cortex v3.0 — Terminal AI\n"
+                "◈ WIDDX Nexus v3.0 — Terminal AI\n"
                 "by Muhammad Muslih  •  Palestine 🇵🇸",
             )
             self._show_chat()
@@ -441,12 +481,11 @@ class MainScreen(Screen):
         self._update_status()
 
     def on_tool_step_msg(self, msg: ToolStepMsg):
-        from core.ui_visual import TOOL, DIM
-        self._log(f"  🔧 [bold {TOOL}]{msg.tool}[/] → [{DIM}]{msg.detail[:120]}[/]")
+        self._log_message("tool", msg.tool + ": " + msg.detail[:200])
 
     def on_stream_end_msg(self, msg: StreamEndMsg):
         display = msg.content or "[tool execution complete]"
-        self._log_message("assistant", display)
+        self._log_message("assistant", display, elapsed=getattr(msg, "elapsed", None))
         self.state.messages = msg.msgs
         self.state.save_session()
         self._show_chat()
@@ -458,7 +497,7 @@ class MainScreen(Screen):
         if not self._show_thinking:
             return
         text = _fix_rtl(msg.text)
-        panel = reasoning_panel(text, getattr(msg, "elapsed", None))
+        self._log_message("reasoning", text, elapsed=getattr(msg, "elapsed", None))
         if self._chat_log:
             self._chat_log.write(panel)
 
@@ -678,7 +717,7 @@ class MainScreen(Screen):
 
 # ── App Entry ────────────────────────────────────────────────
 class WIDDXTUI(App):
-    TITLE = "WIDDX Cortex"
+    TITLE = "WIDDX Nexus"
     CSS_PATH = "app.tcss"
     SCREENS = {}
 

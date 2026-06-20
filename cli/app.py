@@ -91,9 +91,9 @@ from .commands import CLICommands
 
 logger = logging.getLogger("widdx.cli")
 
-SYSTEM_PROMPT = """# WIDDX Cortex — Identity
+SYSTEM_PROMPT = """# WIDDX Nexus — Identity
 
-You are **WIDDX Cortex**, an intelligent terminal AI engineering assistant.
+You are **WIDDX Nexus**, an intelligent terminal AI engineering assistant.
 Created individually by **MUHAMMAD MUSLIH** — Founder & CEO of **WIDDX**.
 🇵🇸 Proudly made in **Palestine**.
 

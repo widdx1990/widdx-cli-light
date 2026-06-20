@@ -1,4 +1,5 @@
-# WIDDX - Core Module
+# WIDDX Nexus - Core Module
+# Created by MUHAMMAD MUSLIH (widdx.com)
 # Re-exports for convenient access
 
 from core.config.settings import load, get, save

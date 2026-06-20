@@ -1,7 +1,7 @@
-"""Shared CLI/TUI visual helpers and theme primitives.
+"""Shared CLI/TUI visual helpers — elegant chat UI.
 
-Consolidates theme palette, rich `console`, panel builders, and
-common `show_*` helpers so `cli` and `tui` share a single implementation.
+Designed for a clean, modern look similar to high-end AI assistants.
+Focus on readability, visual hierarchy, and minimal visual noise.
 """
 
 from dataclasses import dataclass
@@ -10,12 +10,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.rule import Rule
-from rich.align import Align
 from rich.text import Text
 from rich.syntax import Syntax
+from rich.markdown import Markdown
 from rich import box as rich_box
 from rich.style import Style
-from rich.box import ROUNDED, MINIMAL
+from rich.box import ROUNDED, MINIMAL, SQUARE
 import unicodedata
 
 
@@ -34,7 +34,7 @@ class Theme:
     gold: str
 
 
-# Built-in palettes (copied from cli.theme)
+# Palettes
 DARK = Theme(
     name="dark",
     green="#00d4aa",
@@ -63,7 +63,6 @@ LIGHT = Theme(
     gold="#b8860b",
 )
 
-
 _REGISTRY = {"dark": DARK, "light": LIGHT}
 
 
@@ -76,7 +75,6 @@ def get_current_theme():
         return DARK
 
 
-# Active theme singleton
 T: Theme = get_current_theme()
 
 # Color aliases
@@ -91,25 +89,25 @@ PURPLE = T.purple
 CYAN = T.cyan
 GOLD = T.gold
 
-
-# Rich Style objects
+# Styles
 HEADER = Style(bold=True, color=GREEN)
-MODEL = Style(bold=True, color=ORANGE)
-USER = Style(color=GREEN)
-ASSISTANT = Style(color=ORANGE)
-SYSTEM = Style(color=CYAN)
-ERROR = Style(bold=True, color=RED)
+USER_STYLE = Style(bold=True, color=GREEN)
+ASSISTANT_STYLE = Style(bold=True, color=ORANGE)
+SYSTEM_STYLE = Style(color=CYAN)
+ERROR_STYLE = Style(bold=True, color=RED)
 DIM_STYLE = Style(color=DIM)
-TOOL = Style(color=PURPLE)
+TOOL_STYLE = Style(color=PURPLE)
 GOLD_STYLE = Style(color=GOLD)
 
+TOOL = PURPLE
 
-# Role metadata
+
+# Backward compat — role metadata for CLI theming
 ROLE_META_ASCII = {
-    "user":      ("▸",  "You",      GREEN),
-    "assistant": ("◆",  "WIDDX",    ORANGE),
-    "system":    ("⊙",  "System",   CYAN),
-    "tool":      ("⚙",  "Tool",     PURPLE),
+    "user":      ("▸",  "You",      "#00d4aa"),
+    "assistant": ("◆",  "WIDDX",    "#f5a623"),
+    "system":    ("⊙",  "System",   "#89dceb"),
+    "tool":      ("⚙",  "Tool",     "#c792ea"),
 }
 
 
@@ -127,70 +125,169 @@ def _has_rtl(text: str) -> bool:
     return False
 
 
-def role_panel(role: str, content: str, timestamp: str = "") -> Panel:
-    icon, label, color = ROLE_META_ASCII.get(role, ("•", role.capitalize(), WHITE))
-    title = f"[bold {color}] {icon} {label} [/]"
-    subtitle = f"[{DIM}] {timestamp} [/]" if timestamp else ""
-    body = content[:4000] if content else ""
+# ── Enhanced Chat Rendering ─────────────────────────────────────
+
+
+def render_user_message(content: str, timestamp: str = "") -> Panel:
+    """Clean, minimal user message — no heavy borders."""
+    body = _format_content(content)
     return Panel(
         body,
-        title=title,
+        title=f"[bold {GREEN}]  ●  You[/]",
         title_align="left",
-        subtitle=subtitle,
+        subtitle=f"[{DIM}]{timestamp}[/]" if timestamp else "",
         subtitle_align="right",
-        border_style=color,
-        box=ROUNDED,
-        padding=(0, 2),
-    )
-
-
-def reasoning_panel(content: str, elapsed: float | None = None) -> Panel:
-    subtitle = f"[{DIM}] {elapsed:.1f}s [/]" if elapsed is not None else ""
-    return Panel(
-        Text(content[:1000], style=f"{DIM}"),
-        title=f"[bold {PURPLE}] 󰙚  Thinking [/]",
-        title_align="left",
-        subtitle=subtitle,
-        subtitle_align="right",
-        border_style=PURPLE,
-        box=MINIMAL,
-        padding=(0, 2),
-    )
-
-
-def header_bar(model: str, cost: float, turns: int) -> Panel:
-    grid = Table.grid(expand=True)
-    grid.add_column(justify="left",  ratio=3)
-    grid.add_column(justify="center", ratio=5)
-    grid.add_column(justify="right",  ratio=3)
-
-    brand  = f"[bold {GREEN}] ◆ WIDDX[/]"
-    model_ = f"[{ORANGE}]{model}[/]"
-    meta   = f"[{DIM}]turns:[/][bold {WHITE}]{turns}[/]  [{DIM}]cost:[/][bold {GOLD}]${cost:.4f}[/]"
-
-    grid.add_row(brand, model_, meta)
-
-    return Panel(
-        grid,
         border_style=DIM,
+        box=SQUARE,
+        padding=(0, 2),
+    )
+
+
+def render_assistant_message(content: str, timestamp: str = "",
+                             elapsed: float | None = None,
+                             tool_calls: list[tuple[str, str]] | None = None) -> Panel:
+    """Assistant message with tool calls inline, like Manus style.
+
+    Args:
+        content: The text response.
+        timestamp: Time string.
+        elapsed: Seconds for the response.
+        tool_calls: List of (tool_name, brief_result) for inline display.
+    """
+    parts = []
+
+    # Tool calls strip (compact, before the text)
+    if tool_calls:
+        for name, result in tool_calls[:5]:
+            parts.append(f"[{PURPLE}]  ⚙  {name}[/]  [{DIM}]{result[:80]}[/]")
+        parts.append("")
+
+    # Main content — render as markdown when possible
+    body = _format_content(content)
+    if isinstance(body, str):
+        parts.append(body)
+    else:
+        parts.append(body)
+
+    combined = "\n".join(str(p) for p in parts) if parts else body
+
+    sub = f"[{DIM}]{timestamp}[/]"
+    if elapsed is not None:
+        sub += f"  [{DIM}]({elapsed:.1f}s)[/]"
+
+    return Panel(
+        combined,
+        title=f"[bold {ORANGE}]  ◆  WIDDX Nexus[/]",
+        title_align="left",
+        subtitle=sub,
+        subtitle_align="right",
+        border_style=ORANGE,
         box=ROUNDED,
+        padding=(0, 2),
+    )
+
+
+def render_system_message(content: str) -> Panel:
+    """Minimal system message — no border, just dim text."""
+    return Panel(
+        Text(content[:2000], style=DIM_STYLE),
+        border_style=DIM,
+        box=MINIMAL,
         padding=(0, 1),
     )
 
 
-def tool_call_text(name: str, args: dict) -> str:
-    args_str = "  ".join(f"[{DIM}]{k}=[/][{PURPLE}]{str(v)[:40]}[/]" for k, v in list(args.items())[:4])
-    return f"[bold {PURPLE}] ⚙  {name}[/]  {args_str}"
+def render_tool_message(name: str, content: str) -> Panel:
+    """Compact tool call display."""
+    body = content[:500] if content else ""
+    return Panel(
+        Text(body, style=Style(color=PURPLE)),
+        title=f"[bold {PURPLE}]  ⚙  {name}[/]",
+        title_align="left",
+        border_style=PURPLE,
+        box=MINIMAL,
+        padding=(0, 1),
+    )
 
 
-def tool_result_text(result: str) -> str:
-    return f"[{DIM}]    └─ {result[:200]}[/]"
+def render_reasoning(content: str, elapsed: float | None = None) -> Panel:
+    """Collapsible thinking block — minimal."""
+    sub = f"  [{DIM}]{elapsed:.1f}s[/]" if elapsed is not None else ""
+    return Panel(
+        Text(content[:1000], style=DIM_STYLE),
+        title=f"[{PURPLE}]   󰙚  Thinking[/]{sub}",
+        title_align="left",
+        border_style=PURPLE,
+        box=MINIMAL,
+        padding=(0, 1),
+    )
+
+
+def render_error(content: str) -> Panel:
+    """Error message — red, prominent."""
+    return Panel(
+        f"[bold {RED}]{content}[/]",
+        title=f"[bold {RED}]  ✗  Error[/]",
+        border_style=RED,
+        box=ROUNDED,
+        padding=(0, 2),
+    )
+
+
+def render_divider() -> Rule:
+    """Thin separator between conversation turns."""
+    return Rule(style=DIM)
+
+
+def _format_content(content: str) -> str | Markdown:
+    """Format content: render code blocks, strip thinking tags, detect markdown."""
+    if not content:
+        return ""
+
+    # Strip thinking tags
+    for tag in ("[thinking]", "[/thinking]", "<thinking>", "</thinking>"):
+        content = content.replace(tag, "")
+
+    content = content.strip()
+    if not content:
+        return "[done]"
+
+    # If it has code blocks, try markdown rendering
+    if "```" in content or "`" in content:
+        try:
+            return Markdown(content, code_theme="monokai")
+        except Exception:
+            pass
+
+    # Detect simple markdown (headers, lists)
+    try:
+        if any(line.strip().startswith("# ") for line in content.split("\n")[:5]):
+            return Markdown(content, code_theme="monokai")
+    except Exception:
+        pass
+
+    return content
+
+
+def header_bar(model: str, cost: float, turns: int) -> Panel:
+    """Top header showing model, cost, state."""
+    grid = Table.grid(expand=True)
+    grid.add_column(justify="left", ratio=3)
+    grid.add_column(justify="center", ratio=5)
+    grid.add_column(justify="right", ratio=3)
+
+    brand = f"[bold {GREEN}]  ◆  WIDDX Nexus[/]"
+    model_ = f"[{ORANGE}]{model}[/]"
+    meta = f"[{DIM}]turns:[/][bold {WHITE}]{turns}[/]  [{DIM}]cost:[/][bold {GOLD}]${cost:.4f}[/]"
+    grid.add_row(brand, model_, meta)
+
+    return Panel(grid, border_style=DIM, box=ROUNDED, padding=(0, 1))
 
 
 def show_panel(title: str, content: str) -> None:
     console.print(Panel(
         content[:2000],
-        title=f"[bold {ORANGE}] {title} [/]",
+        title=f"[bold {ORANGE}]  {title}[/]",
         title_align="left",
         border_style=DIM,
         box=rich_box.ROUNDED,
@@ -198,26 +295,8 @@ def show_panel(title: str, content: str) -> None:
     ))
 
 
-def show_reasoning(text: str, elapsed: float | None = None) -> None:
-    text = text if not _has_rtl(text) else text
-    console.print(reasoning_panel(text, elapsed))
-
-
-def show_thinking() -> None:
-    console.print(f"[{PURPLE}]  󰙚  Thinking…[/]")
-
-
-def show_tool_call(name: str, args: dict) -> None:
-    console.print(tool_call_text(name, args))
-
-
-def show_tool_result(name: str, result: str) -> None:
-    console.print(tool_result_text(result))
-
-
 def show_markdown(text: str) -> None:
     try:
-        from rich.markdown import Markdown
         console.print(Markdown(text, code_theme="monokai"))
     except Exception:
         console.print(text)
@@ -225,14 +304,9 @@ def show_markdown(text: str) -> None:
 
 def show_code(code: str, lang: str = "python") -> None:
     try:
-        from pygments.lexers import get_lexer_by_name  # noqa: F401
-        console.print(Syntax(
-            code, lang,
-            theme="one-dark",
-            line_numbers=True,
-            word_wrap=True,
-            background_color="default",
-        ))
+        from pygments.lexers import get_lexer_by_name
+        console.print(Syntax(code, lang, theme="one-dark", line_numbers=True,
+                             word_wrap=True, background_color="default"))
         return
     except Exception:
         pass
@@ -240,14 +314,9 @@ def show_code(code: str, lang: str = "python") -> None:
 
 
 def show_table(title: str, columns: list[str], rows: list[list[str]]) -> None:
-    table = Table(
-        title=f"[bold {ORANGE}]{title}[/]",
-        border_style=DIM,
-        header_style=f"bold {GREEN}",
-        box=rich_box.ROUNDED,
-        show_lines=False,
-        padding=(0, 1),
-    )
+    table = Table(title=f"[bold {ORANGE}]{title}[/]", border_style=DIM,
+                  header_style=f"bold {GREEN}", box=rich_box.ROUNDED,
+                  show_lines=False, padding=(0, 1))
     for col in columns:
         table.add_column(col, overflow="fold")
     for row in rows:
@@ -274,10 +343,8 @@ def show_divider(label: str = "") -> None:
 def show_error(text: str) -> None:
     console.print(Panel(
         f"[bold {RED}]{text}[/]",
-        title=f"[bold {RED}] ✗  Error [/]",
-        border_style=RED,
-        box=rich_box.ROUNDED,
-        padding=(0, 2),
+        title=f"[bold {RED}]  ✗  Error[/]",
+        border_style=RED, box=rich_box.ROUNDED, padding=(0, 2),
     ))
 
 

@@ -1,4 +1,4 @@
-"""Header widget for WIDDX Cortex TUI."""
+"""Header widget for WIDDX Nexus TUI."""
 from textual.widgets import Static, Button, Select
 from textual.containers import Horizontal
 from core.project.state import list_branches, get_current_branch

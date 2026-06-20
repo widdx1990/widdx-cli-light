@@ -1,4 +1,4 @@
-"""Full-screen settings — tabbed provider config for WIDDX Cortex."""
+"""Full-screen settings — tabbed provider config for WIDDX Nexus."""
 
 from textual.screen import Screen
 from textual.widgets import Static, Input, Button, Label, Select, Switch, TabbedContent, TabPane

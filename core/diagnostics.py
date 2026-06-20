@@ -187,7 +187,8 @@ def audit_silent_errors(root_dir: str | None = None) -> dict:
                     found_any = True
             if found_any:
                 files_found.append({"file": str(py_file.relative_to(root)), "loc": loc})
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.diagnostics").warning("audit_silent_errors scan error: %s", e)
 
     return {"counts": counts, "files": files_found}

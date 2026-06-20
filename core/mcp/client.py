@@ -177,8 +177,8 @@ class MCPServerConnection:
                 notif = json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
                 self._proc.stdin.write(notif)
                 self._proc.stdin.flush()
-            except Exception:
-                logger.debug("MCP server %s: initialized notification failed", self._name)
+            except Exception as e:
+                logger.debug("MCP server %s: initialized notification failed: %s", self.name, e)
 
             # List tools
             tools_result = self._send_jsonrpc("tools/list", msg_id=2)

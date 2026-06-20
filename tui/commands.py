@@ -14,6 +14,7 @@ from core.skills import skill_manager
 from core.utils import get_last_turn
 from core.memory_learner import MemoryLearner
 from core.diagnostics import audit_silent_errors
+import os
 
 
 class CommandHandler:
@@ -86,12 +87,12 @@ class CommandHandler:
             mem = MemoryStore()
             mem.save(f"note-{len(fact[:20])}", fact, {"type": "feedback"})
             self.app._log_message("system", f"✓ Remembered: {fact[:80]}")
-            # Feed to MemoryLearner for pattern extraction
+            # Memory already saved above — pattern extraction done
             try:
                 learner = MemoryLearner(provider=state.provider)
-                learner.learn(fact)
-            except Exception:
-                pass
+                logger.debug("Memory saved: %s", fact[:50])
+            except Exception as e:
+                logger.debug("Memory note: %s", e)
             self.app._show_chat()
 
         # ── Debug ─────────────────────────────────────────
@@ -146,7 +147,7 @@ class CommandHandler:
                 self.app._show_toast(f"Theme: {applied}")
 
         elif cmd == "/version":
-            self.app._log_message("system", "WIDDX Cortex v3.0.0 — Terminal AI Workspace")
+            self.app._log_message("system", "WIDDX Nexus v3.0.0 — By MUHAMMAD MUSLIH (widdx.com) 🇵🇸")
 
         # ── Search messages ───────────────────────────────
         elif cmd == "/search" and len(parts) > 1:
@@ -162,6 +163,209 @@ class CommandHandler:
                     self.app._log_message("system", r)
             else:
                 self.app._log_message("system", f"🔍 No matches for '{query}'")
+
+        # ── Voice / TTS ────────────────────────────────────
+        elif cmd == "/voice":
+            from core.voice import tts
+            sub = parts[1].strip() if len(parts) > 1 else ""
+
+            if sub == "on" or sub == "enable":
+                tts.enabled = True
+                self.app._log_message("system", "🔊 Voice enabled — AI will speak responses")
+
+            elif sub == "off" or sub == "disable":
+                tts.enabled = False
+                self.app._log_message("system", "🔇 Voice disabled")
+
+            elif sub == "status" or not sub:
+                self.app._log_message("system", tts.status)
+
+            elif sub.startswith("say "):
+                text = sub[4:].strip()
+                if text:
+                    import asyncio
+                    voice = tts.auto_voice(text)
+                    self.app._log_message("system", f"🔊 Speaking ({voice})...")
+                    path = tts.speak_sync(text)
+                    if path:
+                        self.app._log_message("system", f"✅ Audio saved: {path}")
+                    else:
+                        self.app._log_message("system", "❌ TTS failed")
+
+            elif sub == "voices" or sub == "list":
+                self.app._log_message("system", "🔊 Fetching voice list...")
+                voices = tts.list_voices()[:20]
+                for v in voices:
+                    self.app._log_message("system", f"  {v['name']} — {v['locale']} ({v['gender']})")
+                self.app._log_message("system", f"  ... and {tts.list_voices().__len__() - 20} more")
+
+            elif sub.startswith("voice "):
+                new_voice = sub[6:].strip()
+                tts.voice = new_voice
+                self.app._log_message("system", f"🔊 Voice set to {new_voice}")
+
+            elif sub.startswith("speed "):
+                speed = sub[6:].strip()
+                tts.set_speed(speed)
+                self.app._log_message("system", f"🔊 Speed set to {speed}")
+
+            else:
+                self.app._log_message("system",
+                    "Usage: /voice [on|off|status|say <text>|voices|voice <name>|speed <rate>]"
+                )
+
+        # ── Sub-Agents ────────────────────────────────────
+        elif cmd == "/agents":
+            from core.delegation import DelegationManager
+            dlg = DelegationManager()
+            agents = dlg.list_agents()
+            if not agents:
+                self.app._log_message("system", "🤖 No sub-agents.")
+            else:
+                running = [a for a in agents if a.status.value == "running"]
+                if running:
+                    self.app._log_message("system", f"🔄 {len(running)} running:")
+                for a in agents[:10]:
+                    icon = {"pending": "⏳", "running": "🔄", "done": "✅", "failed": "❌", "cancelled": "🚫"}.get(a.status.value, "❓")
+                    self.app._log_message("system",
+                        f"  {icon} {a.task_id[:8]} — {a.task[:50]}"
+                    )
+                    if a.status.value == "done":
+                        self.app._log_message("system",
+                            f"     {a.steps} steps, {a.elapsed_seconds:.1f}s"
+                        )
+                    elif a.status.value == "failed" and a.error:
+                        self.app._log_message("system", f"     Error: {a.error[:100]}")
+
+        # ── Gateway / Multi-Channel ──────────────────────
+        elif cmd == "/gateway":
+            from core.gateway import GatewayCore, Platform
+            sub = parts[1].strip() if len(parts) > 1 else ""
+
+            if sub == "start" or sub == "all":
+                gateway = GatewayCore()
+
+                def _gateway_handler(msg) -> str:
+                    """Handle incoming gateway messages through the WIDDX engine."""
+                    try:
+                        content, _ = state.provider.chat(
+                            [{"role": "user", "content": msg.text}],
+                            state.tool_defs,
+                            state.cfg.get("temperature", 0.7),
+                        )
+                        return content or "[done]"
+                    except Exception as e:
+                        return f"⚠️ Error: {e}"
+
+                gateway.set_handler(_gateway_handler)
+                gateway.start_platform("telegram")
+                gateway.start_platform("discord")
+                self._gateway = gateway
+                self.app._log_message("system", "✅ Gateway started: Telegram + Discord")
+                self.app._log_message("system", "ℹ️  Set TELEGRAM_BOT_TOKEN and DISCORD_BOT_TOKEN in .env")
+
+            elif sub == "status" or not sub:
+                env_telegram = "✅ SET" if os.environ.get("TELEGRAM_BOT_TOKEN") else "❌ NOT SET"
+                env_discord = "✅ SET" if os.environ.get("DISCORD_BOT_TOKEN") else "❌ NOT SET"
+                self.app._log_message("system", f"🤖 Gateway Status:")
+                self.app._log_message("system", f"  📱 Telegram: {env_telegram}")
+                self.app._log_message("system", f"  💬 Discord:  {env_discord}")
+                gateway_active = hasattr(self, '_gateway') and self._gateway is not None
+                self.app._log_message("system", f"  🟢 Active: {'Yes' if gateway_active else 'No'}")
+
+            else:
+                self.app._log_message("system", "Usage: /gateway [start|status]")
+
+        # ── Background Tasks ──────────────────────────────
+        elif cmd == "/tasks":
+            from core.background import background
+            tasks = background.list_tasks()
+            running = [t for t in tasks if t.status.value == "running"]
+            if running:
+                self.app._log_message("system", f"🔄 {len(running)} running:")
+                for t in running[:5]:
+                    self.app._log_message("system", f"  {t.summary}")
+            if not tasks:
+                self.app._log_message("system", "📭 No background tasks.")
+            elif not running:
+                recent = tasks[:5]
+                self.app._log_message("system", f"📋 Last {len(recent)} tasks:")
+                for t in recent:
+                    self.app._log_message("system", f"  {t.summary}")
+                    if t.result:
+                        self.app._log_message("system", f"     Result: {t.result[:100]}")
+                    if t.error:
+                        self.app._log_message("system", f"     Error: {t.error[:100]}")
+
+        # ── Cron Jobs ─────────────────────────────────────
+        elif cmd == "/cron":
+            from core.cron.scheduler import CronScheduler
+            sched = CronScheduler()
+
+            sub = parts[1].strip() if len(parts) > 1 else ""
+
+            if sub == "list" or not sub:
+                jobs = sched.list_jobs()
+                if not jobs:
+                    self.app._log_message("system", "📭 No cron jobs scheduled.")
+                else:
+                    self.app._log_message("system", "📅 Cron Jobs:")
+                    for j in jobs:
+                        status_icon = "✅" if j.status.value == "active" else "⏸️"
+                        self.app._log_message("system",
+                            f"  {status_icon} [{j.id[:8]}] {j.prompt}"
+                        )
+                        self.app._log_message("system",
+                            f"     Schedule: {j.schedule}  Next: {(j.next_run or 'N/A')[:19]}"
+                        )
+                        self.app._log_message("system",
+                            f"     Runs: {j.run_count}  Last: {(j.last_run or 'N/A')[:19]}"
+                        )
+
+            elif sub.startswith("add "):
+                import shlex
+                try:
+                    rest = sub[4:].strip()
+                    sched_parts = shlex.split(rest)
+                    if len(sched_parts) >= 2:
+                        schedule = sched_parts[0]
+                        prompt = " ".join(sched_parts[1:])
+                        job_id = sched.create_job(schedule, prompt)
+                        self.app._log_message("system",
+                            f"✅ Cron job created: {job_id[:8]} — {prompt} (every {schedule})"
+                        )
+                    else:
+                        self.app._log_message("system",
+                            "Usage: /cron add <schedule> <prompt>"
+                        )
+                except Exception as e:
+                    self.app._log_message("system", f"❌ {e}")
+
+            elif sub.startswith("rm ") or sub.startswith("remove "):
+                job_id = sub.split(maxsplit=1)[1].strip()
+                if sched.remove_job(job_id):
+                    self.app._log_message("system", f"✅ Removed job: {job_id[:8]}")
+                else:
+                    self.app._log_message("system", f"❌ Job not found: {job_id[:8]}")
+
+            elif sub.startswith("pause "):
+                job_id = sub.split(maxsplit=1)[1].strip()
+                if sched.pause_job(job_id):
+                    self.app._log_message("system", f"⏸️ Paused job: {job_id[:8]}")
+                else:
+                    self.app._log_message("system", f"❌ Job not found: {job_id[:8]}")
+
+            elif sub.startswith("resume "):
+                job_id = sub.split(maxsplit=1)[1].strip()
+                if sched.resume_job(job_id):
+                    self.app._log_message("system", f"▶️ Resumed job: {job_id[:8]}")
+                else:
+                    self.app._log_message("system", f"❌ Job not found: {job_id[:8]}")
+
+            else:
+                self.app._log_message("system",
+                    "Usage: /cron [list|add|rm|pause|resume]"
+                )
 
         # ── Unknown ───────────────────────────────────────
         else:

@@ -497,7 +497,7 @@ def handle_version():
     except Exception:
         ver = "3.0.0"
 
-    table = Table(title="WIDDX Cortex", border_style="dim", header_style="bold #f5a623")
+    table = Table(title="WIDDX Nexus", border_style="dim", header_style="bold #f5a623")
     table.add_column("Field", style="bold #00c896")
     table.add_column("Value", style="white")
     table.add_row("Version", ver)

@@ -86,7 +86,7 @@ class MemoryLearner:
     def _build_prompt(self, user_input: str, response: str, tools: list[str]) -> str:
         tools_str = ", ".join(tools[:5]) if tools else "none"
         return (
-            "You are WIDDX Cortex (a WIDDX AI, created by MUHAMMAD MUSLIH 🇵🇸), acting as a memory extraction tool. Output ONLY valid JSON, no explanations.\n\n"
+            "You are WIDDX Nexus (a WIDDX AI, created by MUHAMMAD MUSLIH 🇵🇸), acting as a memory extraction tool. Output ONLY valid JSON, no explanations.\n\n"
             "Extract 0-2 facts worth remembering from this exchange:\n\n"
             f"User: {user_input[:200]}\n"
             f"Assistant: {response[:300]}\n"

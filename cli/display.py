@@ -14,7 +14,8 @@ from rich.rule import Rule
 
 from core.ui_visual import (
     CYAN, DIM, GREEN, ORANGE, PURPLE, RED, WHITE,
-    Panel, Table, console, header_bar, rich_box, role_panel,
+    Panel, Table, console, header_bar, rich_box,
+    render_user_message, render_assistant_message, render_system_message, render_tool_message, render_error, render_reasoning, render_divider,
     show_divider, show_table, show_panel, show_error, show_success,
 )
 
@@ -52,7 +53,7 @@ def show_user_msg(text: str) -> None:
     """Render the user's message in a teal rounded panel."""
     text = _fix_rtl(text)
     console.print()
-    console.print(role_panel("user", text, _ts()))
+    console.print(render_user_message(text, _ts()))
 
 
 def show_ai_msg(text: str) -> None:
@@ -71,7 +72,7 @@ def show_ai_msg(text: str) -> None:
             padding=(0, 2),
         )
     except Exception:
-        panel = role_panel("assistant", text, _ts())
+        panel = render_assistant_message(text, _ts())
     console.print()
     console.print(panel)
 

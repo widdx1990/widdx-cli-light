@@ -170,11 +170,17 @@ class SessionSearcher:
 
     def get_session_context(self, session_id: str, max_messages: int = 50) -> dict | None:
         """Get session details with recent messages."""
-        session = self._db.get_session(session_id)
-        if not session:
+        try:
+            session = self._db.get_session(session_id)
+            if session is None:
+                return None
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.session_search").warning("Session get error: %s", e)
             return None
         messages = self._db.get_messages(session_id, limit=max_messages)
-        session["messages"] = messages
+        if session is not None:
+            session["messages"] = messages
         session["message_count"] = len(messages)
         return session
 
@@ -194,8 +200,10 @@ class SessionSearcher:
                     fts_count = conn.execute(
                         "SELECT COUNT(*) FROM messages_fts"
                     ).fetchone()[0]
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+                    return None
         return {
             "total_messages": row_count,
             "fts_indexed": fts_count,
@@ -214,8 +222,10 @@ class SessionSearcher:
                 """)
                 conn.commit()
             self._fts_ready = True
-        except Exception:
-            self._fts_ready = False
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+            return None
             return
 
         # Populate if empty
@@ -224,8 +234,10 @@ class SessionSearcher:
                 count = conn.execute("SELECT COUNT(*) FROM messages_fts").fetchone()[0]
                 if count == 0:
                     self._build_fts()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+            return None
 
     def _build_fts(self):
         """Rebuild the FTS5 index from all messages."""
@@ -243,11 +255,15 @@ class SessionSearcher:
                             "INSERT INTO messages_fts (content, role, session_id) VALUES (?, ?, ?)",
                             (r["content"] or "", r["role"] or "", r["session_id"] or ""),
                         )
-                    except Exception:
-                        continue
+                    except Exception as e:
+                        import logging
+                        logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+                        return None
                 conn.commit()
-        except Exception:
-            self._fts_ready = False
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+            return None
 
     def _search_fts(self, query: str, top_k: int) -> list[dict]:
         """FTS5 search with snippet extraction."""
@@ -278,8 +294,10 @@ class SessionSearcher:
                         "timestamp": r["timestamp"],
                         "score": - (r["score"] or 0),  # lower rank = better in FTS5
                     })
-        except Exception:
-            self._fts_ready = False
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+            return None
             return self._search_like(query, top_k)
 
         return results
@@ -314,8 +332,10 @@ class SessionSearcher:
                         "timestamp": r["timestamp"],
                         "score": score,
                     })
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+            return None
 
         return results
 
@@ -337,5 +357,7 @@ class SessionSearcher:
                     "SELECT COUNT(*) FROM messages WHERE session_id = ?",
                     (session_id,),
                 ).fetchone()[0]
-        except Exception:
-            return 0
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.session_search").warning("Search error: %s", e)
+            return None

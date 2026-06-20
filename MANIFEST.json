@@ -1,5 +1,5 @@
 {
-  "project": "WIDDX Cortex",
+  "project": "WIDDX Nexus",
   "language": "Python 3.12",
   "files": [
     {
@@ -55,6 +55,10 @@
       "description": "Auto Setup — autonomous project bootstrapping for WIDDX."
     },
     {
+      "path": "core/background.py",
+      "description": "Background Task Manager — run commands in background threads."
+    },
+    {
       "path": "core/cache.py",
       "description": "Cache Layer — Response + Tool-Result Caching."
     },
@@ -83,8 +87,28 @@
       "description": "Configuration loader / saver — JSON config file with automatic secret stripping."
     },
     {
+      "path": "core/cron/job.py",
+      "description": "Job data model for Cron Scheduler."
+    },
+    {
+      "path": "core/cron/parser.py",
+      "description": "Parse human-readable schedules into cron expressions."
+    },
+    {
+      "path": "core/cron/scheduler.py",
+      "description": "Background cron scheduler — checks and executes due jobs."
+    },
+    {
+      "path": "core/cron/store.py",
+      "description": "Persistent job store using SQLite."
+    },
+    {
       "path": "core/database.py",
       "description": "Durable Session Database for WIDDX"
+    },
+    {
+      "path": "core/delegation.py",
+      "description": "Delegation — spawn isolated sub-agents for parallel/independent tasks."
     },
     {
       "path": "core/diagnostics.py",
@@ -93,6 +117,14 @@
     {
       "path": "core/diff_engine.py",
       "description": "Diff Engine — Unified-diff-based file editing."
+    },
+    {
+      "path": "core/gateway/discord.py",
+      "description": "Discord adapter for WIDDX Gateway."
+    },
+    {
+      "path": "core/gateway/telegram.py",
+      "description": "Telegram adapter for WIDDX Gateway."
     },
     {
       "path": "core/guard.py",
@@ -180,7 +212,7 @@
     },
     {
       "path": "core/sandbox.py",
-      "description": "Sandbox Executor — Isolate & constrain shell command execution."
+      "description": "Sandbox Executor v2 — Cross-platform isolated command execution."
     },
     {
       "path": "core/self_improve.py",
@@ -263,6 +295,10 @@
       "description": "Vector Memory Store — Semantic memory search using embeddings."
     },
     {
+      "path": "core/voice.py",
+      "description": "Voice/TTS Engine — Text-to-Speech for WIDDX."
+    },
+    {
       "path": "core/widdx_v2.py",
       "description": "WIDDX v2 - DEPRECATED"
     },
@@ -312,7 +348,7 @@
     },
     {
       "path": "tui/screens/settings.py",
-      "description": "Full-screen settings — tabbed provider config for WIDDX Cortex."
+      "description": "Full-screen settings — tabbed provider config for WIDDX Nexus."
     },
     {
       "path": "tui/screens/tool_detail.py",
@@ -336,7 +372,7 @@
     },
     {
       "path": "tui/widgets/header.py",
-      "description": "Header widget for WIDDX Cortex TUI."
+      "description": "Header widget for WIDDX Nexus TUI."
     }
   ],
   "skills": [

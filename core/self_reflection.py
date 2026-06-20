@@ -8,7 +8,7 @@ from core.utils import get_last_turn
 
 def generate_reflection_prompt(user_input: str, assistant_response: str, tools_used: List[str]) -> str:
     """Build a prompt to let the AI reflect on its own work."""
-    return f"""You are WIDDX Cortex (a WIDDX AI, created by MUHAMMAD MUSLIH 🇵🇸), reviewing your own work. Your task is to extract 1-2 key lessons or improvements you can use in the future.
+    return f"""You are WIDDX Nexus (a WIDDX AI, created by MUHAMMAD MUSLIH 🇵🇸), reviewing your own work. Your task is to extract 1-2 key lessons or improvements you can use in the future.
 
 USER'S REQUEST:
 {user_input}

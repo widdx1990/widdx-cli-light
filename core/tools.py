@@ -238,6 +238,8 @@ def _generate_diff(old_lines: list[str], new_lines: list[str],
 
 def _glob(pattern: str, path: str | None = None):
     p = Path(path) if path else Path(".")
+    if not _is_safe_path(p):
+        return f"Sandbox: glob in {path} denied — not inside {_SAFE_DIR}"
     matches = sorted(p.rglob(pattern))
     if not matches:
         return f"No files matching '{pattern}'"
@@ -249,6 +251,8 @@ def _glob(pattern: str, path: str | None = None):
 
 def _grep(pattern: str, path: str | None = None, include: str | None = None):
     p = Path(path) if path else Path(".")
+    if not _is_safe_path(p):
+        return f"Sandbox: grep in {path} denied — not inside {_SAFE_DIR}"
     results = []
     files_iter = p.rglob(include) if include else p.rglob("*")
     for f in files_iter:
@@ -282,59 +286,37 @@ def _bash(command: str, description: str | None = None) -> str:
         )
 
     try:
-        from .config.keychain import sanitized_environ
-        clean_env = sanitized_environ()
-        if platform.system() == "Windows":
-            shell_cmd = ["powershell", "-NoProfile", "-Command", command]
-        else:
-            shell_cmd = ["bash", "-c", command]
-        proc = subprocess.Popen(
-            shell_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=clean_env,
-        )
-        try:
-            stdout, stderr = proc.communicate(timeout=BASH_TIMEOUT)
-            out = stdout[:MAX_STDOUT_CHARS]
-            err = stderr[:MAX_STDERR_CHARS]
-            ret = f"\U0001f4b2 {desc}\n"
-            if out:
-                ret += f"\U0001f4e4 stdout:\n{out}\n"
-            if err:
-                ret += f"\U0001f4db stderr:\n{err}\n"
-            ret += f"\U0001f51a Exit code: {proc.returncode}"
-            return ret
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            try:
-                stdout, stderr = proc.communicate(timeout=5)
-            except Exception:
-                stdout = stderr = ""
-            out = (stdout or "")[:3000]
-            err = (stderr or "")[:1000]
-            ret = f"\U0001f4b2 {desc}\n"
-            if out:
-                ret += f"\U0001f4e4 stdout:\n{out}\n"
-            if err:
-                ret += f"\U0001f4db stderr:\n{err}\n"
+        from .sandbox import SandboxExecutor
+        sb = SandboxExecutor(mode="auto")
+        result = sb.execute(command, timeout=BASH_TIMEOUT)
+        out = result.stdout[:MAX_STDOUT_CHARS]
+        err = result.stderr[:MAX_STDERR_CHARS]
+        ret = f"\U0001f4b2 {desc}\n"
+        if out:
+            ret += f"\U0001f4e4 stdout:\n{out}\n"
+        if err:
+            ret += f"\U0001f4db stderr:\n{err}\n"
+        if result.was_timeout:
             ret += f"\U0001f51a Exit code: timeout (killed after {BASH_TIMEOUT}s)"
-            return ret
-        except Exception:
-            # Ensure subprocess is cleaned up on any other exception
-            try:
-                proc.kill()
-                proc.wait(timeout=3)
-            except Exception:
-                logger.debug("bash: cleanup error suppressed")
-            raise
+        else:
+            ret += f"\U0001f51a Exit code: {result.exit_code}"
+        return ret
     except Exception as e:
         logger.warning("bash tool error: %s | command: %s", e, command[:100])
         return f"\u26a0\ufe0f Failed: {e}"
 
 
-def _web_fetch(url: str, format: str = "markdown") -> str:
+def _web_fetch(url: str, output_format: str = "markdown") -> str:
+    """Fetch a web page, with SSRF protection."""
+    # ── SSRF protection ────────────────────────────────────
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"❌ Blocked: URL scheme '{parsed.scheme}' not allowed (SSRF protection)"
+    if parsed.hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0",
+                           "169.254.169.254", "metadata.google.internal",
+                           "100.100.100.200", "192.168.0.0/16"):
+        return f"❌ Blocked: {parsed.hostname} is a private/internal address (SSRF protection)"
     try:
         resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
         resp.raise_for_status()
@@ -350,7 +332,7 @@ def _web_fetch(url: str, format: str = "markdown") -> str:
         text = html_mod.unescape(text)
         text = _re.sub(r"[\t\n\r]+", " ", text)
         text = _re.sub(r"\s{2,}", " ", text).strip()
-        if format == "text":
+        if output_format == "text":
             return text[:5000]
         return f"Content from {url}:\n\n{text[:5000]}"
     except Exception as e:
@@ -668,6 +650,8 @@ def _validate(file_path: str) -> str:
 
 def _list_files(path: str = ".") -> str:
     p = Path(path).resolve()
+    if not _is_safe_path(p):
+        return f"Sandbox: list of {path} denied — not inside {_SAFE_DIR}"
     if not p.is_dir():
         return f"Not a directory: {path}"
     lines = []
@@ -1033,7 +1017,7 @@ def _handle_sandbox_exec(command: str, timeout: int = 60, cwd: str = "") -> str:
     """Execute a command in a sandboxed subprocess."""
     from core.sandbox import SandboxExecutor, ResourceLimits
     limits = ResourceLimits(max_cpu_seconds=timeout)
-    sb = SandboxExecutor(mode="subprocess", limits=limits)
+    sb = SandboxExecutor(mode="auto", limits=limits)
     result = sb.execute(command, timeout=timeout, cwd=Path(cwd) if cwd else None)
     out = result.stdout[:3000] if result.stdout else ""
     err = result.stderr[:1000] if result.stderr else ""
@@ -1128,8 +1112,144 @@ register(
     _handle_edit_files,
 )
 
-_SAFE_DIR: str | None = None
 
+# ── Browser / Computer Use tools ─────────────────────────────
+
+
+def _browser_navigate(url: str) -> str:
+    """Open a URL in the browser and return the page content (text).
+
+    Uses Playwright if available, otherwise falls back to HTTP fetch.
+    """
+    # Try Playwright MCP first (if connected)
+    try:
+        from core.mcp.client import get_mcp_manager
+        mgr = get_mcp_manager()
+        if mgr.has_tool("mcp__playwright__browser_navigate") or mgr.has_tool("mcp__playwright__navigate"):
+            tool_name = "mcp__playwright__browser_navigate" if mgr.has_tool("mcp__playwright__browser_navigate") else "mcp__playwright__navigate"
+            return mgr.call_tool(tool_name, {"url": url})
+    except Exception:
+        pass
+    # Fallback: HTTP fetch
+    return _web_fetch(url)
+
+
+def _browser_screenshot(url: str | None = None, selector: str | None = None) -> str:
+    """Take a screenshot of the current page or a specific URL.
+
+    Uses Playwright MCP if available.
+    """
+    try:
+        from core.mcp.client import get_mcp_manager
+        mgr = get_mcp_manager()
+        # Navigate first if URL provided
+        if url:
+            tool_name = "mcp__playwright__browser_navigate" if mgr.has_tool("mcp__playwright__browser_navigate") else "mcp__playwright__navigate"
+            mgr.call_tool(tool_name, {"url": url})
+        # Take screenshot
+        if mgr.has_tool("mcp__playwright__screenshot"):
+            args = {}
+            if selector:
+                args["selector"] = selector
+            return mgr.call_tool("mcp__playwright__screenshot", args)
+        return "Screenshot not available — Playwright MCP not connected"
+    except Exception as e:
+        return f"Screenshot error: {e}"
+
+
+def _browser_click(selector: str) -> str:
+    """Click an element on the current page by CSS selector."""
+    try:
+        from core.mcp.client import get_mcp_manager
+        mgr = get_mcp_manager()
+        if mgr.has_tool("mcp__playwright__click"):
+            return mgr.call_tool("mcp__playwright__click", {"selector": selector})
+        return "Click not available — Playwright MCP not connected"
+    except Exception as e:
+        return f"Click error: {e}"
+
+
+def _browser_snapshot() -> str:
+    """Get the current page's accessibility snapshot (text-only)."""
+    try:
+        from core.mcp.client import get_mcp_manager
+        mgr = get_mcp_manager()
+        if mgr.has_tool("mcp__playwright__snapshot"):
+            return mgr.call_tool("mcp__playwright__snapshot", {})
+        return "Snapshot not available — Playwright MCP not connected"
+    except Exception as e:
+        return f"Snapshot error: {e}"
+
+
+def _browser_type(selector: str, text: str) -> str:
+    """Type text into an element identified by CSS selector."""
+    try:
+        from core.mcp.client import get_mcp_manager
+        mgr = get_mcp_manager()
+        if mgr.has_tool("mcp__playwright__fill") or mgr.has_tool("mcp__playwright__type"):
+            tool_name = "mcp__playwright__fill" if mgr.has_tool("mcp__playwright__fill") else "mcp__playwright__type"
+            return mgr.call_tool(tool_name, {"selector": selector, "text": text})
+        return "Type not available — Playwright MCP not connected"
+    except Exception as e:
+        return f"Type error: {e}"
+
+
+def _browser_press(key: str) -> str:
+    """Press a keyboard key (Enter, Escape, Tab, etc.)."""
+    try:
+        from core.mcp.client import get_mcp_manager
+        mgr = get_mcp_manager()
+        if mgr.has_tool("mcp__playwright__press"):
+            return mgr.call_tool("mcp__playwright__press", {"key": key})
+        return "Key press not available — Playwright MCP not connected"
+    except Exception as e:
+        return f"Key press error: {e}"
+
+
+register(
+    "browser_navigate",
+    "Open a URL in the browser. Returns the page text content. Supports JavaScript-rendered pages via Playwright.",
+    {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to navigate to"}}, "required": ["url"]},
+    _browser_navigate,
+)
+
+register(
+    "browser_screenshot",
+    "Take a screenshot of the current page or a specific URL. Returns a base64-encoded image.",
+    {"type": "object", "properties": {"url": {"type": "string", "description": "Optional URL to navigate to first"}, "selector": {"type": "string", "description": "Optional CSS selector to capture a specific element"}}},
+    _browser_screenshot,
+)
+
+register(
+    "browser_click",
+    "Click an element on the page by CSS selector.",
+    {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector of the element to click"}}, "required": ["selector"]},
+    _browser_click,
+)
+
+register(
+    "browser_snapshot",
+    "Get the current page's accessibility snapshot (text-only structure of the page).",
+    {"type": "object", "properties": {}},
+    _browser_snapshot,
+)
+
+register(
+    "browser_type",
+    "Type text into an input field on the page.",
+    {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector of the input field"}, "text": {"type": "string", "description": "Text to type"}}, "required": ["selector", "text"]},
+    _browser_type,
+)
+
+register(
+    "browser_press",
+    "Press a keyboard key (e.g., Enter, Escape, Tab, ArrowDown).",
+    {"type": "object", "properties": {"key": {"type": "string", "description": "Key to press"}}, "required": ["key"]},
+    _browser_press,
+)
+
+
+_SAFE_DIR: str | None = None
 
 def configure(sandbox_dir: str | None):
     """Set a sandbox directory for safe file writes.

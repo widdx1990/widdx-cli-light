@@ -83,7 +83,7 @@ def generate_manifest():
     """Scan the project and write MANIFEST.json to the root."""
     files, skills = _walk()
     manifest = {
-        "project": "WIDDX Cortex",
+        "project": "WIDDX Nexus",
         "language": "Python 3.12",
         "files": files,
         "skills": skills,

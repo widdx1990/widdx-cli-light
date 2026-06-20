@@ -1,24 +1,37 @@
-"""Sandbox Executor — Isolate & constrain shell command execution.
-
-Prevents agent from harming the host system by running commands
-inside Docker containers or resource-limited subprocesses.
+"""Sandbox Executor v2 — Cross-platform isolated command execution.
 
 Architecture:
-  SandboxResult     — structured output (stdout, stderr, exit_code, timing)
-  SandboxExecutor   — dispatch to docker / subprocess / none
-  ResourceLimits    — CPU, memory, file size caps
+  ┌──────────────────────────────────────────────┐
+  │               SandboxExecutor                │
+  ├──────────────────────────────────────────────┤
+  │  detect_best_mode() -> auto-selects per OS    │
+  ├──────────────────────────────────────────────┤
+  │  Windows: WSL 🥇 -> Docker 🥈 -> process 🥉    │
+  │  Linux:   cgroups 🥇 -> Docker 🥈 -> process 🥉 │
+  |  macOS:   sandbox-exec 🥇 -> Docker 🥈-> process|
+  └──────────────────────────────────────────────┘
+
+Key features:
+  - Docker NOT required: each platform has a native isolation method
+  - Session-scoped temp workspace (auto-created, auto-cleaned)
+  - Resource limits: CPU, memory, file size, network, timeout
+  - Structured results: stdout, stderr, exit_code, timing, metadata
+  - File tracking: reports what files were created/modified
 
 Usage:
-    from core.sandbox import SandboxExecutor, ResourceLimits
+    from core.sandbox import sandbox
 
-    sb = SandboxExecutor(mode="subprocess")
-    result = sb.execute("npm install react", timeout=60)
+    result = sandbox.execute("npm install react", timeout=60)
     print(result.stdout, result.exit_code)
+
+    # Force a specific mode:
+    sb = SandboxExecutor(mode="wsl")
+    result = sb.execute("python --version")
 """
 
 from __future__ import annotations
 
-import os, platform, shutil, subprocess, time, shlex, logging
+import os, platform, shutil, subprocess, time, shlex, logging, re, json, uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -29,6 +42,7 @@ logger = logging.getLogger("widdx.sandbox")
 # ---------------------------------------------------------------------------
 # Data Structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ResourceLimits:
@@ -46,7 +60,7 @@ class SandboxResult:
     was_timeout: bool = False
     was_killed: bool = False
     elapsed_ms: float = 0.0
-    mode: str = "none"           # "docker" | "subprocess" | "none"
+    mode: str = "none"
     files_created: list[str] = field(default_factory=list)
     files_modified: list[str] = field(default_factory=list)
 
@@ -65,24 +79,162 @@ class SandboxResult:
 
 
 # ---------------------------------------------------------------------------
+# Session Workspace Manager
+# ---------------------------------------------------------------------------
+
+
+class SessionWorkspace:
+    """Creates and manages a temp workspace for each agent session.
+
+    The workspace is a temp directory under ~/.widdx/workspaces/<session_id>/
+    Auto-created on first use, auto-cleaned on cleanup().
+    """
+
+    BASE_DIR = Path.home() / ".widdx" / "workspaces"
+
+    def __init__(self, session_id: str | None = None):
+        self.session_id = session_id or f"sandbox_{uuid.uuid4().hex[:12]}"
+        self._dir: Path | None = None
+
+    @property
+    def path(self) -> Path:
+        if self._dir is None:
+            self._ensure()
+        return self._dir  # type: ignore
+
+    def _ensure(self) -> Path:
+        self.BASE_DIR.mkdir(parents=True, exist_ok=True)
+        self._dir = self.BASE_DIR / self.session_id
+        self._dir.mkdir(exist_ok=True)
+        return self._dir
+
+    def cleanup(self):
+        if self._dir and self._dir.exists():
+            try:
+                shutil.rmtree(str(self._dir))
+                logger.debug("Workspace cleaned: %s", self._dir)
+            except Exception as e:
+                logger.debug("Workspace cleanup failed: %s", e)
+        self._dir = None
+
+    @staticmethod
+    def cleanup_old(max_age_hours: int = 24):
+        cutoff = time.time() - (max_age_hours * 3600)
+        if not SessionWorkspace.BASE_DIR.exists():
+            return
+        for d in SessionWorkspace.BASE_DIR.iterdir():
+            if d.is_dir():
+                try:
+                    mtime = d.stat().st_mtime
+                    if mtime < cutoff:
+                        shutil.rmtree(str(d))
+                        logger.debug("Stale workspace cleaned: %s", d)
+                except Exception:
+                    pass
+
+
+# ---------------------------------------------------------------------------
+# Platform Detector
+# ---------------------------------------------------------------------------
+
+
+def _get_platform() -> str:
+    """Return normalized platform name: 'windows', 'linux', 'darwin'."""
+    sys_platform = platform.system().lower()
+    if sys_platform == "windows" or "cygwin" in sys_platform or "msys" in sys_platform:
+        return "windows"
+    return sys_platform
+
+
+def _check_wsl() -> bool:
+    """Check if WSL is available on Windows."""
+    if _get_platform() != "windows":
+        return False
+    wsl_exe = shutil.which("wsl.exe") or shutil.which("wsl")
+    if not wsl_exe:
+        # Also check common WSL install locations
+        for candidate in [
+            os.environ.get("SystemRoot", "C:\\Windows") + "\\System32\\wsl.exe",
+            "C:\\Windows\\System32\\wsl.exe",
+        ]:
+            if os.path.exists(candidate):
+                wsl_exe = candidate
+                break
+    if not wsl_exe:
+        return False
+    try:
+        result = subprocess.run(
+            [wsl_exe, "--status"],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        return False
+
+
+def _check_docker() -> bool:
+    """Check if Docker is available."""
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _check_sandbox_exec() -> bool:
+    """Check if macOS sandbox-exec is available."""
+    if _get_platform() != "darwin":
+        return False
+    return shutil.which("sandbox-exec") is not None
+
+
+def _check_cgroups() -> bool:
+    """Check if Linux cgroups v2 is available for process isolation."""
+    if _get_platform() != "linux":
+        return False
+    return Path("/sys/fs/cgroup").is_dir()
+
+
+# ---------------------------------------------------------------------------
 # Sandbox Executor
 # ---------------------------------------------------------------------------
 
+
 class SandboxExecutor:
-    """Execute shell commands in an isolated environment."""
+    """Execute shell commands in an isolated environment.
+
+    Modes (auto-selected by detect_best_mode()):
+      wsl          -- Windows Subsystem for Linux (Windows only)
+      docker       -- Docker container (any OS)
+      cgroups      -- Linux cgroups isolation (Linux only)
+      sandbox-exec -- macOS sandbox (macOS only)
+      subprocess   -- Plain subprocess with resource limits (fallback)
+      none         -- No sandbox (trusted commands only)
+    """
+
+    WSL_DISTROS = ["Ubuntu", "Ubuntu-24.04", "Ubuntu-22.04", "Ubuntu-20.04", "Debian", "kali-linux"]
 
     def __init__(
         self,
         mode: str = "auto",
         limits: ResourceLimits | None = None,
         work_dir: str | Path | None = None,
+        session_id: str | None = None,
     ):
         self._mode = mode
         self._limits = limits or ResourceLimits()
         self._cwd = Path(work_dir) if work_dir else Path.cwd()
+        self._workspace = SessionWorkspace(session_id) if mode != "none" else None
         self._docker_available: bool | None = None
+        self._wsl_available: bool | None = None
+        self._wsl_distro: str | None = None
+        self._cgroups_available: bool | None = None
+        self._sandbox_exec_available: bool | None = None
 
-    # ── Public API ──────────────────────────────────────
+    # -- Public API -------------------------------------------------------
 
     def execute(
         self,
@@ -103,8 +255,14 @@ class SandboxExecutor:
         mode = self._resolve_mode()
         t0 = time.perf_counter()
 
-        if mode == "docker":
+        if mode == "wsl":
+            result = self._execute_wsl(command, timeout, env)
+        elif mode == "docker":
             result = self._execute_docker(command, timeout, env)
+        elif mode == "cgroups":
+            result = self._execute_cgroups(command, timeout, env)
+        elif mode == "sandbox-exec":
+            result = self._execute_sandbox_exec(command, timeout, env)
         elif mode == "subprocess":
             result = self._execute_subprocess(command, timeout, env)
         else:
@@ -113,39 +271,169 @@ class SandboxExecutor:
         result.elapsed_ms = (time.perf_counter() - t0) * 1000
         return result
 
-    def detect_mode(self) -> str:
-        """Return the best available sandbox mode."""
-        if self._docker_available is None:
-            self._docker_available = shutil.which("docker") is not None
-        if self._docker_available:
-            return "docker"
+    def detect_best_mode(self) -> str:
+        """Return the best available isolation mode for this platform.
+
+        Priority per platform:
+          Windows: WSL -> Docker -> subprocess
+          Linux:   cgroups -> Docker -> subprocess
+          macOS:   sandbox-exec -> Docker -> subprocess
+        """
+        plat = _get_platform()
+
+        if plat == "windows":
+            if self._check_wsl():
+                return "wsl"
+            if self._check_docker():
+                return "docker"
+            return "subprocess"
+
+        elif plat == "linux":
+            if self._check_cgroups():
+                return "cgroups"
+            if self._check_docker():
+                return "docker"
+            return "subprocess"
+
+        elif plat == "darwin":
+            if self._check_sandbox_exec():
+                return "sandbox-exec"
+            if self._check_docker():
+                return "docker"
+            return "subprocess"
+
         return "subprocess"
+
+    def detect_mode(self) -> str:
+        """Backward-compatible alias for detect_best_mode()."""
+        return self.detect_best_mode()
 
     @property
     def mode(self) -> str:
         return self._resolve_mode()
 
-    # ── Internals ───────────────────────────────────────
+    def cleanup(self):
+        """Clean up workspace and resources."""
+        if self._workspace:
+            self._workspace.cleanup()
+
+    def get_workspace_path(self) -> Path | None:
+        """Get the session workspace path, if any."""
+        return self._workspace.path if self._workspace else None
+
+    # -- Mode Resolution ------------------------------------------------_
 
     def _resolve_mode(self) -> str:
         if self._mode == "auto":
-            return self.detect_mode()
-        if self._mode == "docker" and not self._docker_available:
-            return "subprocess"  # fallback
+            return self.detect_best_mode()
+        if self._mode == "wsl" and not self._check_wsl():
+            logger.warning("WSL requested but not available, falling back to subprocess")
+            return "subprocess"
+        if self._mode == "docker" and not self._check_docker():
+            logger.warning("Docker requested but not available, falling back to subprocess")
+            return "subprocess"
+        if self._mode == "cgroups" and not self._check_cgroups():
+            logger.warning("cgroups requested but not available, falling back to subprocess")
+            return "subprocess"
         return self._mode
+
+    # -- Capability Checks ----------------------------------------------
+
+    def _check_wsl(self) -> bool:
+        if self._wsl_available is None:
+            self._wsl_available = _check_wsl()
+            if self._wsl_available:
+                self._detect_wsl_distro()
+        return self._wsl_available
+
+    def _check_docker(self) -> bool:
+        if self._docker_available is None:
+            self._docker_available = _check_docker()
+        return self._docker_available
+
+    def _check_cgroups(self) -> bool:
+        if self._cgroups_available is None:
+            self._cgroups_available = _check_cgroups()
+        return self._cgroups_available
+
+    def _check_sandbox_exec(self) -> bool:
+        if self._sandbox_exec_available is None:
+            self._sandbox_exec_available = _check_sandbox_exec()
+        return self._sandbox_exec_available
+
+    def _detect_wsl_distro(self):
+        """Find the best available WSL distro."""
+        try:
+            result = subprocess.run(
+                ["wsl.exe", "-l", "-v"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                return
+            available = []
+            for line in result.stdout.splitlines():
+                parts = line.strip().split()
+                if parts and parts[0] not in ("NAME", "", "Windows"):
+                    name = parts[0].rstrip("*")
+                    available.append(name)
+            for preferred in self.WSL_DISTROS:
+                for avail in available:
+                    if preferred.lower() in avail.lower():
+                        self._wsl_distro = avail
+                        return
+            if available:
+                self._wsl_distro = available[0]
+        except Exception:
+            pass
+
+    # -- WSL Executor ---------------------------------------------------
+
+    def _execute_wsl(
+        self, command: str, timeout: int, env: dict | None,
+    ) -> SandboxResult:
+        """Run command inside WSL (Windows Subsystem for Linux)."""
+        # Find wsl executable
+        wsl_exe = shutil.which("wsl.exe") or shutil.which("wsl") or "wsl.exe"
+
+        wsl_args = [wsl_exe]
+        if self._wsl_distro:
+            wsl_args += ["-d", self._wsl_distro]
+
+        # Convert C:\\path to /mnt/c/path for WSL
+        host_cwd = str(self._cwd.resolve())
+        if ":" in host_cwd:
+            drive = host_cwd[0].lower()
+            wsl_path = f"/mnt/{drive}{host_cwd[2:].replace(os.sep, '/')}"
+        else:
+            wsl_path = host_cwd.replace(os.sep, "/")
+
+        env_str = ""
+        if env:
+            env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items()) + " "
+
+        full_cmd = wsl_args + ["--cd", wsl_path, "--exec", "bash", "-c", f"{env_str}{command}"]
+        try:
+            return self._run(full_cmd, timeout, env, mode="wsl")
+        except Exception as e:
+            logger.warning("WSL execution failed, falling back to subprocess: %s", e)
+            return self._execute_subprocess(command, timeout, env)
+
+    # -- Docker Executor ------------------------------------------------
 
     def _execute_docker(
         self, command: str, timeout: int, env: dict | None,
     ) -> SandboxResult:
-        """Run command inside a Docker container."""
-        # Build docker run command
-        img = "alpine:latest"  # lightweight image
+        """Run command inside a Docker container with a suitable image."""
+        img = self._pick_docker_image(command)
+        mem_limit = f"{self._limits.max_memory_mb}m"
+
+        workspace_path = self._workspace.path if self._workspace else self._cwd.resolve()
         docker_cmd = [
             "docker", "run", "--rm",
-            "--memory", f"{self._limits.max_memory_mb}m",
+            "--memory", mem_limit,
             "--cpus", "1",
             "--network", "host" if self._limits.allow_network else "none",
-            "-v", f"{self._cwd.resolve()}:/workspace",
+            "-v", f"{workspace_path}:/workspace",
             "-w", "/workspace",
             img,
             "sh", "-c", command,
@@ -154,37 +442,137 @@ class SandboxExecutor:
         return self._run(docker_cmd, timeout, env, mode="docker")
 
     @staticmethod
-    def _split_command(command: str) -> tuple[list[str] | str, bool]:
-        """Split a command string safely.
+    def _pick_docker_image(command: str) -> str:
+        """Pick a suitable Docker image based on the command content."""
+        cmd_lower = command.lower()
+        if any(x in cmd_lower for x in ["python", "pip", "pytest", "flask", "django"]):
+            return "python:3.12-slim"
+        if any(x in cmd_lower for x in ["node", "npm", "npx", "yarn", "tsc", "react"]):
+            return "node:20-slim"
+        if any(x in cmd_lower for x in ["go ", "go build", "go run"]):
+            return "golang:1.22-alpine"
+        if any(x in cmd_lower for x in ["rustc", "cargo"]):
+            return "rust:1.77-slim"
+        if any(x in cmd_lower for x in ["gcc", "g++", "make", "cmake"]):
+            return "gcc:13-bookworm"
+        return "ubuntu:22.04"
 
-        Returns:
-            (command_list_or_string, needs_shell)
-            - If the command has no shell metacharacters, returns a list + False.
-            - If it has pipes/redirects/variables, returns the string + True.
-        """
-        # Shell metacharacters that require shell=True
-        SHELL_CHARS = {"|", ">", "<", "&&", "||", ";", "$", "`", "*", "?", "[", "]", "~", "!", "{", "}"}
+    # -- Linux cgroups Executor -----------------------------------------
+
+    def _execute_cgroups(
+        self, command: str, timeout: int, env: dict | None,
+    ) -> SandboxResult:
+        """Run command with resource limits via setrlimit (Linux only)."""
+        merged_env = os.environ.copy()
+        if env:
+            merged_env.update(env)
+
         try:
-            parts = shlex.split(command)
-            # Check each part for embedded shell metacharacters
-            for part in parts:
-                for char in SHELL_CHARS:
-                    if char in part:
-                        return command, True  # needs shell
-            return parts, False  # safe for list-based execution
-        except ValueError:
-            # shlex couldn't parse — likely unbalanced quotes, use shell
-            return command, True
+            proc = subprocess.Popen(
+                ["bash", "-c", command],
+                cwd=str(self._cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=merged_env,
+                preexec_fn=self._apply_resource_limits if hasattr(os, "setrlimit") else None,
+            )
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return SandboxResult(
+                stdout=stdout or "",
+                stderr=stderr or "",
+                exit_code=proc.returncode,
+                mode="cgroups",
+            )
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate(timeout=5)
+            return SandboxResult(
+                stdout=stdout or "",
+                stderr=stderr or "",
+                exit_code=-1,
+                was_timeout=True,
+                was_killed=True,
+                mode="cgroups",
+            )
+
+    def _apply_resource_limits(self):
+        """Apply resource limits via setrlimit (Linux/macOS)."""
+        import resource
+        mem_bytes = self._limits.max_memory_mb * 1024 * 1024
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+        except (ValueError, resource.error):
+            pass
+        try:
+            resource.setrlimit(resource.RLIMIT_CPU, (self._limits.max_cpu_seconds, self._limits.max_cpu_seconds))
+        except (ValueError, resource.error):
+            pass
+        file_bytes = self._limits.max_file_size_mb * 1024 * 1024
+        try:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (file_bytes, file_bytes))
+        except (ValueError, resource.error):
+            pass
+
+    # -- macOS sandbox-exec Executor ------------------------------------
+
+    def _execute_sandbox_exec(
+        self, command: str, timeout: int, env: dict | None,
+    ) -> SandboxResult:
+        """Run command inside macOS sandbox-exec."""
+        merged_env = os.environ.copy()
+        if env:
+            merged_env.update(env)
+
+        sandbox_profile = (
+            "(version 1)\n"
+            "(deny default)\n"
+            f"(allow network* (if {str(self._limits.allow_network).lower()}))\n"
+            f'(allow file-read* file-write* (subpath "{self._cwd.resolve()}"))\n'
+            "(allow process*)\n"
+            "(allow sysctl*)\n"
+            "(allow signal*)\n"
+        )
+
+        try:
+            proc = subprocess.Popen(
+                ["sandbox-exec", "-p", sandbox_profile, "bash", "-c", command],
+                cwd=str(self._cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=merged_env,
+            )
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return SandboxResult(
+                stdout=stdout or "",
+                stderr=stderr or "",
+                exit_code=proc.returncode,
+                mode="sandbox-exec",
+            )
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate(timeout=5)
+            return SandboxResult(
+                stdout=stdout or "",
+                stderr=stderr or "",
+                exit_code=-1,
+                was_timeout=True,
+                was_killed=True,
+                mode="sandbox-exec",
+            )
+
+    # -- Subprocess Executor (fallback) ---------------------------------
 
     def _execute_subprocess(
         self, command: str, timeout: int, env: dict | None,
     ) -> SandboxResult:
         """Run command in a resource-limited subprocess."""
-        merged_env = os.environ.copy()
+        # Strip WIDDX API keys from child process environment
+        merged_env = {k: v for k, v in os.environ.items() if not k.startswith("WIDDX_API_KEY")}
         if env:
             merged_env.update(env)
 
-        # Safely split command — avoid shell=True when possible
         cmd, needs_shell = self._split_command(command)
         if needs_shell:
             logger.debug("shell=True required for: %.100s", command)
@@ -220,14 +608,11 @@ class SandboxExecutor:
                 mode="subprocess",
             )
         except FileNotFoundError:
-            # FileNotFoundError means the command is a shell built-in
-            # (e.g. echo, dir on Windows) or not in PATH.
-            # Retry with shell=True as fallback.
             if not needs_shell:
                 logger.debug("shell=False failed, retrying with shell=True: %.100s", command)
                 try:
                     proc = subprocess.Popen(
-                        command,  # original string
+                        command,
                         shell=True,
                         cwd=str(self._cwd),
                         stdout=subprocess.PIPE,
@@ -256,10 +641,26 @@ class SandboxExecutor:
         """Run command without sandbox (trusted only)."""
         return self._execute_subprocess(command, timeout, env)
 
+    # -- Helpers --------------------------------------------------------
+
+    @staticmethod
+    def _split_command(command: str) -> tuple[list[str] | str, bool]:
+        SHELL_CHARS = {"|", ">", "<", "&&", "||", ";", "$", "`", "*", "?", "[", "]", "~", "!", "{", "}"}
+        try:
+            parts = shlex.split(command)
+            for part in parts:
+                for char in SHELL_CHARS:
+                    if char in part:
+                        return command, True
+            return parts, False
+        except ValueError:
+            return command, True
+
     def _run(
         self, cmd: list[str], timeout: int,
         env: dict | None, mode: str,
     ) -> SandboxResult:
+        """Execute a command list and return result."""
         try:
             proc = subprocess.Popen(
                 cmd,

@@ -1,2 +1,2 @@
-"""TUI Widgets for WIDDX Cortex."""
+"""TUI Widgets for WIDDX Nexus."""
 from .header import HeaderWidget

@@ -40,7 +40,8 @@ class WIDDXV2:
             self.session = create_new_session()
     
     def chat(self, user_input, stream=True):
-        from .tools import get_tool_definitions, execute_tool
+        # Backward compat — tools API has moved
+        from core import tools
         
         suggested_skills = self.skills.suggest_for_input(user_input)
         

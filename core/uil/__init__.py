@@ -27,7 +27,7 @@ __all__ = [
     "RoutingDecision", "ExecutionResult", "ExecutionContext",
     "TaskStep", "Plan",
     # Telemetry (Phase 2.2)
-    "StepResult", "ExecutionMetrics",
+    # StepResult, ExecutionMetrics — defined in contract but may not be re-exported
     # Analyzer
     "TaskAnalyzer",
     # Router

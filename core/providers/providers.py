@@ -861,7 +861,7 @@ class DeepSeekProvider(OpenAICompatibleProvider):
         }
         # Official DeepSeek API does not support thinking/reasoning_effort request parameters (throws 400).
         # We only add them if we are using a third-party proxy that supports it.
-        if self._thinking_enabled and "api.deepseek.com" not in self.base_url:
+        if self._thinking_enabled and ".deepseek.com" not in self.base_url and "api.deepseek" not in self.base_url:
             body["thinking"] = {"type": "enabled"}
             body["reasoning_effort"] = "high"
         if schema:
@@ -1026,7 +1026,8 @@ def fetch_ollama_models(base_url: str | None = None,
         _OLLAMA_MODELS_CACHE["models"] = result
         _OLLAMA_MODELS_CACHE["timestamp"] = now
         return result
-    except Exception:
+    except Exception as e:
+        logger.debug("Ollama models fetch failed: %s", e)
         return _OLLAMA_MODELS_CACHE["models"]
 
 

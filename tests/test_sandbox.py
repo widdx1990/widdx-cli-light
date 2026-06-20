@@ -18,7 +18,7 @@ def test_execute_simple_echo():
     result = sandbox.execute("echo hello", timeout=10)
     assert result.ok
     assert "hello" in result.stdout
-    assert result.mode in ("subprocess", "docker")
+    assert result.mode in ("subprocess", "docker", "wsl", "cgroups", "sandbox-exec")
 
 
 def test_execute_exit_code():
@@ -35,7 +35,7 @@ def test_execute_nonexistent_command():
 def test_detect_mode():
     sb = SandboxExecutor()
     mode = sb.detect_mode()
-    assert mode in ("subprocess", "docker")
+    assert mode in ("subprocess", "docker", "wsl", "cgroups", "sandbox-exec")
 
 
 def test_resource_limits_default():

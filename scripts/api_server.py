@@ -1,4 +1,4 @@
-"""WIDDX Cortex — REST API Server.
+"""WIDDX Nexus — REST API Server.
 
 This script lives in `scripts/` to keep the repository root tidy. It adds the
 project root to sys.path before importing the core application logic.
@@ -38,7 +38,7 @@ _API_KEY: str = os.environ.get("WIDDX_API_KEY", "")
 if not _API_KEY:
     _API_KEY = secrets.token_urlsafe(32)
     logger.info("No WIDDX_API_KEY set. Generated ephemeral key for this session:")
-    logger.info("  API Key: %s", _API_KEY)
+    logger.info("  API Key: %s...", _API_KEY[:8] if _API_KEY else "none")
     logger.info("  Use header: Authorization: Bearer %s", _API_KEY)
 
 security_scheme = HTTPBearer(auto_error=False)
@@ -160,9 +160,9 @@ async def lifespan(app: FastAPI):
         pass
 
 app = FastAPI(
-    title="WIDDX Cortex API",
+    title="WIDDX Nexus API",
     version="3.0.0",
-    description="REST API for WIDDX Cortex — Terminal AI Engineering Assistant",
+    description="REST API for WIDDX Nexus — Terminal AI Engineering Assistant",
     lifespan=lifespan,
 )
 

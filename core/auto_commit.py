@@ -75,8 +75,9 @@ class AutoCommitManager:
                 cwd=str(self._repo),
             )
             return r.stdout or "(no changes)"
-        except Exception:
-            return "(git error)"
+        except Exception as e:
+            logger.warning("Auto-commit error: %s", e)
+            return None
 
     # ── Internals ───────────────────────────────────────
 
@@ -93,8 +94,9 @@ class AutoCommitManager:
                 if len(line) >= 3:
                     files.add(line[3:].strip())
             return files
-        except Exception:
-            return set()
+        except Exception as e:
+            logger.warning("Auto-commit error: %s", e)
+            return None
 
     def _commit(self, message: str, files: list[str]) -> str | None:
         try:
@@ -118,7 +120,8 @@ class AutoCommitManager:
                 )
                 return (r2.stdout or "").strip()[:12] or None
             return None
-        except Exception:
+        except Exception as e:
+            logger.warning("Auto-commit error: %s", e)
             return None
 
     def _revert_files(self, files: list[str]) -> bool:
@@ -129,8 +132,9 @@ class AutoCommitManager:
                 cwd=str(self._repo),
             )
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            logger.warning("Auto-commit error: %s", e)
+            return None
 
 
 auto_committer = AutoCommitManager()

@@ -101,7 +101,7 @@ class HelpScreen(ModalScreen):
         log = self.query_one("#help-log", RichLog)
         log.write(Panel(
             Text.from_markup(
-                "[bold ◈  WIDDX Cortex  —  Terminal AI]\n"
+                "[bold ◈  WIDDX Nexus  —  Terminal AI]\n"
                 "[dim]by Muhammad Muslih  •  widdx[/]"
             ),
             border_style=BLUE,

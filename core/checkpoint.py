@@ -47,16 +47,18 @@ class CheckpointManager:
 
         Returns the checkpoint ID (timestamp) or None on failure.
         """
-        import hashlib
+        import hashlib, json
         ts = time.strftime("%Y%m%d_%H%M%S")
         cid = ts
         cdir = self._repo / ".widdx" / "checkpoints" / cid
         try:
             cdir.mkdir(parents=True, exist_ok=True)
-        except Exception:
+        except Exception as e:
+            logger.error("Checkpoint dir creation error: %s", e)
             return None
 
-        # Build manifest: {relpath: sha256}
+        # Build manifest: scan all tracked files and hash them
+        import hashlib
         manifest: dict[str, str] = {}
         file_count = 0
         for f in self._repo.rglob("*"):
@@ -74,7 +76,7 @@ class CheckpointManager:
             except Exception:
                 continue
 
-        # Write manifest
+        # Save manifest
         import json
         meta = {
             "id": cid,
@@ -83,17 +85,36 @@ class CheckpointManager:
             "files": file_count,
             "manifest": manifest,
         }
-        try:
-            tmp = str(cdir / "manifest.json.tmp")
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(meta, fh, ensure_ascii=False)
-            import os
-            os.replace(tmp, str(cdir / "manifest.json"))
-        except Exception:
+        if not self._save_manifest(cdir, meta):
             return None
 
         self._cleanup()
         return cid
+
+    def _save_manifest(self, cdir, meta):
+        """Write manifest.json atomically."""
+        import json, os
+        try:
+            tmp = str(cdir / "manifest.json.tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, ensure_ascii=False)
+            os.replace(tmp, str(cdir / "manifest.json"))
+            return True
+        except Exception as e:
+            logger.error("Manifest write error: %s", e)
+            return False
+
+    def _cleanup(self):
+        """Remove old checkpoints beyond MAX_CHECKPOINTS."""
+        cdir = self._repo / ".widdx" / "checkpoints"
+        if not cdir.exists():
+            return
+        all_cps = sorted(cdir.iterdir(), reverse=True)
+        for old in all_cps[MAX_CHECKPOINTS:]:
+            try:
+                shutil.rmtree(str(old))
+            except Exception:
+                pass
 
     def rollback(self, checkpoint_id: str | None = None) -> bool:
         """Restore working tree to a checkpoint snapshot.

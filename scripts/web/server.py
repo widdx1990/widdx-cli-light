@@ -1,0 +1,293 @@
+"""WIDDX Nexus — Web UI Server (FastAPI + WebSocket).
+
+Architecture:
+  server.py          ← FastAPI app, routes, WebSocket
+  chat.py            ← LLM chat handler
+  sandbox.py         ← Sandbox (terminal, browser, files)
+  static/            ← Frontend assets
+    index.html       ← Main page
+    css/style.css    ← Styling
+    js/              ← JavaScript modules
+      app.js         ← Entry point
+      chat.js        ← Chat panel
+      sandbox.js     ← Sandbox panel
+      websocket.js   ← WebSocket client
+
+Usage:
+    python scripts/web_app.py
+    # → http://localhost:8000
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import sys
+from pathlib import Path
+from typing import Any
+
+# ── Static paths ────────────────────────────────────────────
+ROOT = Path(__file__).resolve().parent.parent
+STATIC_DIR = ROOT / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+(STATIC_DIR / "css").mkdir(exist_ok=True)
+(STATIC_DIR / "js").mkdir(exist_ok=True)
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+# ── FastAPI imports ─────────────────────────────────────────
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+
+logger = logging.getLogger("widdx.web")
+
+# ── App ─────────────────────────────────────────────────────
+app = FastAPI(title="WIDDX Nexus", version="3.0.0")
+
+# ── Mount static files ──────────────────────────────────────
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# ── Lazy handlers ───────────────────────────────────────────
+_chat_handler: Any = None
+_sandbox_handler: Any = None
+
+
+def get_chat():
+    global _chat_handler
+    if _chat_handler is None:
+        from scripts.web.chat import ChatHandler
+        _chat_handler = ChatHandler()
+    return _chat_handler
+
+
+def refresh_chat():
+    """Force recreation of the chat handler (e.g. after settings change)."""
+    global _chat_handler
+    _chat_handler = None
+    return get_chat()
+
+
+def get_sandbox():
+    global _sandbox_handler
+    if _sandbox_handler is None:
+        from scripts.web.sandbox import SandboxHandler
+        _sandbox_handler = SandboxHandler()
+    return _sandbox_handler
+
+
+# ── Routes ──────────────────────────────────────────────────
+
+@app.get("/")
+async def index():
+    """Serve the main Web UI page (no-cache)."""
+    html_path = STATIC_DIR / "index.html"
+    if html_path.exists():
+        from fastapi.responses import Response
+        content = html_path.read_bytes()
+        return Response(content=content, media_type="text/html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return HTMLResponse("<h1>WIDDX Nexus Web UI</h1><p>Build index.html first.</p>")
+
+
+@app.get("/api/status")
+async def status():
+    """System status endpoint."""
+    chat = get_chat()
+    sandbox = get_sandbox()
+    return {
+        "status": "ok",
+        "provider": chat.info,
+        "sandbox": {"mode": sandbox.mode},
+        "version": "3.0.0",
+    }
+
+
+@app.post("/api/chat")
+async def chat_message(request: Request):
+    """Send a chat message (non-streaming)."""
+    data = await request.json()
+    message = data.get("message", "")
+    history = data.get("history", [])
+
+    chat = get_chat()
+    result = chat.chat(message, history)
+    return result
+
+
+@app.post("/api/sandbox/exec")
+async def sandbox_exec(request: Request):
+    """Execute a shell command in the sandbox."""
+    data = await request.json()
+    command = data.get("command", "")
+    timeout = data.get("timeout", 60)
+
+    sandbox = get_sandbox()
+    result = sandbox.execute(command, timeout)
+    return result
+
+
+@app.get("/api/sandbox/files")
+async def sandbox_files(path: str = "."):
+    """Get file tree."""
+    sandbox = get_sandbox()
+    return sandbox.file_tree(path)
+
+
+@app.post("/api/sandbox/screenshot")
+async def sandbox_screenshot():
+    """Take a browser screenshot."""
+    sandbox = get_sandbox()
+    return sandbox.screenshot()
+
+
+# ── WebSocket ───────────────────────────────────────────────
+
+# ── Dashboard ────────────────────────────────────────────
+_dashboard: Any = None
+
+def get_dashboard():
+    global _dashboard
+    if _dashboard is None:
+        from scripts.web.dashboard import Dashboard
+        _dashboard = Dashboard()
+    return _dashboard
+
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    """Full system dashboard."""
+    return get_dashboard().computer_info()
+
+
+@app.get("/api/dashboard/cron")
+async def api_cron():
+    return get_dashboard().cron_jobs()
+
+
+@app.post("/api/dashboard/cron")
+async def api_cron_create(request: Request):
+    data = await request.json()
+    return get_dashboard().cron_create(data.get("schedule", ""), data.get("prompt", ""))
+
+
+@app.delete("/api/dashboard/cron/{job_id}")
+async def api_cron_delete(job_id: str):
+    return get_dashboard().cron_delete(job_id)
+
+
+@app.get("/api/dashboard/background")
+async def api_background():
+    return get_dashboard().background_tasks()
+
+
+@app.get("/api/dashboard/agents")
+async def api_agents():
+    return get_dashboard().sub_agents()
+
+
+@app.get("/api/dashboard/memories")
+async def api_memories():
+    return get_dashboard().memories()
+
+
+@app.get("/api/dashboard/sessions")
+async def api_sessions():
+    return get_dashboard().sessions()
+
+
+@app.get("/api/dashboard/activity")
+async def api_activity(limit: int = 50):
+    return get_dashboard().activity_feed(limit)
+
+
+@app.get("/api/dashboard/gateway")
+async def api_gateway():
+    return get_dashboard().gateway_status()
+
+
+# ── Settings ────────────────────────────────────────────
+
+@app.get("/api/settings")
+async def api_settings():
+    return get_dashboard().get_settings()
+
+
+@app.post("/api/settings")
+async def api_settings_update(request: Request):
+    data = await request.json()
+    result = get_dashboard().update_settings(data)
+    if result.get("status") == "ok":
+        refresh_chat()  # Apply new provider immediately
+    return result
+
+
+@app.get("/api/settings/models")
+async def api_settings_models(provider: str = "opencode-zen"):
+    return get_dashboard().get_provider_models(provider)
+
+
+@app.get("/api/dashboard/skills")
+async def api_skills():
+    return get_dashboard().skills()
+
+
+@app.post("/api/computer/exec")
+async def api_computer_exec(request: Request):
+    data = await request.json()
+    return get_dashboard().computer_exec(data.get("command", ""))
+
+
+@app.get("/api/computer/info")
+async def api_computer_info():
+    return get_dashboard().computer_info()
+
+
+# ── WebSocket ───────────────────────────────────────────────
+
+@app.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket):
+    """WebSocket endpoint for streaming chat.
+
+    Receives:  {"message": "...", "history": [...]}
+    Sends:     {"type": "text|tool|reasoning|done|error", "data": "..."}
+    """
+    await websocket.accept()
+    logger.info("WebSocket connected")
+
+    try:
+        data = await websocket.receive_text()
+        payload = json.loads(data)
+        message = payload.get("message", "")
+        history = payload.get("history", [])
+
+        chat = get_chat()
+        for event in chat.stream_chat(message, history):
+            await websocket.send_json(event)
+            if event["type"] == "done" or event["type"] == "error":
+                break
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected")
+    except Exception as e:
+        logger.error("WebSocket error: %s", e)
+        try:
+            await websocket.send_json({"type": "error", "data": str(e)})
+        except Exception:
+            pass
+
+
+# ── Main ────────────────────────────────────────────────────
+
+def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
+    """Run the Web UI server."""
+    import uvicorn
+    logger.info("WIDDX Nexus Web UI: http://%s:%d", host, port)
+    uvicorn.run(
+        "scripts.web.server:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level="info",
+    )
