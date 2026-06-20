@@ -119,6 +119,67 @@ function initWebSocket() {
   connect();
 }
 
+// ── Live Event Stream (WebSocket) ──
+
+function initEventStream() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = protocol + '//' + location.host + '/ws/events';
+  var ws;
+  try { ws = new WebSocket(url); } catch(e) { return; }
+
+  ws.onmessage = function(event) {
+    try {
+      var evt = JSON.parse(event.data);
+      onLiveEvent(evt);
+    } catch(e) { /* ignore parse errors */ }
+  };
+
+  ws.onclose = function() {
+    // Reconnect after 10s
+    setTimeout(initEventStream, 10000);
+  };
+
+  ws.onerror = function() { /* onclose will fire */ };
+
+  // Keepalive ping every 30s
+  setInterval(function() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send('ping');
+    }
+  }, 30000);
+}
+
+function onLiveEvent(evt) {
+  // If we're on Dashboard or Activity view, prepend the event
+  if (S.view === 'dashboard') {
+    var feed = document.getElementById('dash-activity');
+    if (feed) {
+      var iconMap = {'fa-comment':'message','fa-robot':'agent','fa-user':'message','fa-star':'system','fa-wrench':'tool','fa-gear':'tool','fa-sliders':'system','fa-play':'agent','fa-check':'system','fa-tower-broadcast':'message','fa-plug':'system','fa-file-pen':'tool'};
+      var type = iconMap[evt.icon] || 'message';
+      var item = document.createElement('div');
+      item.className = 'activity-item';
+      item.style.opacity = '0';
+      item.innerHTML = '<div class="activity-icon ' + type + '"><i class="fa-solid ' + (evt.icon || 'fa-circle') + '"></i></div><div class="activity-content"><div class="activity-detail">' + escapeHtml(evt.detail || '') + '</div><div class="activity-meta"><span class="activity-agent">' + escapeHtml(evt.agent || 'system') + '</span><span class="activity-time">just now</span><span class="activity-status ' + (evt.status || 'done') + '">' + (evt.status || 'done') + '</span></div></div>';
+      feed.insertBefore(item, feed.firstChild);
+      // Limit to 20 items
+      while (feed.children.length > 20) { feed.removeChild(feed.lastChild); }
+      // Fade in
+      requestAnimationFrame(function() { item.style.opacity = '1'; item.style.transition = 'opacity 0.3s'; });
+
+      // Update gateway section if event is gateway-related
+      if (evt.type === 'gateway_msg' || evt.type === 'gateway_status') {
+        loadDashboardView(document.getElementById('messagesArea'));
+      }
+    }
+  } else if (S.view === 'activity') {
+    // Auto-refresh the activity view when on it
+    if (typeof loadActivityView === 'function') {
+      clearTimeout(window._activityRefreshTimer);
+      window._activityRefreshTimer = setTimeout(loadActivityView, 2000);
+    }
+  }
+}
+
 function handleWSMessage(msg) {
   switch (msg.type) {
     case 'text':
@@ -959,6 +1020,7 @@ document.addEventListener('DOMContentLoaded', function() {
   loadSidebar();
   showDesktop();
   initWebSocket();
+  initEventStream();
 
   // Periodic refresh
   setInterval(loadStatus, 30000);

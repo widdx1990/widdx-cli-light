@@ -219,7 +219,18 @@ async def api_settings_update(request: Request):
     data = await request.json()
     result = get_dashboard().update_settings(data)
     if result.get("status") == "ok":
-        refresh_chat()  # Apply new provider immediately
+        refresh_chat()
+        try:
+            from core.activity import add as add_event
+            provider = data.get("provider", {})
+            changed = []
+            if "model" in provider: changed.append(f"model={provider['model']}")
+            if "name" in provider: changed.append(f"provider={provider['name']}")
+            if "temperature" in data: changed.append(f"temp={data['temperature']}")
+            add_event("settings_change", detail=", ".join(changed) or "settings updated",
+                      icon="fa-sliders", agent="system", status="done")
+        except Exception:
+            pass
     return result
 
 
@@ -278,12 +289,57 @@ async def websocket_chat(websocket: WebSocket):
             pass
 
 
+@app.websocket("/ws/events")
+async def websocket_events(websocket: WebSocket):
+    """WebSocket endpoint for live activity events."""
+    await websocket.accept()
+    logger.info("Events WS connected")
+
+    try:
+        from core.activity import get_store
+        store = get_store()
+    except Exception as e:
+        await websocket.close(code=1011, reason=str(e))
+        return
+
+    import asyncio
+
+    def send_event(event_dict: dict):
+        """Push every new event to this client."""
+        try:
+            asyncio.ensure_future(websocket.send_json(event_dict))
+        except Exception:
+            pass
+
+    unsubscribe = store.subscribe(send_event)
+
+    try:
+        # Keep connection open; client sends keepalive pings
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        unsubscribe()
+        logger.info("Events WS disconnected")
+
+
+# ── Main ────────────────────────────────────
+
+
 # ── Main ────────────────────────────────────────────────────
 
 def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """Run the Web UI server."""
     import uvicorn
     logger.info("WIDDX Nexus Web UI: http://%s:%d", host, port)
+    # Log startup event
+    try:
+        from core.activity import add as add_event
+        add_event("system", detail="WIDDX Nexus Mission Control started",
+                  icon="fa-star", agent="system", status="done")
+    except Exception:
+        pass
     uvicorn.run(
         "scripts.web.server:app",
         host=host,

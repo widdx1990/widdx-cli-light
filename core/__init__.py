@@ -11,6 +11,7 @@ from core.providers.providers import (
     fetch_free_models, create_provider,
 )
 from core.memory import MemoryStore
+from core.activity import ActivityStore, get_store as get_activity_store, add as add_activity
 from core.background import BackgroundTaskManager
 from core.delegation import DelegationManager
 from core.voice import TTSEngine

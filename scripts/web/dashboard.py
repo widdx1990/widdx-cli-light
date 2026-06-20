@@ -137,61 +137,16 @@ class Dashboard:
     # ── Activity Feed ──
 
     def activity_feed(self, limit: int = 50) -> list[dict]:
-        """Return recent activity events from session history."""
-        events = []
+        """Return recent activity events from the central ActivityStore."""
         try:
-            from core.session_search import SessionSearcher
-            searcher = SessionSearcher()
-            sessions = searcher.list_recent(limit=5)
-            for session in sessions:
-                sid = session.get("id") or session.get("session_id", "")
-                name = session.get("name") or session.get("title", "Conversation")
-                created = session.get("created_at") or session.get("updated_at") or ""
-                events.append({
-                    "id": f"session_{sid[:8]}" if sid else f"evt_{len(events)}",
-                    "type": "message",
-                    "agent": "main",
-                    "icon": "fa-comment",
-                    "detail": name,
-                    "status": "done",
-                    "timestamp": str(created),
-                    "elapsed": "—",
-                })
-                # Add a couple of messages from each session as tool_call/activity events
-                try:
-                    ctx = searcher.get_session_context(sid, max_messages=4)
-                    if ctx and ctx.get("messages"):
-                        for msg in ctx["messages"][-3:]:
-                            role = msg.get("role", "system")
-                            content = (msg.get("content", "") or "")[:60]
-                            if role == "user":
-                                events.append({
-                                    "id": f"msg_{id(msg)}",
-                                    "type": "message",
-                                    "icon": "fa-user",
-                                    "agent": "user",
-                                    "detail": content,
-                                    "status": "done",
-                                    "timestamp": str(msg.get("timestamp", created)),
-                                    "elapsed": "—",
-                                })
-                            elif role == "assistant":
-                                events.append({
-                                    "id": f"msg_{id(msg)}",
-                                    "type": "tool_call" if "⚙" in content else "message",
-                                    "icon": "fa-robot",
-                                    "agent": "widdx",
-                                    "detail": content[:60],
-                                    "status": "done",
-                                    "timestamp": str(msg.get("timestamp", created)),
-                                    "elapsed": "—",
-                                })
-                except Exception:
-                    pass
+            from core.activity import get_store
+            store = get_store()
+            events = store.get_recent(limit=limit)
+            if events:
+                return events
         except Exception:
-            return self._emergency_activity()
-
-        return sorted(events, key=lambda e: e["timestamp"], reverse=True)[:limit]
+            pass
+        return self._emergency_activity()
 
     def _emergency_activity(self) -> list[dict]:
         """Last resort — return placeholder events."""
@@ -202,6 +157,12 @@ class Dashboard:
              "detail": "WIDDX Nexus Mission Control active", "status": "done",
              "timestamp": now, "elapsed": "—"},
         ]
+
+    @staticmethod
+    def _get_activity_store():
+        """Return the global ActivityStore."""
+        from core.activity import get_store
+        return get_store()
 
     # ── Skills ──
 

@@ -94,6 +94,18 @@ class ChatHandler:
                 messages=uil_history,
             )
 
+            # Log to ActivityStore
+            try:
+                from core.activity import add as add_event
+                add_event("message", detail=message[:80], icon="fa-user", agent="user", status="done")
+                content = getattr(result, "summary", "") or ""
+                if content:
+                    add_event("message", detail=content[:80], icon="fa-robot", agent="widdx", status="done")
+                for tc in (getattr(result, "tools_used", []) or []):
+                    add_event("tool_call", detail=str(tc)[:60], icon="fa-wrench", agent="widdx", status="done")
+            except Exception:
+                pass
+
             # Extract content and tool calls from ExecutionResult
             content = getattr(result, "summary", "") or ""
             tool_calls = getattr(result, "tools_used", []) or []
