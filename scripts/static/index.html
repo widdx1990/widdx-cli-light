@@ -108,10 +108,10 @@
         </div>
         <div class="chat-header-spacer"></div>
         <div class="chat-header-actions">
-          <button class="header-btn starred" title="Star" onclick="this.classList.toggle('starred');if(typeof showToast==='function')showToast(this.classList.contains('starred')?'Starred':'Unstarred','info')">
+          <button class="header-btn" id="starBtn" title="Star this chat" onclick="toggleStar()">
             <i class="fa-solid fa-star"></i>
           </button>
-          <button class="header-btn" title="Share" onclick="if(typeof showToast==='function')showToast('Share link copied!','success')">
+          <button class="header-btn" title="Copy chat link" onclick="shareChat()">
             <i class="fa-solid fa-share-nodes"></i>
           </button>
           <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">

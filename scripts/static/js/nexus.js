@@ -466,8 +466,32 @@ window.addCron = async function() {
   showCronView(document.getElementById('messagesArea'));
 };
 
+window.shareChat = function() {
+  var url = window.location.href;
+  navigator.clipboard.writeText(url).then(function() {
+    showToast('Chat link copied!', 'success');
+  }).catch(function() {
+    showToast('Could not copy link', 'error');
+  });
+};
+
+window.toggleStar = function() {
+  var btn = document.getElementById('starBtn');
+  if (!btn) return;
+  var starred = btn.classList.toggle('starred');
+  localStorage.setItem('widdx_starred', starred ? 'true' : '');
+  showToast(starred ? 'Starred' : 'Unstarred', 'info');
+};
+
+// Restore star state on load
+if (localStorage.getItem('widdx_starred') === 'true') {
+  var sb = document.getElementById('starBtn');
+  if (sb) sb.classList.add('starred');
+}
+
 window.delCron = async function(id) {
   if (!id) return;
+  if (!confirm('Delete this scheduled task?')) return;
   await fetch('/api/dashboard/cron/' + id, { method:'DELETE' });
   showCronView(document.getElementById('messagesArea'));
 };
@@ -886,7 +910,9 @@ window.saveSettings = async function() {
     var result = await r.json();
     if (result.status === 'ok') {
       if (status) { status.textContent = '✓ Saved successfully'; status.style.color = 'var(--success)'; }
-      showToast('Settings saved! Restart chat to apply.', 'success');
+      showToast('Settings saved!', 'success');
+      // Auto-apply: refresh chat provider
+      if (typeof refreshChat === 'function') refreshChat();
     } else {
       if (status) { status.textContent = '✗ ' + (result.message || 'Error'); status.style.color = 'var(--error)'; }
     }
