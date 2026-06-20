@@ -597,6 +597,8 @@ function showView(view) {
     showActivityView(area);
   } else if (view === 'settings') {
     showSettingsView(area);
+  } else if (view === 'model-setup') {
+    showModelSetupView(area);
   } else if (view === 'memory') {
     showMemoryView(area);
   } else if (view === 'mcp') {
@@ -713,6 +715,113 @@ window.delCron = async function(id) {
   showCronView(document.getElementById('messagesArea'));
 };
 
+// ═══════════════ MODEL SETUP VIEW ═══════════════════
+
+async function showModelSetupView(area) {
+  setActivity('Loading', 'model setup');
+  area.innerHTML = '<div class="view-container"><div class="view-header"><h2><i class="fa-solid fa-microchip"></i> Provider & Model</h2><p>Choose your AI provider and model</p></div><div class="view-body"><div id="model-setup-form"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading...</p></div></div></div></div>';
+  try {
+    const r = await fetch('/api/settings');
+    var data = await r.json();
+    _settingsData = data;
+    renderModelSetup(data);
+  } catch(e) {
+    var f = document.getElementById('model-setup-form');
+    if (f) f.innerHTML = '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><h3>Error</h3><p>' + escapeHtml(e.message) + '</p></div>';
+  }
+  setActivity('Ready', '—');
+}
+
+function renderModelSetup(data) {
+  var prov = data.provider || {};
+  var providers = data.available_providers || [];
+  var form = document.getElementById('model-setup-form');
+  if (!form) return;
+
+  var currentProviderId = prov.name || 'opencode-zen';
+  var currentProvider = providers.find(function(p) { return p.id === currentProviderId; }) || providers[0] || {models: []};
+  var modelOptions = (currentProvider.models || []).map(function(m) {
+    return '<option value="' + escapeHtml(m) + '"' + (m === prov.model ? ' selected' : '') + '>' + escapeHtml(m) + '</option>';
+  }).join('');
+
+  form.innerHTML = '<p style="font-size:var(--font-size-sm);color:var(--text-muted);margin-bottom:12px">Select the AI provider and model WIDDX uses for responses. Change anytime.</p>'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-cloud"></i> Provider</div><select id="ms-provider" class="settings-select" onchange="onMSProviderChange(this.value)">'
+    + providers.map(function(p) { return '<option value="' + escapeHtml(p.id) + '"' + (p.id === currentProviderId ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-microchip"></i> Model</div><select id="ms-model" class="settings-select">'
+    + (modelOptions || '<option value="">No models</option>')
+    + '</select></div>'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-link"></i> Base URL <span style="font-weight:400;color:var(--text-muted)">(optional)</span></div><input id="ms-base-url" class="settings-input" placeholder="' + escapeHtml(currentProvider.default_base || 'https://...') + '" value="' + escapeHtml(prov.base_url || '') + '"></div>'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-key"></i> API Key <span style="font-weight:400;color:var(--text-muted)">(leave empty to keep current)</span></div><input id="ms-api-key" type="password" class="settings-input" placeholder="' + (prov.has_key ? 'Key exists' : 'Enter API key') + '"></div>'
+    + '<div style="display:flex;gap:10px;align-items:center;margin-top:6px">'
+    + '<button onclick="saveModelSetup()" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>'
+    + '<span id="ms-status" style="font-size:var(--font-size-sm);color:var(--text-muted)"></span>'
+    + '</div>';
+}
+
+window.onMSProviderChange = function(providerId) {
+  var providers = (_settingsData?.available_providers) || [];
+  var prov = providers.find(function(p) { return p.id === providerId; });
+  var urlInput = document.getElementById('ms-base-url');
+  if (urlInput && prov && !urlInput.value) urlInput.placeholder = prov.default_base || 'https://...';
+  var modelSelect = document.getElementById('ms-model');
+  if (modelSelect) modelSelect.innerHTML = '<option value="">Loading...</option>';
+  fetch('/api/settings/models?provider=' + encodeURIComponent(providerId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var select = document.getElementById('ms-model');
+      if (!select) return;
+      var models = d.models || [];
+      select.innerHTML = models.length
+        ? models.map(function(m) { return '<option value="' + escapeHtml(m) + '">' + escapeHtml(m) + '</option>'; }).join('')
+        : '<option value="">No models available</option>';
+    })
+    .catch(function() {
+      var s = document.getElementById('ms-model');
+      if (s) s.innerHTML = '<option value="">Error loading models</option>';
+    });
+};
+
+window.saveModelSetup = function() {
+  var btn = document.querySelector('button[onclick="saveModelSetup()"]');
+  var status = document.getElementById('ms-status');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  if (status) status.textContent = 'Saving...';
+
+  var data = {
+    provider: {
+      name: document.getElementById('ms-provider')?.value || '',
+      model: document.getElementById('ms-model')?.value || '',
+      base_url: document.getElementById('ms-base-url')?.value || '',
+      api_key: document.getElementById('ms-api-key')?.value || '',
+    },
+  };
+  if (!data.provider.api_key) delete data.provider.api_key;
+  if (!data.provider.base_url) delete data.provider.base_url;
+
+  fetch('/api/settings', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(data),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(result) {
+      if (result.status === 'ok') {
+        if (status) { status.textContent = 'Saved!'; status.style.color = 'var(--success)'; }
+        document.getElementById('modelName').textContent = data.provider.model;
+        showToast('Provider & model updated', 'success');
+        if (typeof refreshChat === 'function') refreshChat();
+      } else {
+        if (status) { status.textContent = 'Error: ' + (result.message || 'Failed'); status.style.color = 'var(--error)'; }
+      }
+    })
+    .catch(function(e) {
+      if (status) { status.textContent = 'Error: ' + e.message; status.style.color = 'var(--error)'; }
+    })
+    .finally(function() {
+      if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    });
+};
+
 // ═══════════════ DASHBOARD VIEW ═══════════════════
 
 async function showDashboardView(area) {
@@ -758,6 +867,7 @@ async function showDashboardView(area) {
     var qgrid = document.getElementById('quick-grid');
     if (qgrid) {
       var qlinks = [
+        {icon:'fa-microchip', label:'Model Setup', view:'model-setup'},
         {icon:'fa-clock-rotate-left', label:'Sessions', view:'sessions'},
         {icon:'fa-calendar-clock', label:'Scheduler', view:'scheduler'},
         {icon:'fa-brain', label:'Memory', view:'memory'},
