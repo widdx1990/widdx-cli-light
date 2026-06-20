@@ -15,7 +15,7 @@ Every public executor in this module:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from ..uil.contract import (
     ExecutionMode,
@@ -279,6 +279,75 @@ def direct_tool_executor(
             success=False,
             summary=f"Direct tool failed: {exc}",
             mode=ExecutionMode.DIRECT_TOOL,
+            error=str(exc),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Background Executor — run tasks asynchronously via BackgroundTaskManager
+# ---------------------------------------------------------------------------
+
+
+def background_executor(
+    ctx: ExecutionContext,
+    user_input: str,
+    messages: list[dict] | None = None,
+) -> ExecutionResult:
+    """Execute a task as a background process via ``BackgroundTaskManager``."""
+    try:
+        from core.background import BackgroundTaskManager
+        mgr = BackgroundTaskManager()
+        sandbox = getattr(ctx, "sandbox", None)
+        sandbox_mode = getattr(sandbox, "mode", "auto") if sandbox else "auto"
+        task_id = mgr.run(user_input, sandbox_mode=sandbox_mode)
+        logger.info("Background task spawned: %s — %s", task_id, user_input[:60])
+        return ExecutionResult(
+            success=True,
+            summary=f"Background task started: {task_id}",
+            mode=ExecutionMode.SIMPLE_CHAT,
+            tools_used=["background"],
+        )
+    except Exception as exc:
+        logger.error("background_executor failed: %s", exc)
+        return ExecutionResult(
+            success=False,
+            summary=f"Background task failed: {exc}",
+            mode=ExecutionMode.SIMPLE_CHAT,
+            error=str(exc),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Delegation Executor — spawn sub-agents via DelegationManager
+# ---------------------------------------------------------------------------
+
+
+def delegation_executor(
+    ctx: ExecutionContext,
+    user_input: str,
+    messages: list[dict] | None = None,
+) -> ExecutionResult:
+    """Delegate a task to a sub-agent via ``DelegationManager``."""
+    try:
+        from core.delegation import DelegationManager
+        provider = _resolve_provider(ctx)
+        tool_defs = getattr(ctx, "tool_defs", None) or []
+        cfg = getattr(ctx, "cfg", None) or {}
+        dlg = DelegationManager()
+        task_id = dlg.run(user_input, provider, tool_defs, cfg)
+        logger.info("Delegation spawned: %s — %s", task_id, user_input[:60])
+        return ExecutionResult(
+            success=True,
+            summary=f"Sub-agent delegated: {task_id}",
+            mode=ExecutionMode.AUTONOMOUS,
+            tools_used=["delegation"],
+        )
+    except Exception as exc:
+        logger.error("delegation_executor failed: %s", exc)
+        return ExecutionResult(
+            success=False,
+            summary=f"Delegation failed: {exc}",
+            mode=ExecutionMode.AUTONOMOUS,
             error=str(exc),
         )
 

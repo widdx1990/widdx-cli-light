@@ -1,4 +1,9 @@
-"""Web UI — Chat handler. Connects to WIDDX providers.
+"""Web UI — Chat handler. Uses UIL Brain for intelligent task processing.
+
+Architecture:
+  ChatHandler → UnifiedIntelligenceLayer (brain.process)
+  → analyze → route → plan → execute → verify → knowledge → feedback
+  → Returns ExecutionResult with summary + tool calls
 
 Usage:
     from scripts.web.chat import ChatHandler
@@ -16,123 +21,116 @@ from typing import Any
 
 logger = logging.getLogger("widdx.web.chat")
 
-# Ensure project root is in path
 ROOT = str(Path(__file__).resolve().parent.parent.parent)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
 class ChatHandler:
-    """Handles chat messages via WIDDX providers."""
+    """Handles chat messages via the UIL Brain pipeline.
+
+    The UIL Brain classifies, routes, plans, executes, verifies,
+    and records every interaction — single-turn or autonomous.
+    """
 
     def __init__(self):
-        self._provider: Any = None
-        self._tool_defs: list[dict] = []
+        self._uil: Any = None
         self._cfg: dict = {}
-        self._init_provider()
+        self._init_uil()
 
-    def _init_provider(self):
-        """Initialize the LLM provider from config."""
+    def _init_uil(self):
+        """Initialize the UIL Brain from config."""
         try:
             from core.config.settings import load as load_cfg
-            from core.providers.providers import create_provider
+            from core.uil import UnifiedIntelligenceLayer
 
             self._cfg = load_cfg()
-            self._provider = create_provider(self._cfg)
-            self._tool_defs = []
-            from core import tools
-            self._tool_defs = list(tools.TOOL_DEFINITIONS)
-            logger.info("ChatHandler: provider=%s model=%s",
-                        self._provider.name, self._provider.model)
+            provider_cfg = self._cfg.get("provider", {})
+
+            # Create provider from config
+            from core.providers.providers import create_provider
+            provider = create_provider(self._cfg)
+
+            # Initialize UIL Brain with provider
+            self._uil = UnifiedIntelligenceLayer(
+                provider=provider,
+                tool_defs=self._get_tool_defs(),
+            )
+            logger.info(
+                "ChatHandler: UIL ready — provider=%s model=%s",
+                provider.name, provider.model,
+            )
         except Exception as e:
             logger.error("ChatHandler init: %s", e)
 
+    def _get_tool_defs(self) -> list[dict]:
+        """Get tool definitions from the core tools module."""
+        try:
+            from core import tools
+            return list(tools.TOOL_DEFINITIONS)
+        except Exception:
+            return []
+
     def chat(self, message: str, history: list[dict] | None = None) -> dict:
-        """Send a message and get a response.
+        """Send a message through the UIL Brain pipeline.
 
         Args:
             message: User message text.
             history: Previous messages list.
 
         Returns:
-            {"content": str, "error": str | None}
+            {"content": str, "tools": list[dict], "error": str | None}
         """
-        if self._provider is None:
-            return {"content": "", "error": "No provider configured"}
-
-        messages = list(history or [])
-        messages.append({"role": "user", "content": message})
+        if self._uil is None:
+            return {"content": "", "error": "UIL Brain not initialized"}
 
         try:
-            content, tool_calls = self._provider.chat(
-                messages, self._tool_defs,
-                self._cfg.get("temperature", 0.7),
+            # Convert history to UIL format
+            uil_history = list(history or [])
+
+            # Process through UIL Brain
+            result, _routing = self._uil.process(
+                user_input=message,
+                messages=uil_history,
             )
+
+            # Extract content and tool calls from ExecutionResult
+            content = getattr(result, "summary", "") or ""
+            tool_calls = getattr(result, "tools_used", []) or []
+
+            # Format tool calls for the frontend
             tools_result = []
-            for tc in (tool_calls or []):
-                tools_result.append({"name": tc.name, "args": tc.args})
+            for tc in tool_calls:
+                if isinstance(tc, dict):
+                    tools_result.append(tc)
+                else:
+                    tools_result.append({"name": str(tc)})
 
             # Strip thinking tags for clean display
-            clean = (content or "")
+            clean = content
             for tag in ("[thinking]", "[/thinking]", "<thinking>", "</thinking>"):
                 clean = clean.replace(tag, "")
+            clean = clean.strip()
+
             return {
-                "content": clean.strip() or "",
+                "content": clean or "",
                 "tools": tools_result,
                 "error": None,
             }
         except Exception as e:
-            logger.error("Chat error: %s", e)
+            logger.error("ChatHandler error: %s", e, exc_info=True)
             return {"content": "", "error": str(e)}
-
-    def stream_chat(self, message: str, history: list[dict] | None = None):
-        """Generator that yields streaming chunks via WebSocket.
-
-        Yields:
-            dict with keys: type ("text", "tool", "reasoning", "done", "error")
-        """
-        if self._provider is None:
-            yield {"type": "error", "data": "No provider configured"}
-            return
-
-        messages = list(history or [])
-        messages.append({"role": "user", "content": message})
-
-        try:
-            if hasattr(self._provider, "stream"):
-                for event in self._provider.stream(
-                    messages, self._tool_defs,
-                    self._cfg.get("temperature", 0.7),
-                ):
-                    if event["type"] == "content":
-                        yield {"type": "text", "data": event["data"]}
-                    elif event["type"] == "reasoning":
-                        yield {"type": "reasoning", "data": event["data"]}
-                    elif event["type"] == "tool":
-                        yield {"type": "tool", "data": event["data"]}
-                    elif event["type"] == "error":
-                        yield {"type": "error", "data": event["data"]}
-                    elif event["type"] == "done":
-                        content, calls = event["data"]
-                        yield {"type": "done", "data": content or ""}
-                        return
-            else:
-                content, calls = self._provider.chat(
-                    messages, self._tool_defs,
-                    self._cfg.get("temperature", 0.7),
-                )
-                yield {"type": "done", "data": content or ""}
-        except Exception as e:
-            logger.error("Stream error: %s", e)
-            yield {"type": "error", "data": str(e)}
 
     @property
     def info(self) -> dict:
-        """Return provider info."""
-        if self._provider:
-            return {
-                "name": self._provider.name,
-                "model": self._provider.model,
-                "online": True,
-            }
+        """Return UIL/provider info."""
+        if self._uil:
+            provider = getattr(self._uil, "provider", None)
+            if provider:
+                return {
+                    "name": getattr(provider, "name", "uil"),
+                    "model": getattr(provider, "model", "unknown"),
+                    "online": True,
+                }
+            return {"name": "uil", "model": "brain", "online": True}
         return {"name": "none", "model": "none", "online": False}

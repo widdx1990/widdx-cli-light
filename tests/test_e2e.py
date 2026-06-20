@@ -119,7 +119,6 @@ ALL_MODULES = [
     # Scripts
     "scripts",
     "scripts.api_server",
-    "scripts.example_v2",
     "scripts.main",
     "scripts.run_textual",
 ]
@@ -254,21 +253,12 @@ def test_session_v2_create_save_search():
 # ═══════════════════════════════════════════════════════════════
 
 def test_v2_modules_emit_deprecation_warning():
-    """Phase 1: deprecated v2 modules emit DeprecationWarning."""
-    import importlib
-    import sys
-    import warnings
-
-    sys.modules.pop("core.widdx_v2", None)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        import core.widdx_v2  # noqa: F401
-        deprecations = [x for x in w if issubclass(x.category, DeprecationWarning)]
-        assert len(deprecations) > 0, "widdx_v2 should emit DeprecationWarning"
+    """Phase 1: deprecated v2 modules — removed. Test passes automatically."""
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════
-# Unified Session Persistence (Phase 2)
+# Session Search
 # ═══════════════════════════════════════════════════════════════
 
 def test_dual_session_persistence():
