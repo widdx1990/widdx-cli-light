@@ -19,8 +19,8 @@ function toggleTheme() {
 
 function toggleSidebar() {
   var sb = document.getElementById('sidebar');
-  sb.classList.toggle('open');
-  document.body.classList.toggle('sidebar-open', sb.classList.contains('open'));
+  sb.classList.toggle('collapsed');
+  document.body.classList.toggle('sidebar-collapsed', sb.classList.contains('collapsed'));
 }
 
 function toggleMobileSidebar() {
