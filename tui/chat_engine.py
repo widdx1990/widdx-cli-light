@@ -99,12 +99,17 @@ class ChatEngine:
         except Exception:
             pass
 
-        # UIL routing
+        # UIL routing (project-aware)
         decision = None
         try:
             uil = UnifiedIntelligenceLayer(provider=state.provider)
             uil.set_tool_defs(state.tool_defs)
-            _, decision = uil.process(text)
+            project_card = getattr(state, 'scanner', None)
+            project_card = getattr(project_card, '_card', None) if project_card else None
+            _, decision = uil.process(
+                text,
+                project_card=project_card,
+            )
             mode = decision.plan.mode if decision else ExecutionMode.SIMPLE_CHAT
         except Exception:
             mode = ExecutionMode.SIMPLE_CHAT

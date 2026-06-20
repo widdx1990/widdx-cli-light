@@ -16,6 +16,7 @@ Pure orchestration — delegates everything.
 
 import time
 import logging
+from typing import Any
 
 logger = logging.getLogger("widdx.uil.brain")
 
@@ -30,15 +31,30 @@ from .verifier import get_verifier
 
 
 # -------------------------------------------------------------------
-# Execution Mode Executor Map — real executors from adapter module
+# Execution Mode Executor Map — imported lazily to avoid circular
+# dependency issues at module-load time.
 # -------------------------------------------------------------------
 
-try:
-    from ..agents.executor_adapter import EXECUTOR_MAP as _EXECUTOR_MAP
-except ImportError:
-    # Fallback: define stub executors so brain.py remains importable
-    # even when agents/ dir has a syntax error during development.
-    _EXECUTOR_MAP: dict[ExecutionMode, callable] = {}
+_EXECUTOR_MAP: dict[ExecutionMode, callable] | None = None
+
+
+def _get_executor_map() -> dict[ExecutionMode, callable]:
+    """Lazy-load EXECUTOR_MAP from executor_adapter on first call.
+
+    Returns an empty dict (with a logged warning) if the import fails,
+    keeping ``_resolve_executor``'s error message clear.
+    """
+    global _EXECUTOR_MAP
+    if _EXECUTOR_MAP is not None:
+        return _EXECUTOR_MAP
+
+    try:
+        from ..agents.executor_adapter import EXECUTOR_MAP as _MAP
+        _EXECUTOR_MAP = _MAP
+    except ImportError as exc:
+        logger.warning("Could not load EXECUTOR_MAP from executor_adapter: %s", exc)
+        _EXECUTOR_MAP = {}
+    return _EXECUTOR_MAP
 
 
 # -------------------------------------------------------------------
@@ -77,6 +93,7 @@ class UnifiedIntelligenceLayer:
                 executors: dict[ExecutionMode, callable] | None = None,
                 cfg: dict | None = None,
                 state: dict | None = None,
+                project_card: Any | None = None,
                 ) -> tuple[ExecutionResult, RoutingDecision]:
         """Full UIL pipeline: analyze → route → plan → execute → feedback.
 
@@ -89,15 +106,23 @@ class UnifiedIntelligenceLayer:
             cfg: User configuration dict (passed to executors via ctx).
             state: Mutable run state dict (cost, turns, model).
                    Mutations by the executor are visible to the caller.
+            project_card: Optional ``ProjectCard`` from ``ProjectScanner``.
+                          Injected into the analyzer context so classifiers
+                          can make project-aware decisions.
 
         Returns:
             (execution_result, routing_decision_with_full_trace)
             ExecutionResult carries plan-vs-execution delta for Phase 2.
         """
         # Step 1: Analyze — classify the user input
+        ctx_analyzer: dict = {}
+        if messages:
+            ctx_analyzer["messages"] = messages
+        if project_card is not None:
+            ctx_analyzer["project_card"] = project_card
         classification = self.analyzer.analyze(
             user_input,
-            context={"messages": messages} if messages else None,
+            context=ctx_analyzer or None,
         )
 
         # Step 2: Route — decide how to execute
@@ -324,8 +349,9 @@ class UnifiedIntelligenceLayer:
         if executors and mode in executors:
             return executors[mode]
         # Fallback to real executors from executor_adapter
-        if mode in _EXECUTOR_MAP:
-            return _EXECUTOR_MAP[mode]
+        executor_map = _get_executor_map()
+        if mode in executor_map:
+            return executor_map[mode]
         # Last resort — raise a clear error instead of returning a stub
         raise RuntimeError(
             f"No executor registered for {mode.value}. "

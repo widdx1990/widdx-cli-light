@@ -590,7 +590,9 @@ class TaskAnalyzer:
 
         Args:
             user_input: The raw text from the user.
-            context: Optional context dict (for future LLM classifier).
+            context: Optional context dict.  When a ``ProjectCard`` is present
+                     (key ``"project_card"``), the ``ProjectAwareClassifier``
+                     enriches the result with project-level features.
 
         Returns:
             ClassificationResult with full decision_path trace.
@@ -656,6 +658,7 @@ class TaskAnalyzer:
                 if result.confidence >= 0.80:
                     best_result.decision_path = all_steps
                     self._detect_features(user_input, best_result)
+                    self._apply_project_context(best_result, context)
                     return best_result
             else:
                 # Log that this classifier didn't match (traceability)
@@ -682,6 +685,7 @@ class TaskAnalyzer:
             if result.confidence >= 0.80:
                 result.decision_path = all_steps
                 self._detect_features(user_input, result)
+                self._apply_project_context(result, context)
                 return result
             # LLM got something but low confidence — still use as best
             if best_result is None or result.confidence > best_result.confidence:
@@ -692,6 +696,7 @@ class TaskAnalyzer:
             best_result.decision_path = all_steps
             best_result.reasoning += " (partial match — below high-confidence threshold)"
             self._detect_features(user_input, best_result)
+            self._apply_project_context(best_result, context)
             return best_result
 
         # Tier 4: Language-aware fallback for non-English input
@@ -807,3 +812,61 @@ class TaskAnalyzer:
         ))
 
         result.detected_features = features
+
+    @staticmethod
+    def _apply_project_context(result: ClassificationResult,
+                                context: dict | None) -> None:
+        """Enrich the classification with project-level context.
+
+        Reads the ``ProjectCard`` from the analyzer context and adjusts
+        the result's ``detected_features`` and confidence based on what
+        the project actually contains.
+
+        This is called AFTER keyword/LLM classification so it can
+        override or supplement the text-based decisions.
+
+        Args:
+            result: The current best classification (mutated in-place).
+            context: The context dict passed to ``analyze()``, which may
+                     contain a ``"project_card"`` key.
+        """
+        if context is None:
+            return
+
+        card = context.get("project_card")
+        if card is None:
+            return
+
+        # ── 1. Add framework-aware features ────────────────────
+        frameworks: list[str] = getattr(card, "frameworks", []) or []
+        if any(f in ("react", "nextjs", "vue", "angular", "svelte") for f in frameworks):
+            result.detected_features["web"] = True
+        if any(f in ("django", "flask", "express", "fastify", "nestjs") for f in frameworks):
+            result.detected_features["api"] = True
+        if any(f in ("prisma", "typeorm", "sqlalchemy") for f in frameworks):
+            result.detected_features["database"] = True
+
+        # ── 2. Add language-aware features ─────────────────────
+        languages: dict = getattr(card, "languages", {}) or {}
+        has_web_lang = any(l in languages for l in (
+            "JavaScript", "TypeScript", "HTML", "CSS", "JSX", "TSX"))
+        if has_web_lang:
+            result.detected_features["web"] = True
+
+        # ── 3. Code-modify boost: if project has files and user
+        #      mentions "add" or "change", prefer CODE_MODIFY over
+        #      CODE_WRITE since the project already exists.
+        file_count: int = getattr(card, "file_count", 0) or 0
+        if file_count > 3 and result.task_type == TaskType.CODE_WRITE:
+            lower = (getattr(result, "keywords", None) or [])
+            lower_str = " ".join(lower).lower() if lower else ""
+            modify_signals = {"add", "change", "update", "edit",
+                              "modify", "insert", "أضف", "عدل", "غير"}
+            if any(s in lower_str for s in modify_signals):
+                # Boost modify over write when project exists
+                result.task_type = TaskType.CODE_MODIFY
+                result.reasoning += " (project-aware: existing project → CODE_MODIFY)"
+                result.confidence = round(min(1.0, result.confidence + 0.05), 2)
+
+        # ── 4. Record that project context was applied ─────────
+        result.detected_features["project_aware"] = True

@@ -296,12 +296,22 @@ class CLIApp:
         result = None
         decision = None
         try:
+            # Pass project card to UIL for project-aware classification
+            project_card = getattr(self.scanner, '_card', None)
+            if project_card is None:
+                try:
+                    self.scanner.quick_check() or self.scanner.scan()
+                    project_card = getattr(self.scanner, '_card', None)
+                except Exception:
+                    pass
+
             result, decision = uil.process(
                 user_input,
                 messages=self.messages,
                 executors=executors,
                 cfg=self.cfg,
                 state=self.state,
+                project_card=project_card,
             )
             summary = result.summary
 
