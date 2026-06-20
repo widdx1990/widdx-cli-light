@@ -1,61 +1,55 @@
 # Roadmap
 
 > خريطة طريق سد الفجوات — بناءً على مقارنة WIDDX vs MANUS
-> تاريخ الإعداد: 2026-06-20
+> آخر تحديث: 2026-06-20
 
 ---
 
-## 🎯 الأولويات — ما يهم الآن
+## ✅ Current Status
 
 ```
-الأهمية   │ المرحلة   │ الفجوة
-──────────┼────────────┼───────────────────────────────────────
-🔴 حرجة   │ Phase A   │ A.1 ربط executors الحقيقية مع UIL Brain
-🔴 حرجة   │ Phase A   │ A.2 ماسح المشروع الذكي → سياق UIL
-🟠 عالية  │ Phase B   │ B.1 VSCode Extension كامل
-🟠 عالية  │ Phase B   │ B.2 WebSocket للـ API Streaming
-🟠 عالية  │ Phase C   │ C.2 Telegram Bot كامل
-🟡 استراتيجية │ Phase C │ C.1 Computer Use (GUI + Browser)
-🟡 استراتيجية │ Phase D │ C.3 Cloud PC / Daemon Mode
-🟢 تحسينية│ Phase E   │ الباقي (توثيق، تحليلات، Plugin Marketplace...)
+Phase A (Core Fix)     ████████████████░░░░░░  80%   ← A.1 ✅ A.2 ✅ يبقى A.3
+Phase B (Reach)        ░░░░░░░░░░░░░░░░░░░░░░   0%
+Phase C (Strategic)    ░░░░░░░░░░░░░░░░░░░░░░   0%
+Phase D (Memory)       ░░░░░░░░░░░░░░░░░░░░░░   0%
+Phase E (Enhancement)  ░░░░░░░░░░░░░░░░░░░░░░   0%
 ```
 
----
+## ✅ Phase A — 🔴 إصلاح القلب (80% — يبقى A.3 اختياري)
 
-## 📋 Phase A — 🔴 إصلاح القلب (جهد: 3-5 أيام)
+### ✅ A.1 — ربط Executors مع UIL Brain (DONE — commit d0620b0)
 
-### A.1 ربط AutonomousAgent + ExpertTeam مع UIL Brain ← اليوم 1-2
+**ما تم:**
+- إنشاء `core/agents/executor_adapter.py` — 4 executors حقيقية ترجع `ExecutionResult`
+- `EXECUTOR_MAP` — يحل محل `_DEFAULT_EXECUTORS` stubs في `brain.py`
+- `ExecutionContext` — إضافة `provider, tool_defs, cfg, state` للسياق
+- `__post_init__` يسقط `tool_defs` من `RoutingDecision` تلقائياً
+- CLI يستخدم `EXECUTOR_MAP` بدل closures داخل `app.py`
+- 19 اختباراً — **19/19 ✅**
+- **تأثير:** UIL Pipeline كامل حقيقي: تحليل → توجيه → تخطيط → تنفيذ فعلي → تعلم
 
-**المشكلة:** `core/uil/brain.py` يستخدم `_default_executor` وهو placeholder يرد رسالة نصية فقط. `core/agents/agent.py` لديه `AutonomousAgent` حقيقي يعمل، و `core/agents/expert.py` لديه `ExpertTeam` حقيقي — لكن لا أحد ربطهما مع UIL Pipeline.
-
-**خطوات التنفيذ:**
-
-1. **إنشاء `core/agents/executor_adapter.py`** — يحوّل واجهة `AutonomousAgent.run()` و `ExpertTeam.run()` إلى `ExecutionResult` الذي تفهمه UIL
-2. **تعديل `ExecutionContext` في `contract.py`** — إضافة `provider`, `tool_defs`, `cfg`, `state` للسياق
-3. **تعديل `_DEFAULT_EXECUTORS` في `brain.py`** — استبدال الـ stubs بـ `EXECUTOR_MAP` من الـ adapter
-4. **ربط UIL في `cli/app.py`** — `uil.process(user_input, messages, executors=EXECUTOR_MAP)`
-
-**المخرجات:**
-- ✅ كل 4 أوضاع تنفيذ تشتغل فعلياً
-- ✅ Knowledge Base تتعلم من كل تنفيذ
-- ✅ بعد 3 أخطاء → escalates تلقائياً إلى EXPERT_TEAM
+**الملفات:** `executor_adapter.py` (🆕), `contract.py` (edited), `brain.py` (edited), `cli/app.py` (edited)
 
 ---
 
-### A.2 ماسح المشروع → سياق UIL ← اليوم 2
+### ✅ A.2 — ربط ماسح المشروع مع UIL Analyzer (DONE — commit 24b2a43)
 
-ربط `core/project/scanner.py` مع `TaskAnalyzer.analyze()`:
-- قبل تحليل المهمة، scanner يزوّد analyzer بسياق المشروع
-- UIL يعرف بنية الملفات قبل أن يقرر الأدوات
+**ما تم:**
+- `brain.process()` يقبل `project_card` ويمرره إلى `analyzer.analyze(context=...)`
+- `_apply_project_context()` يعدّل التصنيف بناءً على المشروع:
+  - مشروع React + "أضف زر" → CODE_MODIFY (بدل CODE_WRITE)
+  - مشروع Next.js → `features: {web: True, api: True}`
+- CLI و TUI يمررون `scanner._card` إلى `process()`
+- lazy import لـ `EXECUTOR_MAP` يحل circular import في `brain.py`
+
+**الملفات:** `brain.py` (edited), `analyzer.py` (edited), `cli/app.py` (edited), `tui/chat_engine.py` (edited)
 
 ---
 
-### A.3 اختبارات UIL Pipeline كامل ← اليوم 3
+### ⬜ A.3 — اختبارات UIL Pipeline كامل (اختياري — 0.5 يوم)
 
-`tests/test_uil_pipeline.py` — يختبر:
-- `SIMPLE_CHAT` → لا أدوات
-- `AUTONOMOUS` → وكيل حقيقي ينفذ
-- `EXPERT_TEAM` → فريق كامل
+ما زال ممكن لو أردت:
+- `tests/test_uil_pipeline.py` — يختبر الـ Pipeline المتكامل
 - Auto-escalation بعد 3 أخطاء
 - Verification + retry
 
@@ -64,76 +58,64 @@
 ## 📋 Phase B — 🟠 الوصول والانتشار (جهد: 5-8 أيام)
 
 ### B.1 VSCode Extension ← 3-4 أيام
-
 تنفيذ `vscode-extension/src/extension.ts`:
-- ChatViewProvider (WebView)
-- 7 أوامر: `openChat`, `explainCode`, `fixCode`, `reviewFile`, `startServer`, `sendSelection`, `newSession`
+- ChatViewProvider (WebView), 7 أوامر
 - WebSocket اتصال مع `widdx-api`
 
 ### B.2 WebSocket للـ API ← يوم 1
-
-`/ws/chat` endpoint في `scripts/api_server.py`:
-- Streaming كامل
-- أنواع الأحداث: `text | tool_call | reasoning | error`
+`/ws/chat` endpoint في `scripts/api_server.py`
 
 ---
 
 ## 📋 Phase C — 🟡 الميزات الاستراتيجية (جهد: 8-12 يوم)
 
 ### C.1 Computer Use ← 3-4 أيام
-
-`core/tools/browser_tool.py` — متصفح آلي عبر Playwright:
-- Navigation, Click, Extract, Screenshot
-- مربوط مع UIL TaskType.BROWSER
+`core/tools/browser_tool.py` — متصفح آلي عبر Playwright
 
 ### C.2 Telegram Bot كامل ← 2-3 أيام
-
-ربط `telegram_bot.py` مع UIL:
-- أوامر سلاش: `/session`, `!skills`, `/branch`
-- أزرار تفاعلية (Inline keyboards)
-- جلسات منفصلة لكل محادثة
+ربط `telegram_bot.py` مع UIL
 
 ### C.3 Daemon Mode ← 3-4 أيام
-
-`widdx daemon start/stop/status`:
-- FastAPI في الخلفية على port 8520
-- `core/scheduler.py` — جدولة مهام (cron expressions)
-- `widdx schedule "0 9 * * 1-5" "راجع TODOs"`
+`widdx daemon start/stop/status` + جدولة مهام
 
 ---
 
 ## 📋 Phase D — الذاكرة والتوسع (جهد: 5-7 أيام)
 
-### D.1 Vector Memory Persistence ← يوم 1-2
-
-تحويل `VectorMemoryStore` إلى ChromaDB مستدام
-### D.2 Gemini Provider فعلي ← 3-5 أيام
-
-تنفيذ `_google_chat()` في `llm_router.py`
+### D.1 Vector Memory Persistence ← ChromaDB
+### D.2 Gemini Provider فعلي ← تنفيذ `_google_chat()`
 
 ---
 
 ## 📋 Phase E — 🟢 تحسينات إضافية (جهد: 10-15 يوم)
 
 | E.1 | موقع توثيق docs.widdx.ai + CHANGELOG |
-| E.2 | لوحة تحليلات (عدد الطلبات، وقت الاستجابة، نسبة النجاح) |
-| E.3 | نشر GitHub Action في Marketplace |
+| E.2 | لوحة تحليلات |
+| E.3 | GitHub Action في Marketplace |
 | E.4 | تكامل GitLab CI/CD |
 | E.5 | OCR ومعالجة الصور |
-| E.6 | Plugin Marketplace (npm/git للمهارات) |
+| E.6 | Plugin Marketplace |
+| E.7 | CODING_STANDARDS.md (🆕 من Phase A.1) |
 
 ---
 
-## 🗓️ الجدول الزمني
+## 🗓️ الجدول الزمني المحدث
 
 ```
-الأسبوع 1 │ ████████░░ A.1 ربط executors (3d) + A.2 ماسح (1d) + A.3 اختبارات (0.5d)
-الأسبوع 2 │ ████████░░ B.1 VSCode (4d) + B.2 WebSocket (1d)
-الأسبوع 3 │ ██████████ C.1 Computer Use (3d) + C.2 Telegram (2d) + C.3 Daemon (3d)
-الأسبوع 4 │ ██████░░░░ D.1 Vector Persistence (1d) + D.2 Gemini (3d)
-الأسبوع 5+ │ ████████░░ E.1-E.6 تحسينات (متفرق)
+الأسبوع 1 │ ████████████████░░░░  A.1 + A.2  ✅
+الأسبوع 2 │ ████████░░░░░░░░░░░░  B.1 VSCode (4d) + B.2 WebSocket (1d)
+الأسبوع 3 │ ██████████░░░░░░░░░░  C.1 Computer (3d) + C.2 Telegram (2d) + C.3 Daemon (3d)
+الأسبوع 4 │ ██████░░░░░░░░░░░░░░  D.1 Vector (1d) + D.2 Gemini (3d)
+الأسبوع 5+ │ ████████░░░░░░░░░░░░  E.1-E.7 تحسينات
 ```
 
-## 🚀 أول خطوة
+## 📊 مكتسبات Phase A
 
-**A.1 — ربط executors مع UIL Brain.** كل pipeline يصبح حقيقياً من التحليل → التنفيذ → التعلم. هل تبدأ بها؟ 🚀
+| المقياس | قبل A.1 | بعد A.1 + A.2 |
+|---------|---------|----------------|
+| Executors | stubs في brain.py + closures في CLI | EXECUTOR_MAP مشترك، كل executor يرجع ExecutionResult |
+| تكامل CLI مع UIL | inline closures (غير قابل للاختبار) | EXECUTOR_MAP (قابل لإعادة الاستخدام والاختبار) |
+| تكامل TUI مع UIL | if/elif يدوي، UIL فقط للتوجيه | UIL كامل مع project_card |
+| Project Awareness | ❌ لا يوجد | ✅ languages, frameworks, file_count تؤثر على التصنيف |
+| اختبارات executors | 0 | 19 ✅ |
+| CODING_STANDARDS | ❌ | ✅ 10 قوانين صارمة |
