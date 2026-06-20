@@ -39,6 +39,10 @@
       "description": "Real autonomous agent — AI-driven tool-calling loop with full control."
     },
     {
+      "path": "core/agents/executor_adapter.py",
+      "description": "UIL Executor Adapters — bridge between UIL contracts and real agent executors."
+    },
+    {
       "path": "core/agents/expert.py",
       "description": "Expert Agents Team — specialized agents that work together like a tech company."
     },
@@ -231,6 +235,10 @@
       "description": "UIL Data Contracts — core types for the Unified Intelligence Layer."
     },
     {
+      "path": "core/uil/executors.py",
+      "description": "Shared UIL executors — reusable execution helpers for CLI and TUI."
+    },
+    {
       "path": "core/uil/knowledge.py",
       "description": "Knowledge — Execution Record Keeper with persistence."
     },
@@ -317,6 +325,10 @@
     {
       "path": "tui/state.py",
       "description": "TUI State Management — central state for WIDDX TUI."
+    },
+    {
+      "path": "tui/theme_util.py",
+      "description": "TUI theme helpers — sync cli_theme config with Textual CSS classes."
     },
     {
       "path": "tui/widgets/diff_viewer.py",

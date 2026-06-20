@@ -30,43 +30,15 @@ from .verifier import get_verifier
 
 
 # -------------------------------------------------------------------
-# Default executors (Phase 1.2 placeholder)
+# Execution Mode Executor Map — real executors from adapter module
 # -------------------------------------------------------------------
 
-def _default_executor(decision: RoutingDecision,
-                      user_input: str,
-                      messages: list | None = None) -> str:
-    """Phase 1.2 stub: return summary without system execution."""
-    parts = [
-        f"[UIL] {decision.summarize()}",
-        f"  Analysis: {decision.classification.summarize()}",
-        f"  Tools: {len(decision.tool_defs)} total",
-    ]
-    # Show decision path
-    for step in decision.decision_path:
-        parts.append(
-            f"  ├─ {step.component}: {step.output} "
-            f"(score={step.score:.2f})"
-        )
-    # Show classification path
-    for step in decision.classification.decision_path:
-        parts.append(
-            f"  ├─ [{step.component}] {step.detail[:70]}"
-        )
-    parts.append(f"  └─ Ready to execute with mode={decision.plan.mode.value}")
-    return "\n".join(parts)
-
-
-# -------------------------------------------------------------------
-# Execution Mode Executor Map
-# -------------------------------------------------------------------
-
-_DEFAULT_EXECUTORS: dict[ExecutionMode, callable] = {
-    ExecutionMode.SIMPLE_CHAT: _default_executor,
-    ExecutionMode.AUTONOMOUS: _default_executor,
-    ExecutionMode.EXPERT_TEAM: _default_executor,
-    ExecutionMode.DIRECT_TOOL: _default_executor,
-}
+try:
+    from ..agents.executor_adapter import EXECUTOR_MAP as _EXECUTOR_MAP
+except ImportError:
+    # Fallback: define stub executors so brain.py remains importable
+    # even when agents/ dir has a syntax error during development.
+    _EXECUTOR_MAP: dict[ExecutionMode, callable] = {}
 
 
 # -------------------------------------------------------------------
@@ -98,10 +70,13 @@ class UnifiedIntelligenceLayer:
         self.planner = planner or TaskPlanner()
         self._tool_defs = tool_defs or []
         self.knowledge = KnowledgeBase()
+        self.provider = provider
 
     def process(self, user_input: str,
                 messages: list | None = None,
-                executors: dict[ExecutionMode, callable] | None = None
+                executors: dict[ExecutionMode, callable] | None = None,
+                cfg: dict | None = None,
+                state: dict | None = None,
                 ) -> tuple[ExecutionResult, RoutingDecision]:
         """Full UIL pipeline: analyze → route → plan → execute → feedback.
 
@@ -109,7 +84,11 @@ class UnifiedIntelligenceLayer:
             user_input: Raw text from the user.
             messages: Current conversation messages (optional context).
             executors: Execution mode → callable mapping.
-                       If None, uses default stubs (Phase 1.2 mode).
+                       If None, uses ``EXECUTOR_MAP`` from
+                       ``core.agents.executor_adapter`` (real agents).
+            cfg: User configuration dict (passed to executors via ctx).
+            state: Mutable run state dict (cost, turns, model).
+                   Mutations by the executor are visible to the caller.
 
         Returns:
             (execution_result, routing_decision_with_full_trace)
@@ -152,6 +131,13 @@ class UnifiedIntelligenceLayer:
             task_plan=plan,
             current_step=plan.steps[0] if plan and plan.steps else None,
             step_results=step_results,
+            # Execution resources — injected for real executors.
+            # tool_defs comes from the RoutingDecision (filtered by router),
+            # not from self._tool_defs (full unfiltered list).
+            provider=getattr(self, "provider", None),
+            tool_defs=decision.tool_defs,
+            cfg=cfg or {},
+            state=state or {},
         )
 
         # Step 4: Execute — delegate via ExecutionContext, measure time
@@ -176,19 +162,21 @@ class UnifiedIntelligenceLayer:
         # Critical findings set result.success = False later.
         verify_t0 = time.perf_counter()
         verifier = get_verifier(classification)
+
+        # Extract verifier context from whatever form raw is in
+        raw_text = raw.summary if isinstance(raw, ExecutionResult) else str(raw)
         verifier_context = {}
-        if isinstance(raw, str):
-            # For string output, try to detect HTML content
-            if raw.strip().startswith("<!DOCTYPE html") or raw.strip().startswith("<html"):
-                verifier_context["html_content"] = raw
-            elif "rm " in raw or "chmod " in raw or "wget " in raw:
-                verifier_context["bash_commands"] = raw
-            else:
-                verifier_context["code_content"] = raw
+        if raw_text.strip().startswith("<!DOCTYPE html") or raw_text.strip().startswith("<html"):
+            verifier_context["html_content"] = raw_text
+        elif "rm " in raw_text or "chmod " in raw_text or "wget " in raw_text:
+            verifier_context["bash_commands"] = raw_text
+        elif raw_text:
+            verifier_context["code_content"] = raw_text
+
         verification_report = verifier.verify(
-            result=ExecutionResult(
+            result=raw if isinstance(raw, ExecutionResult) else ExecutionResult(
                 success=True,
-                summary=str(raw) if not isinstance(raw, ExecutionResult) else raw.summary,
+                summary=raw_text,
                 error=err_msg,
             ),
             classification=classification,
@@ -209,13 +197,14 @@ class UnifiedIntelligenceLayer:
                              else logging.WARNING)
                     logger.log(level, "  [%s] %s — %s", f.severity.value, f.check_name, f.message)
 
-        # Auto-retry on critical verification failures
-        if verification_report.criticals and not isinstance(raw, ExecutionResult):
+        # Auto-retry on critical verification failures (max once)
+        _retried = False
+        if verification_report.criticals and not _retried:
+            _retried = True
             logger.warning(
                 "Verification CRITICAL — retrying execution with error context. "
                 "(%d criticals)", len(verification_report.criticals)
             )
-            # Build an error message summarizing critical findings
             error_hint = "VERIFICATION FAILED:\n" + "\n".join(
                 f"  - {f.message}" for f in verification_report.criticals
             )
@@ -223,18 +212,18 @@ class UnifiedIntelligenceLayer:
                 raw = executor(ctx, user_input + "\n\n" + error_hint, messages)
                 elapsed = time.perf_counter() - t0
                 # Re-run verification on the retry output
+                raw_text = raw.summary if isinstance(raw, ExecutionResult) else str(raw)
                 verifier_context = {}
-                if isinstance(raw, str):
-                    if raw.strip().startswith("<!DOCTYPE html") or raw.strip().startswith("<html"):
-                        verifier_context["html_content"] = raw
-                    elif "rm " in raw or "chmod " in raw or "wget " in raw:
-                        verifier_context["bash_commands"] = raw
-                    else:
-                        verifier_context["code_content"] = raw
+                if raw_text.strip().startswith("<!DOCTYPE html") or raw_text.strip().startswith("<html"):
+                    verifier_context["html_content"] = raw_text
+                elif "rm " in raw_text or "chmod " in raw_text or "wget " in raw_text:
+                    verifier_context["bash_commands"] = raw_text
+                elif raw_text:
+                    verifier_context["code_content"] = raw_text
                 verification_report = verifier.verify(
-                    result=ExecutionResult(
+                    result=raw if isinstance(raw, ExecutionResult) else ExecutionResult(
                         success=True,
-                        summary=str(raw) if not isinstance(raw, ExecutionResult) else raw.summary,
+                        summary=raw_text,
                     ),
                     classification=classification,
                     context=verifier_context if verifier_context else None,
@@ -334,5 +323,12 @@ class UnifiedIntelligenceLayer:
         mode = decision.plan.mode
         if executors and mode in executors:
             return executors[mode]
-        # Fallback to default stubs
-        return _DEFAULT_EXECUTORS.get(mode, _default_executor)
+        # Fallback to real executors from executor_adapter
+        if mode in _EXECUTOR_MAP:
+            return _EXECUTOR_MAP[mode]
+        # Last resort — raise a clear error instead of returning a stub
+        raise RuntimeError(
+            f"No executor registered for {mode.value}. "
+            "Ensure EXECUTOR_MAP covers this mode "
+            "or pass an explicit executors dict to process()."
+        )

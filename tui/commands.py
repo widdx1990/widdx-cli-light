@@ -52,10 +52,10 @@ class CommandHandler:
             await self.app._do_action("history")
         elif cmd == "/memories":
             await self.app._do_action("memories")
-        elif cmd == "/settings":
-            await self.app._do_action("settings")
         elif cmd == "/sessions":
             await self.app._do_action("sessions")
+        elif cmd == "/settings":
+            await self.app._do_action("settings")
         elif cmd == "/export":
             await self.app._do_action("export")
         elif cmd == "/save":

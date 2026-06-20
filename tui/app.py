@@ -87,7 +87,7 @@ class MainScreen(Screen):
     NAV_BUTTONS = [
         ("nav-chat", "💬", "Chat"), ("nav-tools", "🛠️", "Tools"),
         ("nav-skills", "🎯", "Skills"), ("nav-history", "📋", "History"),
-        ("nav-memories", "💾", "Memories"), ("nav-sessions", "📦", "Sessions"),
+        ("nav-memories", "💾", "Memories"),
         ("nav-settings", "⚙", "Settings"),
     ]
 
@@ -364,7 +364,8 @@ class MainScreen(Screen):
                 idx_val = i  # use relative index
                 await vlist.mount(TButton(f"  {icon}  [{role}]  {c}", id=f"hist-{idx_val}"))
         elif action == "memories":
-            await self._show_memories()
+            from .screens.memory_crud import MemoryListScreen
+            self.app.push_screen(MemoryListScreen())
         elif action == "sessions":
             from .screens.session_crud import SessionListScreen
             self.app.push_screen(SessionListScreen(), self._on_session_result)
@@ -494,6 +495,14 @@ class MainScreen(Screen):
                 msgs = result[1]
                 self.state.messages = msgs
                 self.state.turns = len(msgs)
+                # If result has metadata, apply it
+                if len(result) > 2 and isinstance(result[2], dict):
+                    meta = result[2]
+                    if meta.get("model"):
+                        self.state.model = meta["model"]
+                        self._sync_provider_from_model()
+                    self.state.cost = meta.get("cost", 0.0)
+                
                 self._log_message("system", f"📂 Session loaded: {len(msgs)} messages")
                 if self._chat_log:
                     self._chat_log.clear()
@@ -577,6 +586,7 @@ class MainScreen(Screen):
             main_nav = self.NAV_BUTTONS
             act_btns = [
                 ("act-doctor", "🩺", "Doctor", "doctor", "info"),
+                ("act-sessions", "📦", "Sessions", "sessions", "info"),
                 ("act-export", "📤", "Export", "export", "success"),
                 ("act-clear", "🧹", "Clear", "clear", "warn"),
                 ("act-search", "🔍", "Search", "search", "info"),

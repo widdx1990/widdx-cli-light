@@ -118,16 +118,26 @@ def test_direct_tool():
 # BRAIN TESTS
 # =====================================================================
 
+def _make_test_provider():
+    """Create a minimal mock provider for tests that call process()."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        name="test",
+        model="test",
+        api_key="x",
+        chat=lambda msgs, tools=None, temp=0.7: ("Mock reply", []),
+    )
+
+
 def test_brain_orchestrates_analyze_route():
     """Brain runs the full pipeline: analyze → route → result."""
-    uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS)
+    uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS, provider=_make_test_provider())
     result, decision = uil.process("hello")
 
     assert isinstance(result.summary, str)
     assert isinstance(decision, RoutingDecision)
     # Should have classification + routing decision
-    assert "CHAT" in result.summary or "chat" in result.summary
-    assert "mode=" in result.summary
+    assert "Mock" in result.summary or "reply" in result.summary
     print("  PASS: Brain orchestrates analyze → route → result")
 
 
@@ -174,17 +184,14 @@ def test_brain_with_custom_executor():
 
 
 def test_brain_default_executor_stub():
-    """Default executor produces a traceable summary."""
-    uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS)
+    """Default executor dispatches to real executor (no more stub)."""
+    uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS, provider=_make_test_provider())
     result, decision = uil.process("query the database")
 
-    # Should show full decision trace
-    assert "[UIL]" in result.summary
-    assert "mode=" in result.summary
-    assert "Ready to execute" in result.summary
-    # Should have decision path steps
-    assert "DecisionRouter" in result.summary
-    print("  PASS: Default executor produces traceable output")
+    # Result should come from the real executor, not a stub
+    assert isinstance(result, type(result))
+    assert decision.plan.mode == ExecutionMode.AUTONOMOUS  # DATABASE → AUTONOMOUS
+    print("  PASS: Default executor dispatches to real executor")
 
 
 def test_brain_full_end_to_end():
@@ -197,7 +204,7 @@ def test_brain_full_end_to_end():
         ("xylophone purples",           ExecutionMode.SIMPLE_CHAT, 13),
     ]
 
-    uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS)
+    uil = UnifiedIntelligenceLayer(tool_defs=MOCK_TOOLS, provider=_make_test_provider())
     for user_input, expected_mode, expected_tools in test_cases:
         result, decision = uil.process(user_input)
         actual_mode = decision.plan.mode

@@ -39,10 +39,12 @@ class HelpScreen(ModalScreen):
             ("/tools",          "Show available tools"),
             ("/skills",         "List & toggle skills"),
             ("/history",        "Review chat history"),
+            ("/search",         "Search messages"),
             ("/version",        "Show version info"),
         ],
         "📦 Sessions & Memory": [
             ("/save",           "Save session as JSON"),
+            ("/sessions",       "Manage saved sessions"),
             ("/export",         "Export as Markdown"),
             ("/memories",       "Manage saved memories"),
             ("/remember <msg>", "Save a quick memory"),

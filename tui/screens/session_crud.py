@@ -262,16 +262,18 @@ class SessionListScreen(Screen):
             if s["type"] == "sqlite":
                 sess = SessionV2(s["id"])
                 msgs = sess.messages
+                meta = sess.metadata
                 self._state["_messages"] = msgs
                 self._state["turns"] = len(msgs)
-                self.dismiss(("loaded", msgs))
+                self.dismiss(("loaded", msgs, meta))
             else:
                 path = Path(s["path"])
                 data = json.loads(path.read_text(encoding="utf-8"))
                 msgs = data.get("messages", [])
+                meta = data.get("state", {})
                 self._state["_messages"] = msgs
                 self._state["turns"] = len(msgs)
-                self.dismiss(("loaded", msgs))
+                self.dismiss(("loaded", msgs, meta))
         except Exception as e:
             self._show_error(f"Load failed: {e}")
 

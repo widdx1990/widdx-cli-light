@@ -76,6 +76,7 @@ from core.memory import MemoryStore
 from core.memory_learner import MemoryLearner
 from core.skills import skill_manager
 from core.uil import UnifiedIntelligenceLayer, ExecutionMode
+from core.agents.executor_adapter import EXECUTOR_MAP
 from core.workflow import WorkflowEngine
 from core.proxy import proxy_manager
 from core.config.keychain import prompt_key, has_key
@@ -290,61 +291,18 @@ class CLIApp:
         uil = UnifiedIntelligenceLayer(provider=self.provider)
         uil.set_tool_defs(tool_defs)
 
-        def _get_plan(decision):
-            return getattr(getattr(decision, "plan", None), "decomposed", None)
-
-        def _simple_chat_exec(decision, inp, msgs):
-            from core.chat import run_stream_turn
-            plan = _get_plan(decision)
-            n_steps = len(plan.steps) if plan and plan.steps else 0
-            state_snapshot = list(self.messages)
-            turn_msgs = list(msgs)
-            if plan and not plan.is_minimal and plan.steps:
-                steps_text = "\n".join(f"  {s.id}: {s.description}" for s in plan.steps)
-                turn_msgs.append({"role": "system", "content": f"[PLAN — {n_steps} steps]\n{steps_text}", "_plan": True})
-            self.state["tools_used"] = []
-            turn_msgs, _ = run_stream_turn(self.provider, turn_msgs, self.state, decision.tool_defs, self.cfg)
-            turn_msgs = [m for m in turn_msgs if not m.get("_plan")]
-            for m in reversed(turn_msgs):
-                if m["role"] == "assistant":
-                    return m["content"]
-            return ""
-
-        def _autonomous_exec(decision, inp, msgs):
-            from core.agents.agent import AutonomousAgent
-            plan = _get_plan(decision)
-            n_steps = len(plan.steps) if plan and plan.steps else 0
-            planned_inp = inp
-            if plan and not plan.is_minimal and plan.steps:
-                steps_text = "\n".join(f"  {s.id}: {s.description}" for s in plan.steps)
-                planned_inp = f"[SYSTEM: Planner — {n_steps} steps]\n{steps_text}\n\n---\n{inp}"
-            self.state["tools_used"] = []
-            agent = AutonomousAgent(self.provider, decision.tool_defs, self.cfg, self.state)
-            steps_log, summary = agent.run(planned_inp)
-            return summary
-
-        def _expert_team_exec(decision, inp, msgs):
-            from core.agents.expert import ExpertTeam
-            self.state["tools_used"] = []
-            team = ExpertTeam(self.provider, decision.tool_defs, self.cfg, self.state)
-            summary = team.run(inp)
-            return summary
-
-        def _direct_tool_exec(ctx, inp, msgs):
-            from core.uil.executors import run_direct_tool
-            return run_direct_tool(ctx, inp)
-
-        executors = {
-            ExecutionMode.SIMPLE_CHAT: _simple_chat_exec,
-            ExecutionMode.AUTONOMOUS: _autonomous_exec,
-            ExecutionMode.EXPERT_TEAM: _expert_team_exec,
-            ExecutionMode.DIRECT_TOOL: _direct_tool_exec,
-        }
+        executors = EXECUTOR_MAP
 
         result = None
         decision = None
         try:
-            result, decision = uil.process(user_input, messages=self.messages, executors=executors)
+            result, decision = uil.process(
+                user_input,
+                messages=self.messages,
+                executors=executors,
+                cfg=self.cfg,
+                state=self.state,
+            )
             summary = result.summary
 
             # Show verification warnings/errors to user

@@ -188,12 +188,31 @@ class ExecutionContext:
     task_plan: "Plan | None" = None            # renamed: avoids collision with decision.plan
     current_step: "TaskStep | None" = None     # current step being executed
 
+    # ── Execution Resources (injected by brain.process) ──
+    # These give the executor access to the LLM provider, tool definitions,
+    # config, and mutable state (cost, turns). Populated by brain.process()
+    # before calling the executor, never by the caller directly.
+    provider: "Any | None" = None          # LLM provider instance
+    tool_defs: "list[dict] | None" = None  # tool definitions (from UIL._tool_defs)
+    cfg: "dict | None" = None              # user configuration
+    state: "dict | None" = None            # mutable run state (cost, turns, model)
+
     # ── Phase 2 — Telemetry (Phase 2.2) ──
     execution_metrics: "ExecutionMetrics | None" = None
     step_results: list["StepResult"] = field(default_factory=list)
     execution_feedback: "ExecutionResult | None" = None
     storage_result: "Any | None" = None
     knowledge_updates: list[dict] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Fill in defaults from the wrapped RoutingDecision when explicit
+        fields are left as None.  This preserves backward compatibility for
+        code that creates an ExecutionContext directly from a decision."""
+        # When tool_defs is None (not set by brain.process), fall back
+        # to the RoutingDecision's filtered tool list.
+        if self.tool_defs is None and self.decision is not None:
+            object.__setattr__(self, "tool_defs",
+                               getattr(self.decision, "tool_defs", []))
 
     def __getattr__(self, name: str):
         """Delegate unknown attributes to the wrapped RoutingDecision.
