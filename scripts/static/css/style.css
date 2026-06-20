@@ -187,21 +187,6 @@ body {
   padding: 16px 20px;
   flex-shrink: 0;
 }
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-right: 8px;
-}
-.sidebar-close {
-  width: 30px; height: 30px; border-radius: var(--radius-sm);
-  border: none; background: transparent; color: var(--text-tertiary);
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all var(--duration-fast) var(--ease-out);
-  margin-right: 4px;
-}
-.sidebar-close:hover { background: var(--fill-hover); color: var(--text-primary); }
-.sidebar-close i { font-size: 18px; }
 .brand-logo {
   width: 32px; height: 32px;
   border-radius: var(--radius-md);
