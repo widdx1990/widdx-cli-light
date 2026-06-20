@@ -364,6 +364,83 @@ function setActivity(label, tool) {
 
 // ═══════════════ STATUS & MODEL ═══════════════════
 
+// ── Inline model switcher ──
+
+window.toggleModelDropdown = function(e) {
+  e.stopPropagation();
+  var dd = document.getElementById('modelDropdown');
+  if (!dd) return;
+  var shown = dd.style.display !== 'none';
+  dd.style.display = shown ? 'none' : 'block';
+  if (!shown) {
+    populateModelDropdown();
+    var chevron = document.querySelector('.model-chevron');
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+  } else {
+    var chevron = document.querySelector('.model-chevron');
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  var dd = document.getElementById('modelDropdown');
+  var sel = document.getElementById('modelSelector');
+  if (dd && dd.style.display !== 'none' && !dd.contains(e.target) && !sel.contains(e.target)) {
+    dd.style.display = 'none';
+    var chevron = document.querySelector('.model-chevron');
+    if (chevron) chevron.style.transform = '';
+  }
+});
+
+async function populateModelDropdown() {
+  var list = document.getElementById('modelDropdownList');
+  if (!list) return;
+  list.innerHTML = '<div style="padding:8px 14px;color:var(--text-muted);font-size:12px">Loading...</div>';
+  try {
+    var r = await fetch('/api/settings');
+    var data = await r.json();
+    var prov = data.provider || {};
+    var providers = data.available_providers || [];
+    var currentProvider = providers.find(function(p) { return p.id === prov.name; }) || providers[0] || {models:[]};
+    var models = currentProvider.models || [];
+    list.innerHTML = '';
+    // Show provider name as section header
+    var ph = document.createElement('div');
+    ph.style.cssText = 'padding:4px 14px;font-size:11px;color:var(--text-tertiary)';
+    ph.textContent = currentProvider.name || prov.name || 'Models';
+    list.appendChild(ph);
+    models.forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'model-dropdown-item' + (m === prov.model ? ' active' : '');
+      item.textContent = m;
+      item.onclick = async function() {
+        // Save model change immediately
+        showToast('Switching to ' + m + '...', 'info');
+        var saveR = await fetch('/api/settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({provider:{name:prov.name, model:m}}),
+        });
+        var saveD = await saveR.json();
+        if (saveD.status === 'ok') {
+          document.getElementById('modelName').textContent = m;
+          if (typeof refreshChat === 'function') refreshChat();
+          else showToast('Model: ' + m, 'success');
+        } else {
+          showToast('Error: ' + (saveD.message || 'Failed'), 'error');
+        }
+        document.getElementById('modelDropdown').style.display = 'none';
+        var ch = document.querySelector('.model-chevron');
+        if (ch) ch.style.transform = '';
+      };
+      list.appendChild(item);
+    });
+  } catch(e) {
+    list.innerHTML = '<div style="padding:8px 14px;color:var(--error);font-size:12px">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
 async function loadStatus() {
   try {
     const r = await fetch('/api/status');
@@ -481,6 +558,16 @@ window.toggleStar = function() {
   var starred = btn.classList.toggle('starred');
   localStorage.setItem('widdx_starred', starred ? 'true' : '');
   showToast(starred ? 'Starred' : 'Unstarred', 'info');
+};
+
+// Refresh chat UI after settings change
+window.refreshChat = function() {
+  S.messages = [];
+  var area = document.getElementById('messagesArea');
+  if (area) area.innerHTML = '';
+  var input = document.getElementById('messageInput');
+  if (input) { input.value = ''; input.style.height = 'auto'; }
+  showToast('Ready', 'success');
 };
 
 // Restore star state on load

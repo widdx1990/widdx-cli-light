@@ -29,44 +29,46 @@
   </div>
 
   <nav class="sidebar-nav">
-    <div class="nav-section-label">Mission Control</div>
-    <div class="nav-item active" data-view="dashboard" data-tooltip="Dashboard">
-      <i class="fa-solid fa-gauge-high"></i>
-      Dashboard
-    </div>
-    <div class="nav-item" data-view="chat" data-tooltip="Agent Chat">
+    <div class="nav-section-label">🧩 Primary</div>
+    <div class="nav-item active" data-view="chat" data-tooltip="Agent Chat">
       <i class="fa-solid fa-comment-dots"></i>
       Agent
       <span class="nav-badge live-badge">● Live</span>
     </div>
-    <div class="nav-item" data-view="delegation" data-tooltip="Delegation">
-      <i class="fa-solid fa-diagram-project"></i>
-      Delegation
-    </div>
-    <div class="nav-item" data-view="gateway" data-tooltip="Gateway">
-      <i class="fa-solid fa-tower-broadcast"></i>
-      Gateway
+    <div class="nav-item" data-view="dashboard" data-tooltip="Dashboard">
+      <i class="fa-solid fa-gauge-high"></i>
+      Dashboard
     </div>
 
-    <div class="nav-section-label">Management</div>
+    <div class="nav-section-label">⚙️ Configuration</div>
+    <div class="nav-item" data-view="settings" data-tooltip="Settings">
+      <i class="fa-solid fa-sliders"></i>
+      Settings
+    </div>
     <div class="nav-item" data-view="scheduler" data-tooltip="Scheduler">
       <i class="fa-solid fa-calendar-clock"></i>
       Scheduler
       <span class="nav-badge" id="cronBadge">0</span>
-    </div>
-    <div class="nav-item" data-view="memory" data-tooltip="Memory">
-      <i class="fa-solid fa-brain"></i>
-      Memory
     </div>
     <div class="nav-item" data-view="skills" data-tooltip="Skills">
       <i class="fa-solid fa-toolbox"></i>
       Skills
     </div>
 
-    <div class="nav-section-label">System</div>
-    <div class="nav-item" data-view="settings" data-tooltip="Settings">
-      <i class="fa-solid fa-sliders"></i>
-      Settings
+    <div class="nav-section-label">🔗 Integrations</div>
+    <div class="nav-item" data-view="gateway" data-tooltip="Gateway">
+      <i class="fa-solid fa-tower-broadcast"></i>
+      Gateway
+    </div>
+    <div class="nav-item" data-view="delegation" data-tooltip="Delegation">
+      <i class="fa-solid fa-diagram-project"></i>
+      Delegation
+    </div>
+
+    <div class="nav-section-label">📊 Data</div>
+    <div class="nav-item" data-view="memory" data-tooltip="Memory">
+      <i class="fa-solid fa-brain"></i>
+      Memory
     </div>
     <div class="nav-item" data-view="activity" data-tooltip="Activity">
       <i class="fa-solid fa-chart-simple"></i>
@@ -102,9 +104,14 @@
         <button class="hamburger-btn" onclick="toggleMobileSidebar()" aria-label="Open menu">
           <i class="fa-solid fa-bars"></i>
         </button>
-        <div class="model-selector" id="modelSelector" onclick="showView('settings')">
+        <div class="model-selector" id="modelSelector" onclick="toggleModelDropdown(event)">
           <span id="modelName">Loading…</span>
           <i class="fa-solid fa-chevron-down model-chevron"></i>
+        </div>
+        <div class="model-dropdown" id="modelDropdown" style="display:none">
+          <div class="model-dropdown-header">Switch Model</div>
+          <div class="model-dropdown-list" id="modelDropdownList"></div>
+          <div class="model-dropdown-footer" onclick="showView('settings')">⚙️ Advanced Settings</div>
         </div>
         <div class="chat-header-spacer"></div>
         <div class="chat-header-actions">
