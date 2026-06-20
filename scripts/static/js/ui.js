@@ -19,8 +19,8 @@ function toggleTheme() {
 
 function toggleSidebar() {
   var sb = document.getElementById('sidebar');
-  sb.classList.toggle('collapsed');
-  document.body.classList.toggle('sidebar-collapsed', sb.classList.contains('collapsed'));
+  sb.classList.toggle('open');
+  document.body.classList.toggle('sidebar-open', sb.classList.contains('open'));
 }
 
 function toggleMobileSidebar() {
@@ -304,15 +304,17 @@ function parseToolCalls(text) {
 // ═══════════════ COMMAND PALETTE ═══════════════════
 
 function toggleCommandPalette() {
-  const overlay = document.getElementById('cmdPaletteOverlay');
+  var overlay = document.getElementById('cmdPaletteOverlay');
   if (!overlay) return;
-  const isOpen = overlay.classList.contains('show');
+  var isOpen = overlay.classList.contains('show');
   if (isOpen) { closeCommandPalette(); return; }
   overlay.classList.add('show');
-  const input = document.getElementById('cmdPaletteInput');
-  if (input) { input.value = ''; setTimeout(function() { input.focus(); }, 50); }
+  var input = document.getElementById('cmdPaletteInput');
+  if (input) { input.value = ''; input.focus(); }
   filterPalette('');
 }
+
+window.openCommandPalette = toggleCommandPalette;
 
 function closeCommandPalette() {
   const overlay = document.getElementById('cmdPaletteOverlay');

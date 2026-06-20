@@ -456,6 +456,26 @@ window.execSlashCommand = function(idx) {
   cmd.action();
 };
 
+// Send a pre-written onboarding message
+window.sendOnboardingMsg = function(text) {
+  var input = document.getElementById('messageInput');
+  if (input) { input.value = text; }
+  sendMessage();
+  hideOnboarding();
+};
+
+function hideOnboarding() {
+  var ob = document.getElementById('onboarding');
+  if (ob) ob.style.display = 'none';
+}
+
+// Open command palette
+window.openCommandPalette = function() {
+  if (typeof openCommandPalette === 'function') {
+     // defined in ui.js
+  }
+};
+
 // ── Inline model switcher ──
 
 window.toggleModelDropdown = function(e) {

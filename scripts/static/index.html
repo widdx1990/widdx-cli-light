@@ -10,29 +10,29 @@
 </head>
 <body>
 
-<!-- SIDEBAR -->
-<aside class="sidebar" id="sidebar" role="navigation" aria-label="Main sidebar">
-  <div class="sidebar-brand">
-    <div class="brand-logo">W</div>
-    <span class="brand-text">WIDDX Nexus</span>
-    <span class="brand-badge">v3</span>
+<!-- SIDEBAR — Overlay Drawer -->
+<aside class="sidebar" id="sidebar" role="dialog" aria-label="Navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-brand">
+      <div class="brand-logo">W</div>
+      <span class="brand-text">WIDDX Nexus</span>
+      <span class="brand-badge">v3</span>
+    </div>
+    <button class="sidebar-close" onclick="toggleSidebar()" aria-label="Close navigation">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
   </div>
 
-  <div class="sidebar-new-task" onclick="showView('chat')">
+  <div class="sidebar-new-task" onclick="showView('chat'); if(window.innerWidth<820)toggleSidebar()">
     <i class="fa-solid fa-plus"></i>
-    New task
-  </div>
-
-  <div class="sidebar-search-wrap">
-    <i class="fa-solid fa-magnifying-glass"></i>
-    <input type="text" class="sidebar-search" id="sidebarSearch" placeholder="Search conversations...">
+    New chat
   </div>
 
   <nav class="sidebar-nav">
-    <div class="nav-section-label">🧩 Primary</div>
-    <div class="nav-item active" data-view="chat" data-tooltip="Agent Chat">
+    <div class="nav-section-label">General</div>
+    <div class="nav-item active" data-view="chat" data-tooltip="Chat">
       <i class="fa-solid fa-comment-dots"></i>
-      Agent
+      Chat
       <span class="nav-badge live-badge">● Live</span>
     </div>
     <div class="nav-item" data-view="dashboard" data-tooltip="Dashboard">
@@ -40,77 +40,51 @@
       Dashboard
     </div>
 
-    <div class="nav-section-label">⚙️ Configuration</div>
-    <div class="nav-item" data-view="settings" data-tooltip="Settings">
-      <i class="fa-solid fa-sliders"></i>
-      Settings
+    <div class="nav-section-label">Management</div>
+    <div class="nav-item" data-view="sessions" data-tooltip="Sessions">
+      <i class="fa-solid fa-clock-rotate-left"></i>
+      Sessions
     </div>
     <div class="nav-item" data-view="scheduler" data-tooltip="Scheduler">
       <i class="fa-solid fa-calendar-clock"></i>
       Scheduler
       <span class="nav-badge" id="cronBadge">0</span>
     </div>
+    <div class="nav-item" data-view="memory" data-tooltip="Memory">
+      <i class="fa-solid fa-brain"></i>
+      Memory
+    </div>
     <div class="nav-item" data-view="skills" data-tooltip="Skills">
       <i class="fa-solid fa-toolbox"></i>
       Skills
     </div>
 
-    <div class="nav-section-label">🔗 Integrations</div>
+    <div class="nav-section-label">Integrations</div>
     <div class="nav-item" data-view="gateway" data-tooltip="Gateway">
       <i class="fa-solid fa-tower-broadcast"></i>
       Gateway
     </div>
     <div class="nav-item" data-view="mcp" data-tooltip="MCP Servers">
       <i class="fa-solid fa-plug"></i>
-      MCP Servers
+      MCP
     </div>
     <div class="nav-item" data-view="delegation" data-tooltip="Delegation">
       <i class="fa-solid fa-diagram-project"></i>
       Delegation
     </div>
 
-    <div class="nav-section-label">📊 Data</div>
-    <div class="nav-item" data-view="memory" data-tooltip="Memory">
-      <i class="fa-solid fa-brain"></i>
-      Memory
+    <div class="nav-section-label">System</div>
+    <div class="nav-item" data-view="settings" data-tooltip="Settings">
+      <i class="fa-solid fa-sliders"></i>
+      Settings
     </div>
-    <div class="nav-item" data-view="sessions" data-tooltip="Sessions">
-      <i class="fa-solid fa-clock-rotate-left"></i>
-      Sessions
-    </div>
-    <div class="nav-item" data-view="checkpoints" data-tooltip="Checkpoints">
-      <i class="fa-solid fa-camera"></i>
-      Checkpoints
+    <div class="nav-item" data-view="doctor" data-tooltip="Health">
+      <i class="fa-solid fa-stethoscope"></i>
+      Health
     </div>
     <div class="nav-item" data-view="activity" data-tooltip="Activity">
       <i class="fa-solid fa-chart-simple"></i>
       Activity
-    </div>
-
-    <div class="nav-section-label">⚙️ System</div>
-    <div class="nav-item" data-view="git" data-tooltip="Git">
-      <i class="fa-solid fa-code-branch"></i>
-      Git
-    </div>
-    <div class="nav-item" data-view="doctor" data-tooltip="Health Check">
-      <i class="fa-solid fa-stethoscope"></i>
-      Health
-    </div>
-    <div class="nav-item" data-view="debug" data-tooltip="Debug">
-      <i class="fa-solid fa-bug"></i>
-      Debug
-    </div>
-    <div class="nav-item" data-view="permissions" data-tooltip="Permissions">
-      <i class="fa-solid fa-shield"></i>
-      Permissions
-    </div>
-    <div class="nav-item" data-view="plugins" data-tooltip="Plugins">
-      <i class="fa-solid fa-puzzle-piece"></i>
-      Plugins
-    </div>
-    <div class="nav-item" data-view="workflows" data-tooltip="Workflows">
-      <i class="fa-solid fa-diagram-predecessor"></i>
-      Workflows
     </div>
   </nav>
 
@@ -126,12 +100,10 @@
   </div>
 </aside>
 
-<!-- Floating sidebar toggle -->
-<button class="sidebar-floating-toggle" onclick="toggleSidebar()" title="Toggle sidebar (Ctrl+B)">
-  <i class="fa-solid fa-chevron-left"></i>
-</button>
+<!-- Sidebar backdrop (mobile) -->
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="if(window.innerWidth<820)toggleSidebar()"></div>
 
-<!-- MAIN CONTENT -->
+<!-- MAIN CONTENT — Full Screen Chat -->
 <main class="main-content" role="main">
   <div class="main-wrapper">
 
@@ -139,7 +111,7 @@
 
       <!-- Chat Header -->
       <header class="chat-header">
-        <button class="hamburger-btn" onclick="toggleMobileSidebar()" aria-label="Open menu">
+        <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Open navigation">
           <i class="fa-solid fa-bars"></i>
         </button>
         <div class="model-selector" id="modelSelector" onclick="toggleModelDropdown(event)">
@@ -149,7 +121,7 @@
         <div class="model-dropdown" id="modelDropdown" style="display:none">
           <div class="model-dropdown-header">Switch Model</div>
           <div class="model-dropdown-list" id="modelDropdownList"></div>
-          <div class="model-dropdown-footer" onclick="showView('settings')">⚙️ Advanced Settings</div>
+          <div class="model-dropdown-footer" onclick="showView('settings')">Open Settings</div>
         </div>
         <div class="chat-header-spacer"></div>
         <div class="chat-header-actions">
@@ -158,6 +130,9 @@
           </button>
           <button class="header-btn" title="Copy chat link" onclick="shareChat()">
             <i class="fa-solid fa-share-nodes"></i>
+          </button>
+          <button class="header-btn" title="Commands (Ctrl+K)" onclick="openCommandPalette()">
+            <i class="fa-solid fa-terminal"></i>
           </button>
           <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">
             <i class="fa-solid fa-sun icon-sun"></i>
@@ -168,7 +143,34 @@
 
       <!-- Messages -->
       <div class="messages-area" id="messagesArea" role="log" aria-live="polite">
-        <!-- Messages loaded by nexus.js -->
+        <div class="onboarding" id="onboarding">
+          <div class="onboarding-logo">W</div>
+          <h1>Welcome to WIDDX Nexus</h1>
+          <p>Terminal AI Workspace — by <strong>MUHAMMAD MUSLIH</strong></p>
+          <div class="onboarding-actions">
+            <div class="onboarding-card" onclick="sendOnboardingMsg('Hello! What can you do?')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Introduce yourself</span>
+            </div>
+            <div class="onboarding-card" onclick="sendOnboardingMsg('Write a Python script to analyze text files in a folder')">
+              <i class="fa-solid fa-code"></i>
+              <span>Write code</span>
+            </div>
+            <div class="onboarding-card" onclick="sendOnboardingMsg('Research the latest AI agent frameworks')">
+              <i class="fa-solid fa-compass"></i>
+              <span>Research</span>
+            </div>
+            <div class="onboarding-card" onclick="sendOnboardingMsg('Explain how the UIL pipeline works in WIDDX')">
+              <i class="fa-solid fa-brain"></i>
+              <span>How WIDDX works</span>
+            </div>
+          </div>
+          <div class="onboarding-tips">
+            <span><kbd>Ctrl+K</kbd> Commands</span>
+            <span><kbd>/</kbd> Slash commands</span>
+            <span><kbd>Ctrl+B</kbd> Navigation</span>
+          </div>
+        </div>
       </div>
 
       <!-- Typing -->
@@ -186,7 +188,7 @@
           <span class="activity-tool" id="activityTool">—</span>
         </div>
         <div class="activity-actions">
-          <button class="activity-btn active" onclick="toggleComputer()" title="Toggle computer panel">
+          <button class="activity-btn" onclick="toggleComputer()" title="Toggle computer panel">
             <i class="fa-solid fa-desktop"></i>
           </button>
         </div>
@@ -198,11 +200,8 @@
           <textarea class="input-textarea" id="messageInput" placeholder="Send a message to WIDDX..." rows="1" onkeydown="handleInputKey(event)"></textarea>
           <div class="input-toolbar">
             <div class="input-toolbar-left">
-              <button class="input-toolbar-btn" title="Attach files" onclick="if(typeof showToast==='function')showToast('File upload coming soon','info')">
-                <i class="fa-solid fa-paperclip"></i>
-              </button>
-              <button class="input-toolbar-btn" title="Add context" onclick="if(typeof showToast==='function')showToast('Context panel coming soon','info')">
-                <i class="fa-solid fa-file-lines"></i>
+              <button class="input-toolbar-btn" title="Commands" onclick="openCommandPalette()">
+                <i class="fa-solid fa-terminal"></i>
               </button>
             </div>
             <button class="send-btn" onclick="sendMessage()" title="Send">
@@ -215,32 +214,28 @@
       </div>
     </div>
 
-    <!-- RIGHT PANEL — WIDDX Computer -->
-    <aside class="right-panel" id="computerPanel">
+    <!-- RIGHT PANEL — Hidden by default -->
+    <aside class="right-panel collapsed" id="computerPanel">
       <div class="right-panel-header">
         <span class="right-panel-indicator"></span>
-        <span class="right-panel-title">WIDDX's computer</span>
-        <span class="right-panel-subtitle"><i class="fa-solid fa-circle"></i> Live</span>
+        <span class="right-panel-title">WIDDX Computer</span>
         <span class="right-panel-header-spacer"></span>
         <button class="right-panel-close" onclick="toggleComputer()" title="Close">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-
       <div class="right-panel-tabs">
         <div class="right-panel-tab active" onclick="switchTab(this, 'desktop')"><i class="fa-solid fa-desktop"></i> Desktop</div>
         <div class="right-panel-tab" onclick="switchTab(this, 'terminal')"><i class="fa-solid fa-terminal"></i> Terminal</div>
         <div class="right-panel-tab" onclick="switchTab(this, 'browser')"><i class="fa-solid fa-globe"></i> Browser</div>
         <div class="right-panel-tab" onclick="switchTab(this, 'files')"><i class="fa-solid fa-folder"></i> Files</div>
       </div>
-
       <div class="right-panel-body" id="panelBody">
         <div class="panel-desktop-view">
           <i class="fa-solid fa-display"></i>
           <div class="panel-desktop-text">Loading system info...</div>
         </div>
       </div>
-
       <div class="right-panel-footer">
         <span class="panel-footer-dot"></span>
         <div class="progress-wrap">
@@ -255,39 +250,32 @@
   </div>
 </main>
 
-<!-- Scroll to bottom -->
-<button class="scroll-bottom-btn" id="scrollBottomBtn" onclick="scrollToBottom()" title="Scroll to bottom">
-  <i class="fa-solid fa-arrow-down"></i>
-</button>
-
-<!-- Toast container -->
+<!-- Toast -->
 <div class="toast-container" id="toastContainer"></div>
-<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeMobileSidebar()"></div>
 
-<!-- Command Palette Overlay -->
+<!-- Command Palette -->
 <div class="cmd-palette-overlay" id="cmdPaletteOverlay" onclick="if(event.target===this)closeCommandPalette()">
   <div class="cmd-palette">
     <input type="text" class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search…" oninput="if(typeof filterPalette==='function')filterPalette(this.value)" onkeydown="if(event.key==='Escape'){if(typeof closeCommandPalette==='function')closeCommandPalette();}if(event.key==='Enter'){const a=document.querySelector('.cmd-palette-item:not([style*=\"display:none\"])');if(a)a.click();}">
     <div class="cmd-palette-results" id="cmdPaletteResults">
       <div class="cmd-palette-section">Actions</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('new-task')"><i class="fa-solid fa-plus"></i> New Task<span class="shortcut">Ctrl+N</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-sidebar')"><i class="fa-solid fa-sidebar"></i> Toggle Sidebar<span class="shortcut">Ctrl+B</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('new-task')"><i class="fa-solid fa-plus"></i> New Chat<span class="shortcut">Ctrl+N</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-sidebar')"><i class="fa-solid fa-sidebar"></i> Toggle Navigation<span class="shortcut">Ctrl+B</span></div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-panel')"><i class="fa-solid fa-desktop"></i> Toggle Computer Panel<span class="shortcut">Ctrl+J</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-theme')"><i class="fa-solid fa-circle-half-stroke"></i> Toggle Light/Dark Theme</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('search')"><i class="fa-solid fa-magnifying-glass"></i> Search Conversations</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-theme')"><i class="fa-solid fa-circle-half-stroke"></i> Toggle Theme</div>
       <div class="cmd-palette-section">Views</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-chat')"><i class="fa-solid fa-comment-dots"></i> Agent Chat</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-chat')"><i class="fa-solid fa-comment-dots"></i> Chat</div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-dashboard')"><i class="fa-solid fa-gauge-high"></i> Dashboard</div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-scheduled')"><i class="fa-solid fa-calendar-clock"></i> Task Scheduler</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-tasks')"><i class="fa-solid fa-diagram-project"></i> Delegation Network</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gateway')"><i class="fa-solid fa-tower-broadcast"></i> Gateway Hub</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-memory')"><i class="fa-solid fa-brain"></i> Memory Vault</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-skills')"><i class="fa-solid fa-toolbox"></i> Skill Studio</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-activity')"><i class="fa-solid fa-chart-simple"></i> Activity Feed</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-sessions')"><i class="fa-solid fa-clock-rotate-left"></i> Sessions</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gateway')"><i class="fa-solid fa-tower-broadcast"></i> Gateway</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-memory')"><i class="fa-solid fa-brain"></i> Memory</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-skills')"><i class="fa-solid fa-toolbox"></i> Skills</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-activity')"><i class="fa-solid fa-chart-simple"></i> Activity</div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-settings')"><i class="fa-solid fa-sliders"></i> Settings</div>
-      <div class="cmd-palette-section">Conversation</div>
+      <div class="cmd-palette-section">Tools</div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('clear-chat')"><i class="fa-solid fa-eraser"></i> Clear Conversation</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('export')"><i class="fa-solid fa-file-export"></i> Export Conversation</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('export')"><i class="fa-solid fa-file-export"></i> Export</div>
       <div class="cmd-palette-section">Help</div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('shortcuts')"><i class="fa-solid fa-keyboard"></i> Keyboard Shortcuts</div>
     </div>
