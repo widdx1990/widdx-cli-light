@@ -736,6 +736,12 @@ class WIDDXTUI(App):
 
 
 def run_tui():
+    import warnings
+    warnings.warn(
+        "WIDDX TUI is deprecated. Use Web UI instead: python scripts/web_app.py",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     try:
         from core.diagnostics import error_collector
         error_collector.enable()

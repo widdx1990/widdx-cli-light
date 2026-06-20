@@ -188,7 +188,7 @@
     },
     {
       "path": "core/project_structure.py",
-      "description": "Project Structure Analyzer - Analyzes project file structure"
+      "description": "Project Structure — DEPRECATED."
     },
     {
       "path": "core/project_tracker.py",

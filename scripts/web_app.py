@@ -8,6 +8,7 @@ Usage:
 import sys
 try:
     from core._path import ensure_project_root
+    ensure_project_root()
 except ImportError:
     import sys
     from pathlib import Path
@@ -15,6 +16,7 @@ except ImportError:
     if _root not in sys.path:
         sys.path.insert(0, _root)
     from core._path import ensure_project_root
+    ensure_project_root()
 
 host = "0.0.0.0"
 port = 8000

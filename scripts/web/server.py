@@ -334,13 +334,50 @@ def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """Run the Web UI server."""
     import uvicorn
     logger.info("WIDDX Nexus Web UI: http://%s:%d", host, port)
-    # Log startup event
+
+    # ── Start background services ──────────────────────────
+    try:
+        from core.cron.scheduler import CronScheduler
+        _scheduler = CronScheduler()
+        _scheduler.start()
+        logger.info("Cron scheduler started via Web UI")
+    except Exception as e:
+        logger.warning("Cron scheduler start: %s", e)
+
+    try:
+        from core.gateway import GatewayCore, Platform, Message
+        from core._path import ensure_project_root
+        ensure_project_root()
+
+        _gateway = GatewayCore()
+
+        # Handler: incoming messages → UIL ChatHandler → response
+        def _gateway_handler(msg) -> str:
+            try:
+                chat = get_chat()
+                result = chat.chat(msg.text, history=[])
+                return result.get("content", "") or result.get("error", "No response")
+            except Exception as exc:
+                logger.error("Gateway handler error: %s", exc)
+                return f"Error: {exc}"
+
+        _gateway.set_handler(_gateway_handler)
+        # Start with tokens from config or env
+        import os
+        _gateway.start_platform("telegram", token=os.environ.get("TELEGRAM_TOKEN", ""))
+        _gateway.start_platform("discord", token=os.environ.get("DISCORD_TOKEN", ""))
+        logger.info("Gateway started via Web UI")
+    except Exception as e:
+        logger.info("Gateway not started: %s", e)
+
+    # ── Startup event ──────────────────────────────────────
     try:
         from core.activity import add as add_event
         add_event("system", detail="WIDDX Nexus Mission Control started",
                   icon="fa-star", agent="system", status="done")
     except Exception:
         pass
+
     uvicorn.run(
         "scripts.web.server:app",
         host=host,
