@@ -893,14 +893,11 @@ async function showDashboardView(area) {
     // Git info
     fetch('/api/git').then(function(r){return r.json()}).then(function(g){
       var el=document.getElementById('dash-detail-git');
-      if(el&&g){
-        var branch=g.branch||g.current_branch||'main';
-        var commit=(g.latest_commit||g.last_commit||'').slice(0,7);
-        var status=g.has_changes?'uncommitted':'clean';
-        el.innerHTML='<span style="color:var(--accent)">'+escapeHtml(branch)+'</span> &middot; <code style="font-size:11px">'+escapeHtml(commit)+'</code> &middot; <span style="color:'+(g.has_changes?'var(--warning)':'var(--success)')+'">'+status+'</span>';
-      }
+      if(!el||!g) return;
+      var info = (g.dirty ? 'uncommitted' : 'clean') + ' - ' + (g.recent_commits || '').split('\n')[0].slice(0,7);
+      el.textContent = info;
       var v=document.getElementById('dash-git');
-      if(v&&g) v.textContent=g.branch?.slice(0,6)||g.current_branch?.slice(0,6)||'—';
+      if(v) v.textContent = g.dirty ? '!' : '\u2713';
     }).catch(function(){});
 
     // Gateway channels
