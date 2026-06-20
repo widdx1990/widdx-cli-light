@@ -543,14 +543,34 @@ body.sidebar-collapsed .sidebar-floating-toggle i {
   position: relative;
 }
 .chat-header-spacer { flex: 1; }
+
+/* ── Skeleton loading ────────────────────────────────────────── */
+@keyframes skeletonPulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+  100% { opacity: 0.4; }
+}
+.skeleton {
+  background: var(--fill-hover);
+  border-radius: var(--radius-sm);
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+  display: inline-block;
+  min-width: 60px;
+  min-height: 1em;
+  vertical-align: middle;
+}
+
+/* ── Chat header actions ─────────────────────────────────────── */
 .chat-header-actions { display: flex; align-items: center; gap: 4px; }
 .header-btn {
   width: 34px; height: 34px; border-radius: var(--radius-md);
   border: none; background: transparent; color: var(--text-tertiary);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all var(--duration-fast) var(--ease-out);
+  transition: all var(--duration-fast) var(--ease-out); position: relative;
 }
-.header-btn:hover { background: var(--fill-hover); color: var(--text-primary); }
+.header-btn:hover {
+  background: var(--fill-hover); color: var(--text-primary);
+}
 .header-btn i { font-size: 17px; }
 .header-btn.starred { color: #f0a030; }
 .header-btn.starred:hover { color: #f5b840; }
