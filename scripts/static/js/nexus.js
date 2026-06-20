@@ -1202,40 +1202,15 @@ async function showSettingsView(area) {
 }
 
 function renderSettingsForm(data, area) {
-  var prov = data.provider || {};
-  var providers = data.available_providers || [];
   var form = document.getElementById('settings-form');
   if (!form) return;
 
-  var currentProviderId = prov.name || 'opencode-zen';
-  var currentProvider = providers.find(function(p) { return p.id === currentProviderId; }) || providers[0] || {models: []};
-  var modelOptions = (currentProvider.models || []).map(function(m) {
-    return '<option value="' + escapeHtml(m) + '"' + (m === prov.model ? ' selected' : '') + '>' + escapeHtml(m) + '</option>';
-  }).join('');
-
   form.innerHTML = '<div class="section-card">'
-    + '<div class="section-card-header"><i class="fa-solid fa-cloud"></i> Provider & Model</div>'
-    + '<div class="section-card-body" style="display:flex;flex-direction:column;gap:14px">'
-    // Provider selector
-    + '<div><label style="font-size:var(--font-size-sm);font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px">Provider</label>'
-    + '<select id="setting-provider" style="width:100%;height:38px;border-radius:var(--radius-md);background:var(--bg-input);border:1px solid var(--border-main);color:var(--text-primary);padding:0 12px;font-size:13px;font-family:var(--font-sans);outline:none;cursor:pointer" onchange="onProviderChange(this.value)">'
-    + providers.map(function(p) {
-      return '<option value="' + escapeHtml(p.id) + '"' + (p.id === currentProviderId ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>';
-    }).join('')
-    + '</select></div>'
-    // Model selector
-    + '<div><label style="font-size:var(--font-size-sm);font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px">Model</label>'
-    + '<select id="setting-model" style="width:100%;height:38px;border-radius:var(--radius-md);background:var(--bg-input);border:1px solid var(--border-main);color:var(--text-primary);padding:0 12px;font-size:13px;font-family:var(--font-sans);outline:none;cursor:pointer">'
-    + (modelOptions || '<option value="">No models available</option>')
-    + '</select></div>'
-    // Base URL
-    + '<div><label style="font-size:var(--font-size-sm);font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px">Base URL <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>'
-    + '<input id="setting-base-url" type="text" style="width:100%;height:38px;border-radius:var(--radius-md);background:var(--bg-input);border:1px solid var(--border-main);color:var(--text-primary);padding:0 12px;font-size:13px;font-family:var(--font-sans);outline:none" placeholder="' + escapeHtml(currentProvider.default_base || 'https://...') + '" value="' + escapeHtml(prov.base_url || '') + '">'
-    + '</div>'
-    // API Key
-    + '<div><label style="font-size:var(--font-size-sm);font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px">API Key <span style="color:var(--text-muted);font-weight:400">(leave empty to keep current)</span></label>'
-    + '<input id="setting-api-key" type="password" style="width:100%;height:38px;border-radius:var(--radius-md);background:var(--bg-input);border:1px solid var(--border-main);color:var(--text-primary);padding:0 12px;font-size:13px;font-family:var(--font-sans);outline:none" placeholder="' + (prov.has_key ? '•••••••• (key exists)' : 'Enter API key') + '">'
-    + '</div></div></div>'
+    + '<div class="section-card-header"><i class="fa-solid fa-microchip"></i> Provider & Model</div>'
+    + '<div class="section-card-body">'
+    + '<p style="font-size:var(--font-size-sm);color:var(--text-muted);margin-bottom:10px">Change which AI provider and model WIDDX uses.</p>'
+    + '<button onclick="showView(\'model-setup\')" class="btn-primary" style="width:100%;justify-content:center"><i class="fa-solid fa-arrow-right"></i> Open Provider &amp; Model Settings</button>'
+    + '</div></div>'
 
     // Temperature
     + '<div class="section-card"><div class="section-card-header"><i class="fa-solid fa-thermometer-half"></i> Temperature: <span id="temp-value" style="color:var(--accent);margin-left:6px">' + (data.temperature || 0.7) + '</span></div>'
@@ -1258,41 +1233,7 @@ function renderSettingsForm(data, area) {
     + '<div class="quick-card" onclick="showView(\'debug\')"><i class="fa-solid fa-bug"></i><span>Debug</span></div>'
     + '</div></div>'
     + '</div></div></div>';
-
 }
-
-window.onProviderChange = function(providerId) {
-  // Update base URL placeholder
-  var providers = (_settingsData?.available_providers) || [];
-  var prov = providers.find(function(p) { return p.id === providerId; });
-  var urlInput = document.getElementById('setting-base-url');
-  if (urlInput && prov) {
-    if (!urlInput.value) urlInput.placeholder = prov.default_base || 'https://...';
-  }
-  // Fetch models for this provider
-  var modelSelect = document.getElementById('setting-model');
-  if (modelSelect) {
-    modelSelect.innerHTML = '<option value="">Loading models...</option>';
-  }
-  fetch('/api/settings/models?provider=' + encodeURIComponent(providerId))
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var select = document.getElementById('setting-model');
-      if (!select) return;
-      var models = d.models || [];
-      if (models.length) {
-        select.innerHTML = models.map(function(m) {
-          return '<option value="' + escapeHtml(m) + '">' + escapeHtml(m) + '</option>';
-        }).join('');
-      } else {
-        select.innerHTML = '<option value="">No models available</option>';
-      }
-    })
-    .catch(function() {
-      var s2 = document.getElementById('setting-model');
-      if (s2) s2.innerHTML = '<option value="">Error loading models</option>';
-    });
-};
 
 window.saveSettings = async function() {
   var btn = document.querySelector('button[onclick="saveSettings()"]');
@@ -1301,19 +1242,9 @@ window.saveSettings = async function() {
   if (status) status.textContent = 'Saving...';
 
   var data = {
-    provider: {
-      name: document.getElementById('setting-provider')?.value || '',
-      model: document.getElementById('setting-model')?.value || '',
-      base_url: document.getElementById('setting-base-url')?.value || '',
-      api_key: document.getElementById('setting-api-key')?.value || '',
-    },
     system_prompt: document.getElementById('setting-prompt')?.value || '',
     temperature: parseFloat(document.getElementById('setting-temperature')?.value || '0.7'),
   };
-
-  // Don't send empty API key
-  if (!data.provider.api_key) delete data.provider.api_key;
-  if (!data.provider.base_url) delete data.provider.base_url;
 
   try {
     const r = await fetch('/api/settings', {
