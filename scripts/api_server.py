@@ -359,6 +359,11 @@ async def project_status(_auth=Depends(verify_api_key), _rl=Depends(rate_limit))
     }
 
 def main():
+    try:
+        from core.diagnostics import error_collector
+        error_collector.enable()
+    except Exception:
+        pass
     import uvicorn
     port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 8000
     host = os.environ.get("WIDDX_API_HOST", "127.0.0.1")

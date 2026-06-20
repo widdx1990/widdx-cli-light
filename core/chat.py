@@ -72,7 +72,20 @@ class DisplayManager:
 
     def agent_done(self, steps: list, summary: str):
         """Display agent completion summary."""
-        ...
+        if not steps:
+            self.console.print(f"  [dim]Agent: {summary[:200]}[/]")
+            return
+        step_lines = []
+        for i, s in enumerate(steps[-5:], 1):
+            name = getattr(s, "tool_name", getattr(s, "name", f"step_{i}"))
+            status = getattr(s, "status", "done")
+            icon = "✅" if status == "done" else "❌" if status == "failed" else "⏳"
+            step_lines.append(f"    {icon} {name}")
+        self.console.print(Panel(
+            Text(f"{summary[:200]}\n" + "\n".join(step_lines), style=_GREEN),
+            title="[bold green]✅ Agent Complete[/]",
+            border_style=_GREEN, padding=(0, 1),
+        ))
 
 
 # ── Module-level singleton ───────────────────────────────
@@ -122,9 +135,9 @@ def print_agent_done(steps: list, summary: str):
     for s in steps:
         status_icon = "✅" if s.status == "done" else "❌" if s.status == "failed" else "⏳"
         table.add_row(str(s.step_num), s.tool_name, status_icon)
-    _console.print(table)
+    _display.console.print(table)
     if summary:
-        _console.print(Panel(summary, title="[bold]Summary[/]", border_style=_GREEN))
+        _display.console.print(Panel(summary, title="[bold]Summary[/]", border_style=_GREEN))
 
 
 def print_ai_stream():
@@ -133,8 +146,8 @@ def print_ai_stream():
     header = Text()
     header.append(" assistant ", style=f"bold {_GREEN}")
     header.append(f" {ts}", style="dim")
-    _console.print()
-    _console.print(header)
+    _display.console.print()
+    _display.console.print(header)
     _accumulated = [""]
     live_container = [None]
 

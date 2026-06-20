@@ -27,5 +27,12 @@ for i, arg in enumerate(sys.argv):
 
 from scripts.web.server import run as _run
 
+# Enable diagnostics
+try:
+    from core.diagnostics import error_collector
+    error_collector.enable()
+except Exception:
+    pass
+
 if __name__ == "__main__":
     _run(host=host, port=port)

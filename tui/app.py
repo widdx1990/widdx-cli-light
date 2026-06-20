@@ -736,6 +736,11 @@ class WIDDXTUI(App):
 
 
 def run_tui():
+    try:
+        from core.diagnostics import error_collector
+        error_collector.enable()
+    except Exception:
+        pass
     app = WIDDXTUI()
     app.run()
 
