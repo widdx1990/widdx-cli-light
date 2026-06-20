@@ -18,6 +18,62 @@ const S = {
 
 // ═══════════════ CHAT — REAL API ONLY ═══════════════════
 
+// ── Slash Commands ──
+
+const SLASH_COMMANDS = [
+  { cmd: '/help', icon: 'fa-circle-info', desc: 'Show available commands', action: function() { showView('chat'); addMsg('system', '**Commands:** /help, /model, /tools, /mcp, /skills, /memory, /clear, /settings, /theme, /export, /status'); } },
+  { cmd: '/model', icon: 'fa-microchip', desc: 'Switch AI model', action: function() { toggleModelDropdown(); } },
+  { cmd: '/tools', icon: 'fa-wrench', desc: 'List available tools', action: async function() { try { var r = await fetch('/api/tools'); var d = await r.json(); var list = (d.tools || d).map(function(t) { return '• ' + (t.name || t.function?.name || '?'); }).join('\n'); addMsg('system', '**Available Tools:**\n' + list); } catch(e) { addMsg('system', 'Error: ' + e.message); } } },
+  { cmd: '/mcp', icon: 'fa-plug', desc: 'Manage MCP servers', action: function() { showView('mcp'); } },
+  { cmd: '/skills', icon: 'fa-toolbox', desc: 'Browse skills', action: function() { showView('skills'); } },
+  { cmd: '/memory', icon: 'fa-brain', desc: 'View memory vault', action: function() { showView('memory'); } },
+  { cmd: '/clear', icon: 'fa-eraser', desc: 'Clear conversation', action: function() { if (confirm('Clear conversation?')) { S.messages = []; document.getElementById('messagesArea').innerHTML = ''; showToast('Cleared', 'info'); } } },
+  { cmd: '/settings', icon: 'fa-sliders', desc: 'Open settings', action: function() { showView('settings'); } },
+  { cmd: '/theme', icon: 'fa-circle-half-stroke', desc: 'Toggle dark/light', action: function() { toggleTheme(); } },
+  { cmd: '/export', icon: 'fa-file-export', desc: 'Export conversation', action: function() { var txt = S.messages.map(function(m) { return '[' + m.role + '] ' + (m.content || ''); }).join('\n\n---\n\n'); navigator.clipboard.writeText(txt).then(function() { showToast('Exported to clipboard!', 'success'); }); } },
+  { cmd: '/status', icon: 'fa-gauge-high', desc: 'System status', action: async function() { try { var r = await fetch('/api/status'); var d = await r.json(); addMsg('system', '**Status:**\n• Provider: ' + (d.provider?.model || '—') + '\n• Mode: ' + (d.mode || '—') + '\n• Model: ' + (d.provider?.model || '—')); } catch(e) { addMsg('system', 'Error: ' + e.message); } } },
+  { cmd: '/sessions', icon: 'fa-clock-rotate-left', desc: 'View sessions', action: function() { showView('sessions'); } },
+  { cmd: '/dashboard', icon: 'fa-gauge-high', desc: 'Mission Control', action: function() { showView('dashboard'); } },
+];
+
+// ── Slash command popup ──
+
+var _slashPopupVisible = false;
+
+window.handleInputKey = function(e) {
+  var input = e.target;
+  var val = input.value;
+
+  // Slash command handling
+  if (val.startsWith('/') && !val.includes(' ')) {
+    showSlashPopup(val);
+  } else {
+    hideSlashPopup();
+  }
+
+  // Enter sends
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (_slashPopupVisible) {
+      var selected = document.querySelector('.slash-item.active');
+      if (selected) { selected.click(); return; }
+    }
+    sendMessage();
+  }
+
+  // Navigate slash items with arrow keys
+  if (_slashPopupVisible && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault();
+    var items = document.querySelectorAll('.slash-item');
+    var active = document.querySelector('.slash-item.active');
+    var idx = Array.from(items).indexOf(active);
+    if (e.key === 'ArrowDown') idx = Math.min(idx + 1, items.length - 1);
+    else idx = Math.max(idx - 1, 0);
+    items.forEach(function(i) { i.classList.remove('active'); });
+    if (items[idx]) items[idx].classList.add('active');
+  }
+};
+
 window.sendMessage = async function() {
   const input = document.getElementById('messageInput');
   const text = input.value.trim();
@@ -363,6 +419,42 @@ function setActivity(label, tool) {
 }
 
 // ═══════════════ STATUS & MODEL ═══════════════════
+
+// ── Slash popup helpers ──
+
+function showSlashPopup(val) {
+  var existing = document.getElementById('slashPopup');
+  if (!existing) {
+    var div = document.createElement('div');
+    div.id = 'slashPopup';
+    div.className = 'slash-popup';
+    document.querySelector('.input-container').appendChild(div);
+  }
+  var popup = document.getElementById('slashPopup');
+  var query = val.slice(1).toLowerCase();
+  var matches = SLASH_COMMANDS.filter(function(c) { return c.cmd.slice(1).startsWith(query); });
+  if (!matches.length) { popup.style.display = 'none'; _slashPopupVisible = false; return; }
+  popup.style.display = 'block';
+  _slashPopupVisible = true;
+  popup.innerHTML = matches.map(function(c, i) {
+    return '<div class="slash-item' + (i === 0 ? ' active' : '') + '" onclick="execSlashCommand(' + SLASH_COMMANDS.indexOf(c) + ');hideSlashPopup()"><i class="fa-solid ' + c.icon + '"></i><span class="slash-cmd">' + c.cmd + '</span><span class="slash-desc">' + c.desc + '</span></div>';
+  }).join('');
+}
+
+function hideSlashPopup() {
+  var popup = document.getElementById('slashPopup');
+  if (popup) popup.style.display = 'none';
+  _slashPopupVisible = false;
+}
+
+window.execSlashCommand = function(idx) {
+  var cmd = SLASH_COMMANDS[idx];
+  if (!cmd) return;
+  var input = document.getElementById('messageInput');
+  if (input) { input.value = ''; input.style.height = 'auto'; }
+  hideSlashPopup();
+  cmd.action();
+};
 
 // ── Inline model switcher ──
 

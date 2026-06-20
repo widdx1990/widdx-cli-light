@@ -560,6 +560,36 @@ body.sidebar-collapsed .sidebar-floating-toggle i {
   vertical-align: middle;
 }
 
+/* ── Slash commands popup ──────────────────────────────────────── */
+.slash-popup {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 8px;
+  right: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  z-index: 50;
+  display: none;
+  animation: fadeSlideIn 0.12s var(--ease-out);
+}
+.slash-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.slash-item:hover,
+.slash-item.active { background: var(--fill-hover); }
+.slash-item i { width: 18px; text-align: center; color: var(--text-tertiary); font-size: 14px; }
+.slash-cmd { font-weight: 500; color: var(--text-primary); font-size: var(--font-size-sm); }
+.slash-desc { font-size: var(--font-size-xs); color: var(--text-muted); }
+
 /* ── Chat header actions ─────────────────────────────────────── */
 .chat-header-actions { display: flex; align-items: center; gap: 4px; }
 .header-btn {
@@ -1239,8 +1269,9 @@ body.sidebar-collapsed .sidebar-floating-toggle i {
   border: 1px solid var(--border-main);
   border-radius: var(--radius-xl);
   padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
+  display: flex; flex-direction: column;
+  transition: all var(--duration-normal) var(--ease-out);
+  position: relative;
   gap: 6px;
   transition: all var(--duration-fast) var(--ease-out);
   box-shadow: var(--shadow-sm);
