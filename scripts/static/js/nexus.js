@@ -467,13 +467,6 @@ window.sendOnboardingMsg = function(text) {
 function hideOnboarding() {
   var ob = document.getElementById('onboarding');
   if (ob) ob.style.display = 'none';
-}
-
-// Open command palette
-window.openCommandPalette = function() {
-  if (typeof openCommandPalette === 'function') {
-     // defined in ui.js
-  }
 };
 
 // ── Inline model switcher ──
