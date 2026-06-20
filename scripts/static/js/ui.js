@@ -358,6 +358,15 @@ function execPaletteAction(action) {
     case 'view-skills': if (typeof showView === 'function') showView('skills'); break;
     case 'view-activity': if (typeof showView === 'function') showView('activity'); break;
     case 'view-settings': if (typeof showView === 'function') showView('settings'); break;
+    case 'view-sessions': if (typeof showView === 'function') showView('sessions'); break;
+    case 'view-mcp': if (typeof showView === 'function') showView('mcp'); break;
+    case 'view-git': if (typeof showView === 'function') showView('git'); break;
+    case 'view-checkpoints': if (typeof showView === 'function') showView('checkpoints'); break;
+    case 'view-doctor': if (typeof showView === 'function') showView('doctor'); break;
+    case 'view-debug': if (typeof showView === 'function') showView('debug'); break;
+    case 'view-permissions': if (typeof showView === 'function') showView('permissions'); break;
+    case 'view-plugins': if (typeof showView === 'function') showView('plugins'); break;
+    case 'view-workflows': if (typeof showView === 'function') showView('workflows'); break;
     case 'clear-chat': clearConversation(); break;
     case 'export': if (typeof showToast === 'function') showToast('Exporting conversation…', 'info'); break;
     case 'shortcuts': if (typeof showToast === 'function') showToast('Ctrl+B Sidebar · Ctrl+J Panel · Ctrl+K Command · Ctrl+N New · Esc Close', 'info'); break;
