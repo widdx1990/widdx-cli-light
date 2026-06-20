@@ -596,7 +596,7 @@ function showView(view) {
   } else if (view === 'activity') {
     showActivityView(area);
   } else if (view === 'settings') {
-    showSettingsView(area);
+    showModelSetupView(area);
   } else if (view === 'model-setup') {
     showModelSetupView(area);
   } else if (view === 'memory') {
@@ -718,8 +718,8 @@ window.delCron = async function(id) {
 // ═══════════════ MODEL SETUP VIEW ═══════════════════
 
 async function showModelSetupView(area) {
-  setActivity('Loading', 'model setup');
-  area.innerHTML = '<div class="view-container"><div class="view-header"><h2><i class="fa-solid fa-microchip"></i> Provider & Model</h2><p>Choose your AI provider and model</p></div><div class="view-body"><div id="model-setup-form"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading...</p></div></div></div></div>';
+  setActivity('Loading', 'settings');
+  area.innerHTML = '<div class="view-container"><div class="view-header"><h2><i class="fa-solid fa-sliders"></i> Settings</h2><p>Configure provider, model, and behavior</p></div><div class="view-body"><div id="model-setup-form"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading...</p></div></div></div></div>';
   try {
     const r = await fetch('/api/settings');
     var data = await r.json();
@@ -744,7 +744,7 @@ function renderModelSetup(data) {
     return '<option value="' + escapeHtml(m) + '"' + (m === prov.model ? ' selected' : '') + '>' + escapeHtml(m) + '</option>';
   }).join('');
 
-  form.innerHTML = '<p style="font-size:var(--font-size-sm);color:var(--text-muted);margin-bottom:12px">Select the AI provider and model WIDDX uses for responses. Change anytime.</p>'
+  form.innerHTML = '<p style="font-size:var(--font-size-sm);color:var(--text-muted);margin-bottom:12px">Configure how WIDDX works — provider, model, temperature, and system prompt.</p>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-cloud"></i> Provider</div><select id="ms-provider" class="settings-select" onchange="onMSProviderChange(this.value)">'
     + providers.map(function(p) { return '<option value="' + escapeHtml(p.id) + '"' + (p.id === currentProviderId ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>'; }).join('')
     + '</select></div>'
@@ -753,8 +753,10 @@ function renderModelSetup(data) {
     + '</select></div>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-link"></i> Base URL <span style="font-weight:400;color:var(--text-muted)">(optional)</span></div><input id="ms-base-url" class="settings-input" placeholder="' + escapeHtml(currentProvider.default_base || 'https://...') + '" value="' + escapeHtml(prov.base_url || '') + '"></div>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-key"></i> API Key <span style="font-weight:400;color:var(--text-muted)">(leave empty to keep current)</span></div><input id="ms-api-key" type="password" class="settings-input" placeholder="' + (prov.has_key ? 'Key exists' : 'Enter API key') + '"></div>'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-thermometer-half"></i> Temperature: <span id="ms-temp-value" style="color:var(--accent);font-weight:600">' + (data.temperature || 0.7) + '</span></div><input type="range" min="0" max="2" step="0.1" value="' + (data.temperature || 0.7) + '" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById(\'ms-temp-value\').textContent=this.value"></div>'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-quote-left"></i> System Prompt</div><textarea id="ms-prompt" class="settings-input" style="min-height:100px;resize:vertical;padding:10px;line-height:1.5;font-family:var(--font-mono)">' + escapeHtml(data.system_prompt || '') + '</textarea></div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-top:6px">'
-    + '<button onclick="saveModelSetup()" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>'
+    + '<button onclick="saveModelSetup()" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Settings</button>'
     + '<span id="ms-status" style="font-size:var(--font-size-sm);color:var(--text-muted)"></span>'
     + '</div>';
 }
@@ -795,6 +797,8 @@ window.saveModelSetup = function() {
       base_url: document.getElementById('ms-base-url')?.value || '',
       api_key: document.getElementById('ms-api-key')?.value || '',
     },
+    system_prompt: document.getElementById('ms-prompt')?.value || '',
+    temperature: parseFloat(document.getElementById('ms-temp-value')?.textContent || '0.7'),
   };
   if (!data.provider.api_key) delete data.provider.api_key;
   if (!data.provider.base_url) delete data.provider.base_url;
@@ -867,7 +871,7 @@ async function showDashboardView(area) {
     var qgrid = document.getElementById('quick-grid');
     if (qgrid) {
       var qlinks = [
-        {icon:'fa-microchip', label:'Model Setup', view:'model-setup'},
+        {icon:'fa-sliders', label:'Settings', view:'settings'},
         {icon:'fa-clock-rotate-left', label:'Sessions', view:'sessions'},
         {icon:'fa-calendar-clock', label:'Scheduler', view:'scheduler'},
         {icon:'fa-brain', label:'Memory', view:'memory'},
