@@ -8,12 +8,16 @@ Core components:
 
 import sys, logging, json, time
 from pathlib import Path
-from datetime import datetime
-from bidi.algorithm import get_display
+import sys
 
-ROOT = str(Path(__file__).resolve().parent.parent)
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+try:
+    from core._path import ensure_project_root
+except ImportError:
+    from pathlib import Path
+    _root = str(Path(__file__).resolve().parent.parent)
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from core._path import ensure_project_root
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding

@@ -28,25 +28,64 @@ _DYNAMIC_TOOLS: list[dict] = []
 # ── Dangerous command patterns (security) ─────────────────
 _DANGEROUS_PATTERNS: list[tuple[str, str]] = [
     # (regex pattern, description of risk)
+
+    # ── Destructive file operations ────
     (r'\brm\s+-rf\b', "recursive force delete (rm -rf)"),
     (r'\bRemove-Item\s+-Recurse\s+-Force\b', "recursive force delete"),
-    (r'\bFormat-\w+\b', "disk format"),
     (r'\bdel\s+/[fq]\s', "force delete system files"),
+    (r'\brm\s+.*/\s*(-rf)?\s*(--no-preserve-root)?\b', "dangerous recursive delete"),
+    (r'\bmv\s+.*\s+/dev/null\b', "move file to null device"),
+
+    # ── Disk / filesystem ────
     (r'>\s*/dev/sd[a-z]', "raw disk write"),
     (r'\bdd\s+if=', "raw disk copy (dd)"),
+    (r'\bmkfs\.\w+\b', "filesystem format"),
+    (r'\bFormat-Volume\b', "PowerShell volume format"),
+    (r'\bmkswap\b', "swap partition format"),
+    (r'\bfdisk\s+/dev/sd\b', "disk partition modification"),
+
+    # ── Git safety ────
     (r'\bgit\s+push\s+--force\b', "force push to remote"),
     (r'\bgit\s+reset\s+--hard\b', "hard git reset"),
+
+    # ── Permissions / system integrity ────
     (r'\bchmod\s+777\b', "world-writable permissions"),
+    (r'\bchown\s+\d+\s+/\s', "change root ownership"),
     (r'\bicacls\s+.*\/grant\s+Everyone', "grant Everyone permissions"),
+    (r'\bSet-ExecutionPolicy\b', "change execution policy"),
+
+    # ── System control ────
     (r'\bRestart-Computer\b', "system restart"),
     (r'\bStop-Computer\b', "system shutdown"),
+    (r'\bshutdown\s+[-/]', "system shutdown/restart"),
+    (r'\breboot\b', "system reboot"),
+    (r'\bpoweroff\b', "system poweroff"),
     (r'\bStop-Process\s+-Name\s+(winlogon|lsass|csrss|smss|services)', "critical process kill"),
     (r'\bsc\s+stop\b', "stop Windows service"),
-    (r'\bSet-ExecutionPolicy\b', "change execution policy"),
     (r'\bRemove-Item\s+.*\\Windows\\', "delete Windows system files"),
+    (r'\bkill\s+-9\s+1\b', "kill init/PID 1"),
+
+    # ── Remote code execution ────
     (r'\bwget\b.*\|\s*(sh|bash|pwsh)', "pipe download to shell"),
     (r'\bcurl\b.*\|\s*(sh|bash|pwsh)', "pipe download to shell"),
     (r'\bInvoke-Expression\b.*(wget|curl|iwr)', "eval remote content"),
+    (r'\bInvoke-WebRequest\b.*\|.*\bInvoke-Expression\b', "download & execute PowerShell"),
+
+    # ── Data exfiltration ────
+    (r'\b(nc|ncat|netcat)\s+.*-e\s+', "netcat reverse shell"),
+    (r'\bbash\s+-i\s+>&\s+/dev/tcp/', "bash reverse shell"),
+    (r'\bpython\s+-c\s+.*socket.*connect\b', "Python reverse shell"),
+    (r'\b(whoami|id)\s.*\|.*(curl|wget)\b', "user info exfiltration"),
+
+    # ── Container escape / privilege ────
+    (r'\b(docker|podman)\s+run\s+--privileged\b', "privileged container run"),
+    (r'\b(docker|podman)\s+exec\s+-it\s+.*\s+--pid=host\b', "container PID namespace escape"),
+    (r'\bnsenter\s+--target\s+1\b', "namespace escape to init namespace"),
+
+    # ── Network tampering ────
+    (r'\biptables\s+-F\b', "flush iptables rules"),
+    (r'\broute\s+add\s+-net\s+0\.0\.0\.0\b', "route table manipulation"),
+    (r'\btcpkill\b', "kill TCP connections"),
 ]
 
 

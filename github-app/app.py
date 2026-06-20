@@ -29,8 +29,13 @@ from typing import Optional
 
 import httpx
 
-# Add project root for core imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+try:
+    from core._path import ensure_project_root
+except ImportError:
+    _root = str(Path(__file__).resolve().parent.parent)
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from core._path import ensure_project_root
 
 # ── Config ────────────────────────────────────────────────────
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")

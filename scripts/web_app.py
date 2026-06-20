@@ -6,13 +6,15 @@ Usage:
 """
 
 import sys
-from pathlib import Path
-
-ROOT = str(Path(__file__).resolve().parent.parent)
-SCRIPTS = str(Path(__file__).resolve().parent)
-for p in [ROOT, SCRIPTS]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
+try:
+    from core._path import ensure_project_root
+except ImportError:
+    import sys
+    from pathlib import Path
+    _root = str(Path(__file__).resolve().parent.parent)
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from core._path import ensure_project_root
 
 host = "0.0.0.0"
 port = 8000

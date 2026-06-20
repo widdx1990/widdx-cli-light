@@ -1,10 +1,14 @@
 """CLI launcher for `python -m core` and `widdx` command."""
 import sys
-from pathlib import Path
-
-root = Path(__file__).resolve().parent.parent
-if root not in sys.path:
-    sys.path.insert(0, str(root))
+try:
+    from core._path import ensure_project_root
+except ImportError:
+    import sys
+    from pathlib import Path
+    _root = str(Path(__file__).resolve().parent.parent)
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from core._path import ensure_project_root
 
 from cli.app import run
 

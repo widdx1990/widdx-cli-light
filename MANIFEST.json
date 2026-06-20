@@ -35,6 +35,10 @@
       "description": "CLI launcher for `python -m core` and `widdx` command."
     },
     {
+      "path": "core/_path.py",
+      "description": "Path setup — single source of truth for sys.path entries."
+    },
+    {
       "path": "core/activity.py",
       "description": "ActivityStore — central event bus for all WIDDX subsystems."
     },

@@ -16,14 +16,12 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("widdx.web.chat")
 
-ROOT = str(Path(__file__).resolve().parent.parent.parent)
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+from core._path import ensure_project_root
+ensure_project_root()
 
 
 class ChatHandler:

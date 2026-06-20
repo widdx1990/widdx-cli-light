@@ -24,8 +24,12 @@ import asyncio
 import json
 import logging
 import sys
-from pathlib import Path
 from typing import Any
+
+from core._path import ensure_project_root
+ensure_project_root()
+
+from pathlib import Path
 
 # ── Static paths ────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,9 +37,6 @@ STATIC_DIR = ROOT / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 (STATIC_DIR / "css").mkdir(exist_ok=True)
 (STATIC_DIR / "js").mkdir(exist_ok=True)
-
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 # ── FastAPI imports ─────────────────────────────────────────
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
