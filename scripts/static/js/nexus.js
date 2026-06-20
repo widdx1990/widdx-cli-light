@@ -11,6 +11,8 @@ const S = {
   view: 'chat',
   ws: null,
   wsReconnectTimer: null,
+  wsRetryCount: 0,
+  wsMaxRetries: 10,
   streaming: false,
 };
 
@@ -84,6 +86,7 @@ function initWebSocket() {
 
     S.ws.onopen = function() {
       console.log('WebSocket connected');
+      S.wsRetryCount = 0;
       if (S.wsReconnectTimer) { clearTimeout(S.wsReconnectTimer); S.wsReconnectTimer = null; }
     };
 
@@ -101,12 +104,15 @@ function initWebSocket() {
       S.ws = null;
       S.streaming = false;
       showTyping(false);
-      // Reconnect after 5s
-      if (!S.wsReconnectTimer) {
+      // Reconnect with max retries
+      if (!S.wsReconnectTimer && S.wsRetryCount < S.wsMaxRetries) {
+        S.wsRetryCount++;
         S.wsReconnectTimer = setTimeout(function() {
           S.wsReconnectTimer = null;
           initWebSocket();
-        }, 5000);
+        }, Math.min(5000 * S.wsRetryCount, 30000));  // exponential backoff up to 30s
+      } else if (S.wsRetryCount >= S.wsMaxRetries) {
+        console.log('WebSocket max retries reached');
       }
     };
 
@@ -275,7 +281,12 @@ function addMsg(role, content, rawContent) {
     d.innerHTML = '<div class="user-bubble">' + escapeHtml(content) + '</div>';
   } else if (role === 'assistant') {
     const t = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
-    let body = parseMarkdown(content);
+    var body;
+    try {
+      body = parseMarkdown(content);
+    } catch(e) {
+      body = '<pre>' + escapeHtml(content) + '</pre>';
+    }
 
     // Convert ⚙ tool calls into step cards
     body = body.replace(/⚙ (\w+):(.+?)(?=<br>|$)/g, function(_, name, detail) {
