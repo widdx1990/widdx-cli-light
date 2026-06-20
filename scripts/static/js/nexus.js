@@ -769,10 +769,7 @@ async function showDashboardView(area) {
         {icon:'fa-stethoscope', label:'Health', view:'doctor'},
         {icon:'fa-code-branch', label:'Git', view:'git'},
         {icon:'fa-camera', label:'Checkpoints', view:'checkpoints'},
-        {icon:'fa-shield', label:'Permissions', view:'permissions'},
-        {icon:'fa-puzzle-piece', label:'Plugins', view:'plugins'},
         {icon:'fa-diagram-predecessor', label:'Workflows', view:'workflows'},
-        {icon:'fa-bug', label:'Debug', view:'debug'},
       ];
       qgrid.innerHTML = qlinks.map(function(q) {
         return '<div class="quick-card" onclick="showView(\'' + q.view + '\')" title="' + q.label + '"><i class="fa-solid ' + q.icon + '"></i><span>' + q.label + '</span></div>';
@@ -1142,7 +1139,16 @@ function renderSettingsForm(data, area) {
     + '<div style="display:flex;gap:10px;align-items:center">'
     + '<button onclick="saveSettings()" style="height:40px;padding:0 24px;border-radius:var(--radius-md);background:var(--accent);color:#fff;border:none;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px"><i class="fa-solid fa-floppy-disk"></i> Save Settings</button>'
     + '<span id="save-status" style="font-size:var(--font-size-sm);color:var(--text-muted)"></span>'
-    + '</div>';
+    + '</div>'
+
+    // Advanced Settings links
+    + '<div class="section-card" style="margin-top:6px"><div class="section-card-header"><i class="fa-solid fa-gear"></i> Advanced Settings</div><div class="section-card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px">'
+    + '<div class="quick-card" onclick="showView(\'permissions\')"><i class="fa-solid fa-shield"></i><span>Permissions</span></div>'
+    + '<div class="quick-card" onclick="showView(\'plugins\')"><i class="fa-solid fa-puzzle-piece"></i><span>Plugins</span></div>'
+    + '<div class="quick-card" onclick="showView(\'debug\')"><i class="fa-solid fa-bug"></i><span>Debug</span></div>'
+    + '</div></div>'
+    + '</div></div></div>';
+
 }
 
 window.onProviderChange = function(providerId) {
