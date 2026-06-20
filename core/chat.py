@@ -1,4 +1,8 @@
-"""Conversation loop and tool processing for WIDDX."""
+"""Conversation loop and tool processing for WIDDX.
+
+Display functions are organized in ``DisplayManager`` class.
+Module-level aliases kept for backward compatibility.
+"""
 
 import json, uuid
 from datetime import datetime
@@ -12,38 +16,86 @@ from core.skills import skill_manager
 from core.providers.providers import estimate_turn_cost
 
 
-# ── Minimal display functions (for chat loop only) ──────────
+# ── Console helpers ──────────────────────────────────────
 _console = Console(highlight=False)
-console = _console  # public alias for agent/expert modules
 _GREEN = "#00c896"
 _ORANGE = "#f5a623"
 _DIM = "#888888"
 
 
-def print_system_msg(text: str):
-    _console.print(Panel(Text(text, style=_DIM), title="[dim]⚙ system[/]", border_style=_DIM, padding=(0, 1)))
+class DisplayManager:
+    """Rich display helpers for chat messages.
 
+    All display output goes through this class so callers can
+    substitute their own display logic (e.g., Web UI, TUI).
+    """
+
+    def __init__(self, console: Console | None = None):
+        self.console = console or _console
+
+    def system_msg(self, text: str):
+        """Display a system message in a dim panel."""
+        self.console.print(Panel(
+            Text(text, style=_DIM),
+            title="[dim]⚙ system[/]", border_style=_DIM, padding=(0, 1),
+        ))
+
+    def ai_msg(self, text: str):
+        """Display an AI message in an orange panel."""
+        self.console.print(Panel(
+            Text(text[:2000], style=_ORANGE),
+            title=f"[bold {_ORANGE}]🤖 WIDDX[/]",
+            subtitle=f"[dim]{datetime.now().strftime('%H:%M')}[/]",
+            border_style=_ORANGE, padding=(0, 1),
+        ))
+
+    def tool_call(self, name: str, args_str: str):
+        """Display a tool call in a compact panel."""
+        self.console.print(Panel(
+            Text(f"{name}({args_str})", style=_GREEN),
+            title="[bold green]🔧 tool[/]", border_style=_GREEN, padding=(0, 1),
+        ))
+
+    def tool_msg(self, name: str, content: str):
+        """Display a tool result."""
+        self.console.print(Panel(
+            Text(str(content)[:500], style="gray50"),
+            title=f"[dim]{name}[/]", border_style="gray50", padding=(0, 1),
+        ))
+
+    def reasoning(self, text: str):
+        """Display reasoning/thinking text."""
+        self.console.print(Panel(
+            Text(text, style="#b388ff"),
+            title="[#b388ff]🧠 reasoning[/]", border_style="#b388ff", padding=(0, 1),
+        ))
+
+    def agent_done(self, steps: list, summary: str):
+        """Display agent completion summary."""
+        ...
+
+
+# ── Module-level singleton ───────────────────────────────
+_display = DisplayManager()
+
+
+# ── Public aliases (backward compatible) ─────────────────
+console = _console
+
+def print_system_msg(text: str):
+    _display.system_msg(text)
 
 def print_ai_msg(text: str):
-    _console.print(Panel(Text(text[:2000], style=_ORANGE), title=f"[bold {_ORANGE}]🤖 WIDDX[/]", subtitle=f"[dim]{datetime.now().strftime('%H:%M')}[/]", border_style=_ORANGE, padding=(0, 1)))
-
+    _display.ai_msg(text)
 
 def print_tool_call(name: str, args_str: str):
-    _console.print(f"  [bold {_GREEN}]🔧 {name}[/] ([dim]{args_str[:100]}[/])")
-
+    _display.tool_call(name, args_str)
 
 def print_tool_msg(name: str, content: str):
-    _console.print(f"  [{_DIM}]  └─ {content[:150]}[/]")
-
+    _display.tool_msg(name, content)
 
 def print_reasoning(text: str):
-    """Display a compact reasoning indicator — not intrusive."""
-    if not text:
-        return
-    # Show only the first line / key insight, max 120 chars
-    first_line = text.split("\n")[0].strip()[:120]
-    if first_line:
-        _console.print(f"  [{_DIM}]🧠 {first_line}…[/]")
+    _display.reasoning(text)
 
 
 def print_agent_done(steps: list, summary: str):

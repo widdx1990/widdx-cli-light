@@ -452,6 +452,12 @@ class CLIApp:
 
 def run():
     """Entry point for the `widdx` command."""
+    # Enable diagnostics to catch silent errors
+    try:
+        from core.diagnostics import error_collector
+        error_collector.enable()
+    except Exception:
+        pass
     app = CLIApp()
     app.run()
 
