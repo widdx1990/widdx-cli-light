@@ -717,7 +717,7 @@ window.delCron = async function(id) {
 
 async function showDashboardView(area) {
   setActivity('Loading', 'dashboard');
-  area.innerHTML = '<div class="view-container"><div class="view-header"><h2><i class="fa-solid fa-gauge-high"></i> Mission Control</h2><p>Live system overview</p></div><div class="view-body"><div class="dashboard-grid" id="dash-stats"><div class="stat-card"><div class="stat-row"><div class="stat-icon blue"><i class="fa-solid fa-microchip"></i></div><div class="stat-value" id="dash-platform">—</div></div><div class="stat-label">Platform</div><div class="stat-detail" id="dash-detail-platform">Loading...</div></div><div class="stat-card"><div class="stat-row"><div class="stat-icon purple"><i class="fa-solid fa-shield-halved"></i></div><div class="stat-value" id="dash-sandbox">—</div></div><div class="stat-label">Sandbox Mode</div><div class="stat-detail" id="dash-detail-sandbox">Loading...</div></div><div class="stat-card"><div class="stat-row"><div class="stat-icon green"><i class="fa-solid fa-robot"></i></div><div class="stat-value" id="dash-agents">0</div></div><div class="stat-label">Active Agents</div><div class="stat-detail" id="dash-detail-agents">Loading...</div></div><div class="stat-card"><div class="stat-row"><div class="stat-icon orange"><i class="fa-solid fa-clock"></i></div><div class="stat-value" id="dash-cron">0</div></div><div class="stat-label">Scheduled Tasks</div><div class="stat-detail" id="dash-detail-cron">Loading...</div></div></div><div class="section-card"><div class="section-card-header"><i class="fa-solid fa-tower-broadcast"></i> Gateway Channels<span class="section-badge" id="gateway-count">0 active</span></div><div class="section-card-body"><div class="gateway-grid" id="gateway-grid"><div class="empty-state"><i class="fa-solid fa-plug"></i><p>Loading gateway status...</p></div></div></div></div><div class="section-card"><div class="section-card-header"><i class="fa-solid fa-chart-simple"></i> Recent Activity</div><div class="section-card-body"><div class="activity-feed" id="dash-activity"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading activity...</p></div></div></div></div></div></div>'
+  area.innerHTML = '<div class="view-container"><div class="view-header"><h2><i class="fa-solid fa-gauge-high"></i> Mission Control</h2><p>Live system overview</p></div><div class="view-body"><div class="dashboard-grid" id="dash-stats"><div class="stat-card"><div class="stat-row"><div class="stat-icon blue"><i class="fa-solid fa-microchip"></i></div><div class="stat-value" id="dash-platform">—</div></div><div class="stat-label">Platform</div><div class="stat-detail" id="dash-detail-platform">Loading...</div></div><div class="stat-card"><div class="stat-row"><div class="stat-icon purple"><i class="fa-solid fa-shield-halved"></i></div><div class="stat-value" id="dash-sandbox">—</div></div><div class="stat-label">Sandbox Mode</div><div class="stat-detail" id="dash-detail-sandbox">Loading...</div></div><div class="stat-card"><div class="stat-row"><div class="stat-icon green"><i class="fa-solid fa-robot"></i></div><div class="stat-value" id="dash-agents">0</div></div><div class="stat-label">Active Agents</div><div class="stat-detail" id="dash-detail-agents">Loading...</div></div><div class="stat-card"><div class="stat-row"><div class="stat-icon orange"><i class="fa-solid fa-clock"></i></div><div class="stat-value" id="dash-cron">0</div></div><div class="stat-label">Scheduled Tasks</div><div class="stat-detail" id="dash-detail-cron">Loading...</div></div></div><div class="section-card"><div class="section-card-header"><i class="fa-solid fa-link"></i> Quick Access</div><div class="section-card-body"><div class="quick-grid" id="quick-grid"></div></div></div><div class="section-card"><div class="section-card-header"><i class="fa-solid fa-tower-broadcast"></i> Gateway Channels<span class="section-badge" id="gateway-count">0 active</span></div><div class="section-card-body"><div class="gateway-grid" id="gateway-grid"><div class="empty-state"><i class="fa-solid fa-plug"></i><p>Loading gateway status...</p></div></div></div></div><div class="section-card"><div class="section-card-header"><i class="fa-solid fa-chart-simple"></i> Recent Activity</div><div class="section-card-body"><div class="activity-feed" id="dash-activity"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading activity...</p></div></div></div></div></div></div>';
 
   try {
     // Load all data in parallel
@@ -753,6 +753,31 @@ async function showDashboardView(area) {
     if (cr) cr.textContent = dash?.cron?.length || 0;
     var dCr = document.getElementById('dash-detail-cron');
     if (dCr) dCr.textContent = (dash?.skills || 0) + ' skills · ' + (dash?.memories || 0) + ' memories';
+
+    // Quick Access cards
+    var qgrid = document.getElementById('quick-grid');
+    if (qgrid) {
+      var qlinks = [
+        {icon:'fa-clock-rotate-left', label:'Sessions', view:'sessions'},
+        {icon:'fa-calendar-clock', label:'Scheduler', view:'scheduler'},
+        {icon:'fa-brain', label:'Memory', view:'memory'},
+        {icon:'fa-toolbox', label:'Skills', view:'skills'},
+        {icon:'fa-tower-broadcast', label:'Gateway', view:'gateway'},
+        {icon:'fa-plug', label:'MCP', view:'mcp'},
+        {icon:'fa-diagram-project', label:'Delegation', view:'delegation'},
+        {icon:'fa-chart-simple', label:'Activity', view:'activity'},
+        {icon:'fa-stethoscope', label:'Health', view:'doctor'},
+        {icon:'fa-code-branch', label:'Git', view:'git'},
+        {icon:'fa-camera', label:'Checkpoints', view:'checkpoints'},
+        {icon:'fa-shield', label:'Permissions', view:'permissions'},
+        {icon:'fa-puzzle-piece', label:'Plugins', view:'plugins'},
+        {icon:'fa-diagram-predecessor', label:'Workflows', view:'workflows'},
+        {icon:'fa-bug', label:'Debug', view:'debug'},
+      ];
+      qgrid.innerHTML = qlinks.map(function(q) {
+        return '<div class="quick-card" onclick="showView(\'' + q.view + '\')" title="' + q.label + '"><i class="fa-solid ' + q.icon + '"></i><span>' + q.label + '</span></div>';
+      }).join('');
+    }
 
     // Gateway channels
     var gwGrid = document.getElementById('gateway-grid');
