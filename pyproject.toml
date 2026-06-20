@@ -54,7 +54,7 @@ gateway = ["python-telegram-bot", "discord.py"]
 widdx = "core.cli:run"
 widdx-tui = "tui.app:run_tui"
 widdx-api = "scripts.api_server:main"
-widdx-web = "core.web_launcher:run"
+widdx-web = "scripts.web_app:main"
 
 [project.urls]
 Homepage = "https://widdx.com"
@@ -62,7 +62,7 @@ Repository = "https://github.com/widdx1990/widdx-nexus"
 Documentation = "https://widdx.com/docs"
 
 [tool.setuptools.packages.find]
-include = ["core*", "cli*", "tui*", "tui/screens*", "tui/widgets*"]
+include = ["core*", "cli*", "tui*", "tui/screens*", "tui/widgets*", "scripts*", "scripts/web*"]
 exclude = ["tests*", "node_modules*", ".widdx*"]
 
 [tool.setuptools.package-data]
