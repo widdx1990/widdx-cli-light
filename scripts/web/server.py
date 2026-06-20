@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from typing import Any
 
 from core._path import ensure_project_root
@@ -245,9 +246,39 @@ async def api_skills():
     return get_dashboard().skills()
 
 
+# ── Simple in-memory rate limiter ──────────────────────────────
+_ratelimit_store: dict[str, list[float]] = {}
+_RATELIMIT_MAX = 30  # max requests
+_RATELIMIT_WINDOW = 60  # per N seconds
+
+
+def _check_rate_limit(client_ip: str) -> bool:
+    """Return True if request is allowed, False if rate-limited."""
+    now = time.time()
+    window = _RATELIMIT_WINDOW
+    timestamps = _ratelimit_store.get(client_ip, [])
+    # Remove old timestamps outside the window
+    timestamps = [t for t in timestamps if now - t < window]
+    if len(timestamps) >= _RATELIMIT_MAX:
+        return False
+    timestamps.append(now)
+    _ratelimit_store[client_ip] = timestamps
+    return True
+
+
+# ── Endpoints ───────────────────────────────────────────
+
+
 @app.post("/api/computer/exec")
 async def api_computer_exec(request: Request):
     data = await request.json()
+    client = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"status": "error", "message": "Rate limited — 30 req/min max"},
+            status_code=429,
+        )
     return get_dashboard().computer_exec(data.get("command", ""))
 
 

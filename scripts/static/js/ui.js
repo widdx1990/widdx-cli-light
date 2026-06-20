@@ -186,7 +186,7 @@ function showToast(message, type) {
   container.appendChild(toast);
   setTimeout(function() {
     if (toast.parentNode) toast.parentNode.removeChild(toast);
-  }, 2200);
+  }, 4000);  // 4 seconds for readability
 }
 
 // ═══════════════ CODE BLOCK COPY ═══════════════════

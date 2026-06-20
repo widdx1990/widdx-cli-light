@@ -265,6 +265,9 @@ function appendToLastAssistant(chunk) {
   const textEl = wrapper.querySelector('.ai-text');
   textEl.dataset.raw = chunk;
   textEl.innerHTML = parseMarkdown(chunk);
+  S._activeAIWrapper = wrapper;
+  S._activeAIContent = wrapper.querySelector('.ai-content');
+  S._activeAITextEl = textEl;
   area.appendChild(wrapper);
   scrollBottom();
 }
