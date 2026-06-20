@@ -7,6 +7,7 @@ through them when requests fail with 429 or connection errors.
 
 import time, threading, logging
 import httpx
+import re
 from typing import Optional
 
 logger = logging.getLogger("widdx.proxy")

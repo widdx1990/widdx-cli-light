@@ -4,9 +4,14 @@ Uses LLM as primary classifier for accurate intent detection.
 Keyword-based classifiers serve as fast-path fallback.
 """
 
+import re
+import time
+import logging
+from typing import Optional
+
 from .contract import (
-    TaskType, Domain,
-    ClassificationResult, DecisionStep,
+    ClassificationResult, DecisionStep, TaskType, Domain,
+    ExecutionMode,
 )
 
 # -------------------------------------------------------------------
@@ -65,6 +70,22 @@ class LLMClassifier:
 
     def __init__(self, provider=None):
         self.provider = provider
+        self._cache: dict[str, tuple[float, str]] = {}
+        self._cache_ttl = 60.0  # cache classification for 60 seconds
+
+    def _cache_key(self, text: str) -> str:
+        return str(hash(text.lower().strip()))
+
+    def _get_cached(self, text: str) -> str | None:
+        key = self._cache_key(text)
+        entry = self._cache.get(key)
+        if entry and (time.time() - entry[0]) < self._cache_ttl:
+            return entry[1]
+        return None
+
+    def _set_cached(self, text: str, result: str):
+        key = self._cache_key(text)
+        self._cache[key] = (time.time(), result)
 
     def classify(self, user_input: str,
                  best_result: ClassificationResult | None = None
@@ -77,21 +98,25 @@ class LLMClassifier:
             return None
 
         try:
-            messages = [
-                {"role": "system", "content": _LLM_CLASSIFIER_PROMPT},
-                {"role": "user", "content": user_input[:500]},
-            ]
-            raw, _ = self.provider.chat(messages, [], temperature=0.1)
-
-            if not raw:
-                return None
-
-            # Strip any [thinking] tags
-            content = raw
-            th_start = content.find("[thinking]")
-            th_end = content.find("[/thinking]")
-            if th_start >= 0 and th_end > th_start:
-                content = (content[:th_start] + content[th_end + len("[/thinking]"):]).strip()
+            # Check cache
+            cached = self._get_cached(user_input)
+            if cached:
+                content = cached
+            else:
+                messages = [
+                    {"role": "system", "content": _LLM_CLASSIFIER_PROMPT},
+                    {"role": "user", "content": user_input[:500]},
+                ]
+                raw, _ = self.provider.chat(messages, [], temperature=0.1)
+                if not raw:
+                    return None
+                # Strip any [thinking] tags
+                content = raw
+                th_start = content.find("[thinking]")
+                th_end = content.find("[/thinking]")
+                if th_start >= 0 and th_end > th_start:
+                    content = (content[:th_start] + content[th_end + len("[/thinking]"):]).strip()
+                self._set_cached(user_input, content)
 
             lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
             if len(lines) < 3:

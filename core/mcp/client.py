@@ -51,6 +51,8 @@ _MAX_RECONNECT_ATTEMPTS = 3
 _RECONNECT_BACKOFF = [1, 3, 10]  # seconds
 
 
+_ALLOWED_MCP_COMMANDS = {"node", "uvx", "uv", "python3", "python", "bash", "npx", "docker"}
+
 class MCPServerConnection:
     """A single MCP server connected via stdio using direct subprocess communication."""
 
@@ -58,6 +60,13 @@ class MCPServerConnection:
         self.name = name
         self.command = command
         self.args = args or []
+        # Validate command is allowed
+        import os as _os
+        cmd_name = _os.path.basename(command) if _os.sep in command else command
+        if cmd_name not in _ALLOWED_MCP_COMMANDS:
+            raise ValueError(
+                f"MCP command '{cmd_name}' not in allowlist: {sorted(_ALLOWED_MCP_COMMANDS)}"
+            )
         self._proc: Optional[subprocess.Popen] = None
         self._tools: list[dict] = []
         self._error: Optional[str] = None
