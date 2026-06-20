@@ -1616,7 +1616,8 @@ body.sidebar-collapsed .sidebar-floating-toggle i {
 .stat-card .stat-icon.blue { background: var(--accent-dim); color: var(--accent); }
 .stat-card .stat-icon.green { background: var(--success-dim); color: var(--success); }
 .stat-card .stat-icon.orange { background: var(--warning-dim); color: var(--warning); }
-.stat-card .stat-icon.purple { background: rgba(124,58,237,0.12); color: #7c3aed; }
+.stat-card .stat-icon.gray { background: var(--fill-hover); color: var(--text-tertiary); }
+.stat-icon.purple { background: rgba(124,58,237,0.12); color: #7c3aed; }
 .stat-card .stat-row { display: flex; align-items: center; gap: 12px; }
 .stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--text-primary); letter-spacing: -1px; line-height: 1; }
 .stat-card .stat-label { font-size: var(--font-size-xs); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
