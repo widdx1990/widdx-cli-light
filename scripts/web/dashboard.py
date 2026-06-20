@@ -354,3 +354,561 @@ class Dashboard:
             }
         except Exception as e:
             return {"stdout": "", "stderr": str(e), "exit_code": -1, "mode": "error"}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Memory CRUD (Create, Update, Delete)
+    # ════════════════════════════════════════════════════════
+
+    def memory_create(self, content: str, tags: str = "") -> dict:
+        """Add a new memory entry."""
+        try:
+            from core.memory import MemoryStore
+            mem = MemoryStore()
+            mem.add(content, tags=tags)
+            return {"status": "ok", "message": "Memory added"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def memory_delete(self, memory_id: str) -> dict:
+        """Delete a memory entry."""
+        try:
+            from core.memory import MemoryStore
+            mem = MemoryStore()
+            mem.delete(memory_id)
+            return {"status": "deleted"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def memory_search(self, query: str) -> list[dict]:
+        """Search memory entries."""
+        try:
+            from core.memory import MemoryStore
+            mem = MemoryStore()
+            return mem.search(query)
+        except Exception:
+            return []
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Session Save / Load / Export
+    # ════════════════════════════════════════════════════════
+
+    def session_save(self, name: str, messages: list) -> dict:
+        """Save current session with a name."""
+        try:
+            from core.database import SessionDB
+            db = SessionDB()
+            session_id = db.save(name, messages)
+            return {"id": session_id, "status": "saved"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def session_load(self, session_id: str) -> dict:
+        """Load a saved session."""
+        try:
+            from core.database import SessionDB
+            db = SessionDB()
+            session = db.load(session_id)
+            if session:
+                return {"status": "ok", "session": session}
+            return {"error": "Session not found"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def session_delete(self, session_id: str) -> dict:
+        """Delete a saved session."""
+        try:
+            from core.database import SessionDB
+            db = SessionDB()
+            db.delete(session_id)
+            return {"status": "deleted"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def session_export(self, session_id: str) -> dict:
+        """Export session as markdown."""
+        try:
+            from core.database import SessionDB
+            db = SessionDB()
+            session = db.load(session_id)
+            if not session:
+                return {"error": "Session not found"}
+            lines = [f"# Chat: {session.get('name', 'Untitled')}", ""]
+            for msg in session.get("messages", []):
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                lines.append(f"## {role.upper()}")
+                lines.append(content)
+                lines.append("")
+            return {"status": "ok", "markdown": "\n".join(lines)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: MCP Management
+    # ════════════════════════════════════════════════════════
+
+    def mcp_status(self) -> list[dict]:
+        """List all MCP servers and their status."""
+        try:
+            from core.mcp.client import MCPClient
+            client = MCPClient()
+            return client.list_servers()
+        except Exception:
+            return []
+
+    def mcp_add(self, name: str, command: str, args: list = None) -> dict:
+        """Add a new MCP server."""
+        try:
+            from core.mcp.client import MCPClient
+            client = MCPClient()
+            client.add_server(name, command, args or [])
+            return {"status": "added", "name": name}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def mcp_remove(self, name: str) -> dict:
+        """Remove an MCP server."""
+        try:
+            from core.mcp.client import MCPClient
+            client = MCPClient()
+            client.remove_server(name)
+            return {"status": "removed", "name": name}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def mcp_restart(self, name: str) -> dict:
+        """Restart an MCP server."""
+        try:
+            from core.mcp.client import MCPClient
+            client = MCPClient()
+            client.restart_server(name)
+            return {"status": "restarted", "name": name}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Proxy Settings
+    # ════════════════════════════════════════════════════════
+
+    def proxy_status(self) -> dict:
+        """Get current proxy settings."""
+        try:
+            from core.proxy import proxy_manager
+            return proxy_manager.get_status()
+        except Exception:
+            return {"enabled": False, "http": "", "https": ""}
+
+    def proxy_update(self, http: str = "", https: str = "", enabled: bool = False) -> dict:
+        """Update proxy settings."""
+        try:
+            from core.proxy import proxy_manager
+            proxy_manager.set(http=http, https=https, enabled=enabled)
+            return {"status": "updated"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Permissions Management
+    # ════════════════════════════════════════════════════════
+
+    def permissions_status(self) -> dict:
+        """Get current permission level."""
+        try:
+            from core.permissions import permission_manager
+            return {
+                "level": permission_manager.level,
+                "levels": permission_manager.available_levels(),
+            }
+        except Exception:
+            return {"level": "normal", "levels": ["permissive", "normal", "strict", "silent"]}
+
+    def permissions_set(self, level: str) -> dict:
+        """Set permission level."""
+        try:
+            from core.permissions import permission_manager
+            permission_manager.set_level(level)
+            return {"status": "set", "level": level}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: GGUF Model Management
+    # ════════════════════════════════════════════════════════
+
+    def gguf_models(self) -> list[dict]:
+        """List available GGUF models."""
+        try:
+            from core.gguf import GGUFManager
+            mgr = GGUFManager()
+            return mgr.list_models()
+        except Exception:
+            return []
+
+    def gguf_load(self, path: str) -> dict:
+        """Load a GGUF model."""
+        try:
+            from core.gguf import GGUFManager
+            mgr = GGUFManager()
+            mgr.load(path)
+            return {"status": "loaded", "path": path}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def gguf_unload(self) -> dict:
+        """Unload the current GGUF model."""
+        try:
+            from core.gguf import GGUFManager
+            mgr = GGUFManager()
+            mgr.unload()
+            return {"status": "unloaded"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: System Debug / Doctor
+    # ════════════════════════════════════════════════════════
+
+    def debug_info(self) -> dict:
+        """Get full debug information."""
+        try:
+            from core.diagnostics import error_collector
+            return {
+                "errors": error_collector.get_recent(limit=50),
+                "config": str(self._cfg) if hasattr(self, '_cfg') else "N/A",
+                "tools": len(self._tool_defs) if hasattr(self, '_tool_defs') else 0,
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def doctor_check(self) -> list[dict]:
+        """Run system diagnostics and return issues."""
+        issues = []
+        checks = [
+            ("LLM Provider", self._check_provider),
+            ("Config File", self._check_config),
+            ("Sandbox", self._check_sandbox),
+            ("Memory", self._check_memory),
+            ("Cron Scheduler", self._check_cron),
+            ("Python Version", self._check_python),
+        ]
+        for name, check_fn in checks:
+            try:
+                result = check_fn()
+                issues.append({"check": name, **result})
+            except Exception as e:
+                issues.append({"check": name, "status": "error", "message": str(e)})
+        return issues
+
+    def _check_provider(self) -> dict:
+        try:
+            from core.providers.providers import get_provider
+            p = get_provider()
+            return {"status": "ok" if p else "warning", "message": f"Provider: {p.name if p else 'None'}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _check_config(self) -> dict:
+        try:
+            from core.config.settings import load as load_cfg
+            cfg = load_cfg()
+            return {"status": "ok", "message": f"Config loaded: {len(cfg)} keys"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _check_sandbox(self) -> dict:
+        try:
+            from core.sandbox import SandboxExecutor
+            sb = SandboxExecutor(mode="auto")
+            return {"status": "ok", "message": f"Sandbox mode: {sb.mode}"}
+        except Exception as e:
+            return {"status": "warning", "message": f"Sandbox unavailable: {e}"}
+
+    def _check_memory(self) -> dict:
+        try:
+            from core.memory import MemoryStore
+            mem = MemoryStore()
+            count = len(mem.list_all())
+            return {"status": "ok", "message": f"{count} memories"}
+        except Exception:
+            return {"status": "warning", "message": "Memory store unavailable"}
+
+    def _check_cron(self) -> dict:
+        try:
+            from core.cron.store import JobStore
+            store = JobStore()
+            jobs = store.list_jobs()
+            return {"status": "ok", "message": f"{len(jobs)} jobs scheduled"}
+        except Exception:
+            return {"status": "info", "message": "Cron scheduler not active"}
+
+    def _check_python(self) -> dict:
+        import sys
+        v = sys.version_info
+        ok = v.major >= 3 and v.minor >= 10
+        return {"status": "ok" if ok else "error", "message": f"Python {v.major}.{v.minor}.{v.micro}"}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Manifest Management
+    # ════════════════════════════════════════════════════════
+
+    def manifest_status(self) -> dict:
+        """Get MANIFEST.json status."""
+        try:
+            from core.project.manifest import ManifestManager
+            mgr = ManifestManager()
+            return mgr.get_status()
+        except Exception:
+            return {"exists": False, "message": "Manifest system unavailable"}
+
+    def manifest_scan(self) -> dict:
+        """Trigger a manifest scan."""
+        try:
+            from core.project.scanner import ProjectScanner
+            scanner = ProjectScanner()
+            scanner.scan()
+            return {"status": "scanned", "changes": scanner.changes_found()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Git Branch / Undo
+    # ════════════════════════════════════════════════════════
+
+    def git_branches(self) -> list[dict]:
+        """List git branches."""
+        try:
+            import subprocess
+            result = subprocess.run(["git", "branch", "-a"], capture_output=True, text=True, timeout=5)
+            branches = []
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line:
+                    is_current = line.startswith("*")
+                    name = line.replace("*", "").strip()
+                    branches.append({"name": name, "current": is_current})
+            return branches
+        except Exception:
+            return []
+
+    def git_undo(self) -> dict:
+        """Undo last git commit (soft reset)."""
+        try:
+            import subprocess
+            result = subprocess.run(["git", "reset", "--soft", "HEAD~1"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                return {"status": "undone", "message": "Last commit undone (soft reset)"}
+            return {"error": result.stderr.strip()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def git_status(self) -> dict:
+        """Get git status summary."""
+        try:
+            import subprocess
+            status = subprocess.run(["git", "status", "--short"], capture_output=True, text=True, timeout=5)
+            log = subprocess.run(["git", "log", "--oneline", "-5"], capture_output=True, text=True, timeout=5)
+            return {
+                "changes": status.stdout.strip(),
+                "recent_commits": log.stdout.strip(),
+                "dirty": bool(status.stdout.strip()),
+            }
+        except Exception:
+            return {"changes": "", "recent_commits": "", "dirty": False}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Token Budget
+    # ════════════════════════════════════════════════════════
+
+    def token_budget_status(self) -> dict:
+        """Get token budget info."""
+        try:
+            from core.token_budget import TokenBudget
+            tb = TokenBudget()
+            return {
+                "used": tb.used,
+                "limit": tb.limit,
+                "remaining": tb.remaining(),
+                "percentage": tb.percentage(),
+            }
+        except Exception:
+            return {"used": 0, "limit": 0, "remaining": 0, "percentage": 0}
+
+    def token_budget_reset(self) -> dict:
+        """Reset token budget."""
+        try:
+            from core.token_budget import TokenBudget
+            tb = TokenBudget()
+            tb.reset()
+            return {"status": "reset"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Checkpoints
+    # ════════════════════════════════════════════════════════
+
+    def checkpoints_list(self) -> list[dict]:
+        """List all checkpoints."""
+        try:
+            from core.checkpoint import CheckpointManager
+            mgr = CheckpointManager()
+            return mgr.list_checkpoints()
+        except Exception:
+            return []
+
+    def checkpoint_create(self) -> dict:
+        """Create a new checkpoint."""
+        try:
+            from core.checkpoint import CheckpointManager
+            mgr = CheckpointManager()
+            cp = mgr.create_checkpoint()
+            return {"status": "created", "id": cp.id, "timestamp": cp.timestamp}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def checkpoint_restore(self, checkpoint_id: str) -> dict:
+        """Restore a checkpoint."""
+        try:
+            from core.checkpoint import CheckpointManager
+            mgr = CheckpointManager()
+            mgr.restore(checkpoint_id)
+            return {"status": "restored", "id": checkpoint_id}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def checkpoint_delete(self, checkpoint_id: str) -> dict:
+        """Delete a checkpoint."""
+        try:
+            from core.checkpoint import CheckpointManager
+            mgr = CheckpointManager()
+            mgr.delete(checkpoint_id)
+            return {"status": "deleted"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Plugin Management
+    # ════════════════════════════════════════════════════════
+
+    def plugins_list(self) -> list[dict]:
+        """List all plugins."""
+        try:
+            from core.plugin_loader import PluginLoader
+            loader = PluginLoader()
+            return loader.list_plugins()
+        except Exception:
+            return []
+
+    def plugin_enable(self, name: str) -> dict:
+        """Enable a plugin."""
+        try:
+            from core.plugin_loader import PluginLoader
+            loader = PluginLoader()
+            loader.enable(name)
+            return {"status": "enabled", "name": name}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def plugin_disable(self, name: str) -> dict:
+        """Disable a plugin."""
+        try:
+            from core.plugin_loader import PluginLoader
+            loader = PluginLoader()
+            loader.disable(name)
+            return {"status": "disabled", "name": name}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Workflow Management
+    # ════════════════════════════════════════════════════════
+
+    def workflows_list(self) -> list[dict]:
+        """List all workflows."""
+        try:
+            from core.workflow import WorkflowEngine
+            engine = WorkflowEngine()
+            return engine.list_workflows()
+        except Exception:
+            return []
+
+    def workflow_run(self, workflow_id: str) -> dict:
+        """Run a workflow."""
+        try:
+            from core.workflow import WorkflowEngine
+            engine = WorkflowEngine()
+            result = engine.run(workflow_id)
+            return {"status": "completed", "result": str(result)[:200]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def workflow_create(self, name: str, steps: list) -> dict:
+        """Create a new workflow."""
+        try:
+            from core.workflow import WorkflowEngine
+            engine = WorkflowEngine()
+            wf = engine.create(name, steps)
+            return {"status": "created", "id": wf.id}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Version / App Info
+    # ════════════════════════════════════════════════════════
+
+    def app_version(self) -> dict:
+        """Get full version info."""
+        try:
+            from core import version
+            return {
+                "version": version.VERSION,
+                "build": version.BUILD,
+                "python": version.PYTHON_VERSION,
+            }
+        except Exception:
+            return {"version": "3.0.0", "build": "dev", "python": sys.version.split()[0]}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: Auto-Commit Status
+    # ════════════════════════════════════════════════════════
+
+    def autocommit_status(self) -> dict:
+        """Get auto-commit status."""
+        try:
+            from core.auto_commit import AutoCommit
+            ac = AutoCommit()
+            return {
+                "enabled": ac.enabled,
+                "interval": ac.interval,
+                "last_commit": ac.last_commit,
+            }
+        except Exception:
+            return {"enabled": False, "interval": 0, "last_commit": None}
+
+    def autocommit_toggle(self) -> dict:
+        """Toggle auto-commit on/off."""
+        try:
+            from core.auto_commit import AutoCommit
+            ac = AutoCommit()
+            ac.toggle()
+            return {"status": "toggled", "enabled": ac.enabled}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ════════════════════════════════════════════════════════
+    # NEW: API Key Management (multi-key)
+    # ════════════════════════════════════════════════════════
+
+    def apikeys_list(self) -> list[dict]:
+        """List all stored API keys (without exposing values)."""
+        try:
+            from core.config.settings import load as load_cfg
+            cfg = load_cfg()
+            providers = cfg.get("provider", {})
+            keys = {}
+            for p_name, p_cfg in providers.items() if isinstance(providers, dict) else []:
+                if isinstance(p_cfg, dict) and p_cfg.get("api_key"):
+                    keys[p_name] = {"has_key": True, "masked": p_cfg["api_key"][:8] + "..."}
+            return keys
+        except Exception:
+            return {}

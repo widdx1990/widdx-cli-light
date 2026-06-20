@@ -246,6 +246,259 @@ async def api_skills():
     return get_dashboard().skills()
 
 
+# ── NEW: Session Save / Load / Export ─────────────────────
+
+@app.post("/api/sessions")
+async def api_session_save(request: Request):
+    data = await request.json()
+    return get_dashboard().session_save(data.get("name", "Untitled"), data.get("messages", []))
+
+
+@app.get("/api/sessions")
+async def api_sessions_list():
+    return get_dashboard().sessions()
+
+
+@app.get("/api/sessions/{session_id}")
+async def api_session_load(session_id: str):
+    return get_dashboard().session_load(session_id)
+
+
+@app.delete("/api/sessions/{session_id}")
+async def api_session_delete(session_id: str):
+    return get_dashboard().session_delete(session_id)
+
+
+@app.get("/api/sessions/{session_id}/export")
+async def api_session_export(session_id: str):
+    return get_dashboard().session_export(session_id)
+
+
+# ── NEW: Memory CRUD ──────────────────────────────────────
+
+@app.post("/api/memories")
+async def api_memory_create(request: Request):
+    data = await request.json()
+    return get_dashboard().memory_create(data.get("content", ""), data.get("tags", ""))
+
+
+@app.get("/api/memories/search")
+async def api_memory_search(q: str = ""):
+    return get_dashboard().memory_search(q)
+
+
+@app.delete("/api/memories/{memory_id}")
+async def api_memory_delete(memory_id: str):
+    return get_dashboard().memory_delete(memory_id)
+
+
+# ── NEW: MCP Management ────────────────────────────────────
+
+@app.get("/api/mcp")
+async def api_mcp_status():
+    return get_dashboard().mcp_status()
+
+
+@app.post("/api/mcp")
+async def api_mcp_add(request: Request):
+    data = await request.json()
+    return get_dashboard().mcp_add(data.get("name", ""), data.get("command", ""), data.get("args", []))
+
+
+@app.delete("/api/mcp/{name}")
+async def api_mcp_remove(name: str):
+    return get_dashboard().mcp_remove(name)
+
+
+@app.post("/api/mcp/{name}/restart")
+async def api_mcp_restart(name: str):
+    return get_dashboard().mcp_restart(name)
+
+
+# ── NEW: Proxy Settings ────────────────────────────────────
+
+@app.get("/api/proxy")
+async def api_proxy_status():
+    return get_dashboard().proxy_status()
+
+
+@app.post("/api/proxy")
+async def api_proxy_update(request: Request):
+    data = await request.json()
+    return get_dashboard().proxy_update(
+        http=data.get("http", ""),
+        https=data.get("https", ""),
+        enabled=data.get("enabled", False),
+    )
+
+
+# ── NEW: Permissions ──────────────────────────────────────
+
+@app.get("/api/permissions")
+async def api_permissions_status():
+    return get_dashboard().permissions_status()
+
+
+@app.post("/api/permissions")
+async def api_permissions_set(request: Request):
+    data = await request.json()
+    return get_dashboard().permissions_set(data.get("level", "normal"))
+
+
+# ── NEW: GGUF Models ──────────────────────────────────────
+
+@app.get("/api/gguf")
+async def api_gguf_models():
+    return get_dashboard().gguf_models()
+
+
+@app.post("/api/gguf/load")
+async def api_gguf_load(request: Request):
+    data = await request.json()
+    return get_dashboard().gguf_load(data.get("path", ""))
+
+
+@app.post("/api/gguf/unload")
+async def api_gguf_unload():
+    return get_dashboard().gguf_unload()
+
+
+# ── NEW: Debug / Doctor ───────────────────────────────────
+
+@app.get("/api/debug")
+async def api_debug():
+    return get_dashboard().debug_info()
+
+
+@app.get("/api/doctor")
+async def api_doctor():
+    return get_dashboard().doctor_check()
+
+
+# ── NEW: Manifest ─────────────────────────────────────────
+
+@app.get("/api/manifest")
+async def api_manifest():
+    return get_dashboard().manifest_status()
+
+
+@app.post("/api/manifest/scan")
+async def api_manifest_scan():
+    return get_dashboard().manifest_scan()
+
+
+# ── NEW: Git ──────────────────────────────────────────────
+
+@app.get("/api/git")
+async def api_git_status():
+    return get_dashboard().git_status()
+
+
+@app.get("/api/git/branches")
+async def api_git_branches():
+    return get_dashboard().git_branches()
+
+
+@app.post("/api/git/undo")
+async def api_git_undo():
+    return get_dashboard().git_undo()
+
+
+# ── NEW: Token Budget ─────────────────────────────────────
+
+@app.get("/api/token-budget")
+async def api_token_budget():
+    return get_dashboard().token_budget_status()
+
+
+@app.post("/api/token-budget/reset")
+async def api_token_budget_reset():
+    return get_dashboard().token_budget_reset()
+
+
+# ── NEW: Checkpoints ──────────────────────────────────────
+
+@app.get("/api/checkpoints")
+async def api_checkpoints():
+    return get_dashboard().checkpoints_list()
+
+
+@app.post("/api/checkpoints")
+async def api_checkpoint_create():
+    return get_dashboard().checkpoint_create()
+
+
+@app.post("/api/checkpoints/{checkpoint_id}/restore")
+async def api_checkpoint_restore(checkpoint_id: str):
+    return get_dashboard().checkpoint_restore(checkpoint_id)
+
+
+@app.delete("/api/checkpoints/{checkpoint_id}")
+async def api_checkpoint_delete(checkpoint_id: str):
+    return get_dashboard().checkpoint_delete(checkpoint_id)
+
+
+# ── NEW: Plugins ─────────────────────────────────────────
+
+@app.get("/api/plugins")
+async def api_plugins():
+    return get_dashboard().plugins_list()
+
+
+@app.post("/api/plugins/{name}/enable")
+async def api_plugin_enable(name: str):
+    return get_dashboard().plugin_enable(name)
+
+
+@app.post("/api/plugins/{name}/disable")
+async def api_plugin_disable(name: str):
+    return get_dashboard().plugin_disable(name)
+
+
+# ── NEW: Workflows ───────────────────────────────────────
+
+@app.get("/api/workflows")
+async def api_workflows():
+    return get_dashboard().workflows_list()
+
+
+@app.post("/api/workflows")
+async def api_workflow_create(request: Request):
+    data = await request.json()
+    return get_dashboard().workflow_create(data.get("name", ""), data.get("steps", []))
+
+
+@app.post("/api/workflows/{workflow_id}/run")
+async def api_workflow_run(workflow_id: str):
+    return get_dashboard().workflow_run(workflow_id)
+
+
+# ── NEW: Auto-Commit ──────────────────────────────────────
+
+@app.get("/api/autocommit")
+async def api_autocommit():
+    return get_dashboard().autocommit_status()
+
+
+@app.post("/api/autocommit/toggle")
+async def api_autocommit_toggle():
+    return get_dashboard().autocommit_toggle()
+
+
+# ── NEW: API Keys ─────────────────────────────────────────
+
+@app.get("/api/apikeys")
+async def api_apikeys():
+    return get_dashboard().apikeys_list()
+
+
+# ── NEW: Version ──────────────────────────────────────────
+
+@app.get("/api/version")
+async def api_version():
+    return get_dashboard().app_version()
+
+
 # ── Simple in-memory rate limiter ──────────────────────────────
 _ratelimit_store: dict[str, list[float]] = {}
 _RATELIMIT_MAX = 30  # max requests

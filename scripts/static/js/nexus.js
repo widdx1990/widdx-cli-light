@@ -487,6 +487,24 @@ function showView(view) {
     showSettingsView(area);
   } else if (view === 'memory') {
     showMemoryView(area);
+  } else if (view === 'mcp') {
+    showMCPView(area);
+  } else if (view === 'sessions') {
+    showSessionsView(area);
+  } else if (view === 'checkpoints') {
+    showCheckpointsView(area);
+  } else if (view === 'git') {
+    showGitView(area);
+  } else if (view === 'doctor') {
+    showDoctorView(area);
+  } else if (view === 'debug') {
+    showDebugView(area);
+  } else if (view === 'permissions') {
+    showPermissionsView(area);
+  } else if (view === 'plugins') {
+    showPluginsView(area);
+  } else if (view === 'workflows') {
+    showWorkflowsView(area);
   }
 }
 
@@ -1138,6 +1156,484 @@ function renderTree(items, depth) {
       + (i.children ? renderTree(i.children, depth + 1) : '');
   }).join('');
 }
+
+
+
+// ═══════════════ NEW: MCP VIEW ═══════════════════
+
+async function showMCPView(area) {
+  setActivity('Loading', 'MCP servers');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDD0C MCP Servers</h3>'
+    + '<div style="display:flex;gap:8px;margin:12px 0" id="mcp-add-form">'
+    + '<input id="mcp-name" style="flex:1;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Server name">'
+    + '<input id="mcp-cmd" style="flex:2;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Command (e.g. npx @modelcontextprotocol/server-filesystem)">'
+    + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" onclick="addMCPServer()">Add</button>'
+    + '</div>'
+    + '<div id="mcp-list">Loading...</div></div></div>';
+  try {
+    const r = await fetch('/api/mcp');
+    const servers = await r.json();
+    const el = document.getElementById('mcp-list');
+    if (!Array.isArray(servers) || !servers.length) {
+      el.innerHTML = '<span style="color:var(--text-muted)">No MCP servers configured.</span>';
+    } else {
+      el.innerHTML = servers.map(function(s) {
+        const name = s.name || s.id || 'unknown';
+        const status = s.status || 'unknown';
+        const statusColor = status === 'running' ? 'var(--success)' : status === 'error' ? 'var(--error)' : 'var(--text-muted)';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+          + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(s.command || s.description || '') + '</span></div>'
+          + '<div><span style="color:' + statusColor + '">\u25cf ' + status + '</span>'
+          + ' <button style="background:none;border:none;color:var(--accent);cursor:pointer" onclick="restartMCPServer(\'' + escapeHtml(name) + '\')" title="Restart">\u21bb</button>'
+          + ' <button style="background:none;border:none;color:var(--error);cursor:pointer" onclick="delMCPServer(\'' + escapeHtml(name) + '\')" title="Remove">\u2715</button></div></div>';
+      }).join('');
+    }
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('mcp-list');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+window.addMCPServer = async function() {
+  const name = document.getElementById('mcp-name')?.value.trim();
+  const cmd = document.getElementById('mcp-cmd')?.value.trim();
+  if (!name || !cmd) { showToast('Name and command required', 'error'); return; }
+  try {
+    await fetch('/api/mcp', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name, command:cmd}) });
+    showToast('MCP server added', 'success');
+    showMCPView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.delMCPServer = async function(name) {
+  if (!confirm('Remove MCP server "' + name + '"?')) return;
+  try {
+    await fetch('/api/mcp/' + encodeURIComponent(name), { method:'DELETE' });
+    showToast('MCP server removed', 'success');
+    showMCPView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.restartMCPServer = async function(name) {
+  try {
+    await fetch('/api/mcp/' + encodeURIComponent(name) + '/restart', { method:'POST' });
+    showToast('MCP server restarted', 'success');
+    showMCPView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+// ═══════════════ NEW: SESSIONS VIEW ═══════════════════
+
+async function showSessionsView(area) {
+  setActivity('Loading', 'sessions');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDCBE Saved Sessions</h3>'
+    + '<div style="margin:8px 0"><input id="session-search" style="width:100%;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:8px 12px;font-size:13px" placeholder="Search sessions..." oninput="searchSessions(this.value)"></div>'
+    + '<div id="session-list">Loading...</div></div></div>';
+  await refreshSessionList();
+  setActivity('Ready', '\u2014');
+}
+
+async function refreshSessionList() {
+  try {
+    const r = await fetch('/api/dashboard/sessions');
+    const sessions = await r.json();
+    const el = document.getElementById('session-list');
+    if (!el) return;
+    if (!Array.isArray(sessions) || !sessions.length) {
+      el.innerHTML = '<span style="color:var(--text-muted)">No saved sessions. Chat messages are auto-saved.</span>';
+    } else {
+      el.innerHTML = sessions.map(function(s) {
+        const id = s.id || s.session_id || '';
+        const name = s.name || 'Untitled';
+        const date = s.created_at || s.timestamp || '';
+        const msgCount = s.message_count || s.messages?.length || 0;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+          + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(date) + ' \u00b7 ' + msgCount + ' messages</span></div>'
+          + '<div>'
+          + '<button style="background:none;border:none;color:var(--accent);cursor:pointer" onclick="loadSession(\'' + escapeHtml(id) + '\')" title="Load">\uD83D\uDCC2</button>'
+          + '<button style="background:none;border:none;color:var(--success);cursor:pointer" onclick="exportSession(\'' + escapeHtml(id) + '\')" title="Export as Markdown">\uD83D\uDCC4</button>'
+          + '<button style="background:none;border:none;color:var(--error);cursor:pointer" onclick="delSession(\'' + escapeHtml(id) + '\')" title="Delete">\u2715</button></div></div>';
+      }).join('');
+    }
+  } catch(e) {
+    const el = document.getElementById('session-list');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+  }
+}
+
+window.loadSession = async function(id) {
+  try {
+    const r = await fetch('/api/sessions/' + encodeURIComponent(id));
+    const d = await r.json();
+    if (d.status === 'ok' && d.session) {
+      S.messages = d.session.messages || [];
+      showView('chat');
+      showToast('Session loaded', 'success');
+    } else { showToast(d.error || 'Load failed', 'error'); }
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.exportSession = async function(id) {
+  try {
+    const r = await fetch('/api/sessions/' + encodeURIComponent(id) + '/export');
+    const d = await r.json();
+    if (d.status === 'ok' && d.markdown) {
+      await navigator.clipboard.writeText(d.markdown);
+      showToast('Exported as Markdown (copied to clipboard)', 'success');
+    } else { showToast(d.error || 'Export failed', 'error'); }
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.delSession = async function(id) {
+  if (!confirm('Delete this session?')) return;
+  try {
+    await fetch('/api/sessions/' + encodeURIComponent(id), { method:'DELETE' });
+    showToast('Session deleted', 'success');
+    await refreshSessionList();
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.searchSessions = function(q) { refreshSessionList(); };
+
+// ═══════════════ NEW: CHECKPOINTS VIEW ═══════════════════
+
+async function showCheckpointsView(area) {
+  setActivity('Loading', 'checkpoints');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDCF8 Checkpoints</h3>'
+    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Snapshot-based file saves (no Git required)</p>'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;margin-bottom:12px" onclick="createCheckpoint()">\uD83D\uDCF8 Create Checkpoint</button>'
+    + '<div id="checkpoint-list">Loading...</div></div></div>';
+  try {
+    const r = await fetch('/api/checkpoints');
+    const cps = await r.json();
+    const el = document.getElementById('checkpoint-list');
+    if (!Array.isArray(cps) || !cps.length) {
+      el.innerHTML = '<span style="color:var(--text-muted)">No checkpoints yet.</span>';
+    } else {
+      el.innerHTML = cps.map(function(c) {
+        const id = c.id || '';
+        const ts = c.timestamp || c.created_at || '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+          + '<span><strong>' + escapeHtml(id.slice(0, 12)) + '</strong> \u00b7 ' + escapeHtml(ts) + '</span>'
+          + '<span>'
+          + '<button style="background:none;border:none;color:var(--accent);cursor:pointer" onclick="restoreCheckpoint(\'' + escapeHtml(id) + '\')" title="Restore">\u21a9</button>'
+          + '<button style="background:none;border:none;color:var(--error);cursor:pointer" onclick="delCheckpoint(\'' + escapeHtml(id) + '\')" title="Delete">\u2715</button></span></div>';
+      }).join('');
+    }
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('checkpoint-list');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+window.createCheckpoint = async function() {
+  try {
+    const r = await fetch('/api/checkpoints', { method:'POST' });
+    const d = await r.json();
+    showToast(d.status === 'created' ? 'Checkpoint created' : (d.error || 'Failed'), d.status === 'created' ? 'success' : 'error');
+    showCheckpointsView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.restoreCheckpoint = async function(id) {
+  if (!confirm('Restore checkpoint ' + id.slice(0, 12) + '? This will overwrite current files.')) return;
+  try {
+    const r = await fetch('/api/checkpoints/' + encodeURIComponent(id) + '/restore', { method:'POST' });
+    const d = await r.json();
+    showToast(d.status === 'restored' ? 'Checkpoint restored' : (d.error || 'Failed'), d.status === 'restored' ? 'success' : 'error');
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.delCheckpoint = async function(id) {
+  if (!confirm('Delete checkpoint?')) return;
+  try {
+    await fetch('/api/checkpoints/' + encodeURIComponent(id), { method:'DELETE' });
+    showToast('Checkpoint deleted', 'success');
+    showCheckpointsView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+// ═══════════════ NEW: GIT VIEW ═══════════════════
+
+async function showGitView(area) {
+  setActivity('Loading', 'git');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDD00 Git Status</h3>'
+    + '<div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px" onclick="refreshGitView()">\uD83D\uDD04 Refresh</button>'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;background:var(--error);color:#fff" onclick="gitUndo()">\u21a9 Undo Last Commit</button>'
+    + '</div>'
+    + '<div id="git-status">Loading...</div>'
+    + '<h4 style="margin-top:16px">Branches</h4>'
+    + '<div id="git-branches">Loading...</div></div></div>';
+  await refreshGitView();
+  setActivity('Ready', '\u2014');
+}
+
+async function refreshGitView() {
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch('/api/git'),
+      fetch('/api/git/branches'),
+    ]);
+    const status = await r1.json();
+    const branches = await r2.json();
+    const statusEl = document.getElementById('git-status');
+    if (statusEl) {
+      const changes = status.changes || 'No uncommitted changes';
+      const commits = status.recent_commits || 'No commits';
+      statusEl.innerHTML = '<div style="margin-bottom:8px"><strong>Changes:</strong><br><pre style="background:var(--bg-input);padding:8px;border-radius:4px;font-size:12px;margin:4px 0">' + escapeHtml(changes) + '</pre></div>'
+        + '<div><strong>Recent Commits:</strong><br><pre style="background:var(--bg-input);padding:8px;border-radius:4px;font-size:12px;margin:4px 0">' + escapeHtml(commits) + '</pre></div>';
+    }
+    const brEl = document.getElementById('git-branches');
+    if (brEl) {
+      if (Array.isArray(branches) && branches.length) {
+        brEl.innerHTML = branches.map(function(b) {
+          const marker = b.current ? '\u2192 ' : '';
+          const style = b.current ? 'font-weight:bold;color:var(--accent)' : '';
+          return '<div style="' + style + ';padding:4px 0">' + marker + escapeHtml(b.name) + '</div>';
+        }).join('');
+      } else {
+        brEl.innerHTML = '<span style="color:var(--text-muted)">No branches found</span>';
+      }
+    }
+  } catch(e) {
+    const el = document.getElementById('git-status');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+  }
+}
+
+window.gitUndo = async function() {
+  if (!confirm('Undo the last commit? This does a soft reset (keeps changes).')) return;
+  try {
+    const r = await fetch('/api/git/undo', { method:'POST' });
+    const d = await r.json();
+    showToast(d.status === 'undone' ? 'Last commit undone' : (d.error || 'Failed'), d.status === 'undone' ? 'success' : 'error');
+    await refreshGitView();
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+// ═══════════════ NEW: DOCTOR VIEW ═══════════════════
+
+async function showDoctorView(area) {
+  setActivity('Running', 'health checks');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83E\uDDBA System Health</h3>'
+    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Diagnostics and system checks</p>'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;margin-bottom:12px" onclick="showDoctorView(document.getElementById(\'messagesArea\'))">\uD83D\uDD04 Re-run Checks</button>'
+    + '<div id="doctor-results">Running checks...</div></div></div>';
+  try {
+    const r = await fetch('/api/doctor');
+    const checks = await r.json();
+    const el = document.getElementById('doctor-results');
+    if (Array.isArray(checks) && checks.length) {
+      el.innerHTML = checks.map(function(c) {
+        const icons = {ok:'\u2705', warning:'\u26a0\ufe0f', error:'\u274c', info:'\u2139\ufe0f'};
+        const icon = icons[c.status] || '\u2753';
+        const colorMap = {ok:'var(--success)', warning:'var(--warning)', error:'var(--error)', info:'var(--text-muted)'};
+        return '<div style="padding:8px 0;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:8px">'
+          + '<span>' + icon + '</span>'
+          + '<div><strong>' + escapeHtml(c.check) + '</strong><br><span style="color:' + (colorMap[c.status] || 'var(--text-muted)') + ';font-size:12px">' + escapeHtml(c.message || '') + '</span></div></div>';
+      }).join('');
+    } else {
+      el.innerHTML = '<span style="color:var(--text-muted)">No diagnostic data available</span>';
+    }
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('doctor-results');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+// ═══════════════ NEW: DEBUG VIEW ═══════════════════
+
+async function showDebugView(area) {
+  setActivity('Loading', 'debug');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDC1B Debug Information</h3>'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;margin-bottom:12px" onclick="showDebugView(document.getElementById(\'messagesArea\'))">\uD83D\uDD04 Refresh</button>'
+    + '<div id="debug-content">Loading...</div></div></div>';
+  try {
+    const r = await fetch('/api/debug');
+    const d = await r.json();
+    const el = document.getElementById('debug-content');
+    let html = '';
+    if (d.errors && Array.isArray(d.errors)) {
+      html += '<h4 style="margin-bottom:8px">Recent Errors (' + d.errors.length + ')</h4>';
+      if (d.errors.length) {
+        html += d.errors.map(function(e) {
+          return '<div style="padding:4px 0;border-bottom:1px solid var(--border-light);font-size:12px;font-family:monospace">' + escapeHtml(JSON.stringify(e).slice(0, 200)) + '</div>';
+        }).join('');
+      } else {
+        html += '<span style="color:var(--success)">No errors recorded</span>';
+      }
+    }
+    if (d.config) {
+      html += '<h4 style="margin:12px 0 8px">Config</h4><pre style="background:var(--bg-input);padding:8px;border-radius:4px;font-size:11px;max-height:200px;overflow:auto">' + escapeHtml(d.config.slice(0, 500)) + '</pre>';
+    }
+    if (d.tools !== undefined) {
+      html += '<h4 style="margin:12px 0 8px">Tools</h4><span>' + d.tools + ' tool definitions loaded</span>';
+    }
+    el.innerHTML = html || '<span style="color:var(--text-muted)">No debug data</span>';
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('debug-content');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+// ═══════════════ NEW: PERMISSIONS VIEW ═══════════════════
+
+async function showPermissionsView(area) {
+  setActivity('Loading', 'permissions');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDEE1\ufe0f Permissions</h3>'
+    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Control the level of command and tool access</p>'
+    + '<div id="perm-status">Loading...</div></div></div>';
+  try {
+    const r = await fetch('/api/permissions');
+    const d = await r.json();
+    const el = document.getElementById('perm-status');
+    const levels = d.levels || ['permissive', 'normal', 'strict', 'silent'];
+    const current = d.level || 'normal';
+    const icons = {permissive:'\ud83d\udfe2', normal:'\ud83d\udd35', strict:'\ud83d\udfe1', silent:'\ud83d\udd34'};
+    const descs = {permissive:'Allow all commands', normal:'Block dangerous patterns', strict:'Read-only + safe tools', silent:'Read-only, no confirmations'};
+    el.innerHTML = '<div style="margin-bottom:12px;padding:8px;background:var(--bg-input);border-radius:6px">'
+      + 'Current level: <strong>' + (icons[current] || '') + ' ' + current + '</strong></div>'
+      + '<div style="display:flex;flex-direction:column;gap:8px">'
+      + levels.map(function(l) {
+        const active = l === current;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:' + (active ? 'var(--accent)' : 'var(--bg-input)') + ';border-radius:6px;cursor:pointer;color:' + (active ? '#fff' : 'var(--text-primary)') + '" onclick="setPermission(\'' + l + '\')">'
+          + '<span style="font-size:16px">' + (icons[l] || '\u2022') + '</span>'
+          + '<div><strong>' + l + '</strong><br><span style="font-size:11px;opacity:0.7">' + (descs[l] || '') + '</span></div>'
+          + (active ? '<span style="margin-left:auto">\u2713</span>' : '')
+          + '</div>';
+      }).join('') + '</div>';
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('perm-status');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+window.setPermission = async function(level) {
+  try {
+    const r = await fetch('/api/permissions', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({level:level}) });
+    const d = await r.json();
+    showToast(d.status === 'set' ? 'Permission: ' + level : (d.error || 'Failed'), d.status === 'set' ? 'success' : 'error');
+    showPermissionsView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+// ═══════════════ NEW: PLUGINS VIEW ═══════════════════
+
+async function showPluginsView(area) {
+  setActivity('Loading', 'plugins');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83E\uDDE9 Plugins</h3>'
+    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Manage installed plugins</p>'
+    + '<div id="plugin-list">Loading...</div></div></div>';
+  try {
+    const r = await fetch('/api/plugins');
+    const plugins = await r.json();
+    const el = document.getElementById('plugin-list');
+    if (Array.isArray(plugins) && plugins.length) {
+      el.innerHTML = plugins.map(function(p) {
+        const name = p.name || p.id || 'unknown';
+        const enabled = p.enabled !== false;
+        const desc = p.description || p.summary || '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+          + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(desc.slice(0, 60)) + '</span></div>'
+          + '<div><span style="color:' + (enabled ? 'var(--success)' : 'var(--text-muted)') + '">' + (enabled ? '\u25cf Enabled' : '\u25cb Disabled') + '</span>'
+          + ' <button style="background:none;border:none;color:' + (enabled ? 'var(--warning)' : 'var(--success)') + ';cursor:pointer" onclick="togglePlugin(\'' + escapeHtml(name) + '\',' + enabled + ')">' + (enabled ? 'Disable' : 'Enable') + '</button></div></div>';
+      }).join('');
+    } else {
+      el.innerHTML = '<span style="color:var(--text-muted)">No plugins installed</span>';
+    }
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('plugin-list');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+window.togglePlugin = async function(name, isEnabled) {
+  const action = isEnabled ? 'disable' : 'enable';
+  try {
+    await fetch('/api/plugins/' + encodeURIComponent(name) + '/' + action, { method:'POST' });
+    showToast('Plugin ' + action + 'd', 'success');
+    showPluginsView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+// ═══════════════ NEW: WORKFLOWS VIEW ═══════════════════
+
+async function showWorkflowsView(area) {
+  setActivity('Loading', 'workflows');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDD01 Workflows</h3>'
+    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Automated multi-step processes</p>'
+    + '<div style="display:flex;gap:8px;margin:8px 0">'
+    + '<input id="wf-name" style="flex:1;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Workflow name">'
+    + '<input id="wf-steps" style="flex:2;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Steps (comma-separated): research, code, review">'
+    + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" onclick="createWorkflow()">Create</button>'
+    + '</div>'
+    + '<div id="workflow-list">Loading...</div></div></div>';
+  try {
+    const r = await fetch('/api/workflows');
+    const workflows = await r.json();
+    const el = document.getElementById('workflow-list');
+    if (Array.isArray(workflows) && workflows.length) {
+      el.innerHTML = workflows.map(function(w) {
+        const id = w.id || '';
+        const name = w.name || 'Untitled';
+        const steps = w.steps || [];
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+          + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + (Array.isArray(steps) ? steps.join(' \u2192 ') : (steps || '')) + '</span></div>'
+          + '<div><button style="background:none;border:none;color:var(--success);cursor:pointer" onclick="runWorkflow(\'' + escapeHtml(id) + '\')" title="Run">\u25b6</button></div></div>';
+      }).join('');
+    } else {
+      el.innerHTML = '<span style="color:var(--text-muted)">No workflows created yet</span>';
+    }
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('workflow-list');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+window.createWorkflow = async function() {
+  const name = document.getElementById('wf-name')?.value.trim();
+  const steps = document.getElementById('wf-steps')?.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  if (!name || !steps?.length) { showToast('Name and steps required', 'error'); return; }
+  try {
+    await fetch('/api/workflows', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name, steps:steps}) });
+    showToast('Workflow created', 'success');
+    showWorkflowsView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.runWorkflow = async function(id) {
+  try {
+    showToast('Running workflow...', 'info');
+    const r = await fetch('/api/workflows/' + encodeURIComponent(id) + '/run', { method:'POST' });
+    const d = await r.json();
+    showToast(d.status === 'completed' ? 'Workflow completed' : (d.error || 'Failed'), d.status === 'completed' ? 'success' : 'error');
+  } catch(e) { showToast(e.message, 'error'); };
+};
+
 
 // ═══════════════ INIT ═══════════════════
 
