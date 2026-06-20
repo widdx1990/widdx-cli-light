@@ -35,6 +35,10 @@
       "description": "CLI launcher for `python -m core` and `widdx` command."
     },
     {
+      "path": "core/activity.py",
+      "description": "ActivityStore — central event bus for all WIDDX subsystems."
+    },
+    {
       "path": "core/agents/agent.py",
       "description": "Real autonomous agent — AI-driven tool-calling loop with full control."
     },
@@ -187,10 +191,6 @@
       "description": "Project Tracker — persistent project plan, design, tasks, and roadmap."
     },
     {
-      "path": "core/provider_router.py",
-      "description": "Provider Router - DEPRECATED"
-    },
-    {
       "path": "core/providers/gguf.py",
       "description": "GGUF model import — read metadata, build Modelfile, register in Ollama."
     },
@@ -235,10 +235,6 @@
       "description": "Skills system for WIDDX — hybrid prompt templates + optional Python tool extensions."
     },
     {
-      "path": "core/skills_v2.py",
-      "description": "Skills V2 - DEPRECATED"
-    },
-    {
       "path": "core/suggester.py",
       "description": "Proactive Suggester — analyze project state and suggest next actions."
     },
@@ -252,7 +248,7 @@
     },
     {
       "path": "core/ui_visual.py",
-      "description": "Shared CLI/TUI visual helpers and theme primitives."
+      "description": "Shared CLI/TUI visual helpers — elegant chat UI."
     },
     {
       "path": "core/uil/analyzer.py",
@@ -299,8 +295,8 @@
       "description": "Voice/TTS Engine — Text-to-Speech for WIDDX."
     },
     {
-      "path": "core/widdx_v2.py",
-      "description": "WIDDX v2 - DEPRECATED"
+      "path": "core/web_launcher.py",
+      "description": "Launcher for Web UI — called by the widdx-web entry point."
     },
     {
       "path": "core/workflow.py",

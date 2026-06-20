@@ -293,18 +293,31 @@ class Dashboard:
             return {"status": "error", "message": str(e)}
 
     def _fetch_models(self, provider_id: str) -> list[str]:
-        """Fetch available models for a provider."""
+        """Fetch available models for a provider with timeout."""
         try:
             from core.providers.providers import get_available_models
-            models = get_available_models(provider_id)
-            return models[:50] if models else []
+            import threading
+            result = []
+            thread = threading.Thread(target=lambda: result.extend(get_available_models(provider_id)))
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                logger.warning("Model fetch timeout for %s", provider_id)
+                return []
+            return result[:50] if result else []
         except Exception:
             return []
 
     def get_provider_models(self, provider_id: str) -> dict:
         """Get models for a specific provider (for live refresh)."""
-        models = self._fetch_models(provider_id)
-        return {"provider": provider_id, "models": models}
+        import threading
+        result = []
+        thread = threading.Thread(target=lambda: result.extend(self._fetch_models(provider_id)))
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=8.0)
+        return {"provider": provider_id, "models": result[:50] if result else []}
 
     # ── Sandbox Computer ──
 
