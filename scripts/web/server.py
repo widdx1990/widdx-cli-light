@@ -209,6 +209,48 @@ async def api_gateway():
     return get_dashboard().gateway_status()
 
 
+@app.post("/api/gateway/start")
+async def api_gateway_start(request: Request):
+    """Start a gateway platform (telegram/discord/sms) with credentials."""
+    data = await request.json()
+    platform = data.get("platform", "")
+    token = data.get("token", "")
+    if not platform or not token:
+        return {"status": "error", "message": "Platform and token required"}
+    try:
+        from core.gateway import GatewayCore
+        gw = globals().get("_gateway")
+        if gw is None:
+            gw = GatewayCore()
+            def _gh(msg) -> str:
+                try:
+                    chat = get_chat()
+                    r = chat.chat(msg.text, history=[])
+                    return r.get("content", "") or r.get("error", "No response")
+                except Exception as e:
+                    return f"Error: {e}"
+            gw.set_handler(_gh)
+            globals()["_gateway"] = gw
+        gw.start_platform(platform, token=token)
+        return {"status": "ok", "message": f"{platform} started"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/gateway/stop")
+async def api_gateway_stop(request: Request):
+    """Stop a gateway platform."""
+    data = await request.json()
+    platform = data.get("platform", "")
+    try:
+        gw = globals().get("_gateway")
+        if gw:
+            gw.stop_platform(platform)
+        return {"status": "ok", "message": f"{platform} stopped"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # ── Settings ────────────────────────────────────────────
 
 @app.get("/api/settings")
@@ -628,6 +670,7 @@ def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     except Exception as e:
         logger.warning("Cron scheduler start: %s", e)
 
+    _gateway = None
     try:
         from core.gateway import GatewayCore, Platform, Message
         from core._path import ensure_project_root

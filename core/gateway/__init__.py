@@ -148,6 +148,11 @@ class GatewayCore:
         else:
             logger.warning("Unknown platform: %s", platform)
 
+    def stop_platform(self, platform: str):
+        """Stop a running platform adapter."""
+        self._adapters.pop(platform, None)
+        logger.info("Platform %s stopped", platform)
+
     def _start_telegram(self, token: str = "", **kwargs):
         """Start Telegram adapter in a background thread."""
         from core.gateway.telegram import TelegramAdapter

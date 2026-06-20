@@ -917,7 +917,7 @@ window.loadMemoryView = function() {
 
 async function showGatewayView(area) {
   setActivity('Loading', 'gateway');
-  area.innerHTML = '<div class="view-container"><div class="view-header"><h2><i class="fa-solid fa-tower-broadcast"></i> Gateway Hub</h2><p>Communication channels</p></div><div class="view-body"><div class="gateway-grid" id="gateway-view-grid"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading channels...</p></div></div></div></div>';
+  area.innerHTML = '<div class="view-container"><div class="view-header"><h2><i class="fa-solid fa-tower-broadcast"></i> Gateway Hub</h2><p>Connect Telegram, Discord, or other platforms</p></div><div class="view-body"><div class="section-card"><div class="section-card-header"><i class="fa-solid fa-key"></i> Add Platform</div><div class="section-card-body" style="display:flex;flex-direction:column;gap:10px"><div style="display:flex;gap:8px;flex-wrap:wrap"><select id="gw-platform" style="flex:1;min-width:120px;height:38px;border-radius:var(--radius-md);background:var(--bg-input);border:1px solid var(--border-main);color:var(--text-primary);padding:0 12px;font-size:13px"><option value="telegram">Telegram</option><option value="discord">Discord</option></select><input id="gw-token" type="password" style="flex:3;min-width:200px;height:38px;border-radius:var(--radius-md);background:var(--bg-input);border:1px solid var(--border-main);color:var(--text-primary);padding:0 12px;font-size:13px" placeholder="Bot Token"><button class="send-btn" style="width:auto;padding:0 20px;border-radius:6px;height:38px" onclick="startGateway()"><i class="fa-solid fa-plug"></i> Connect</button></div><span style="font-size:var(--font-size-xs);color:var(--text-muted)">Telegram: get token from @BotFather · Discord: create bot at discord.com/developers</span></div></div><div class="gateway-grid" id="gateway-view-grid"><div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading channels...</p></div></div></div></div>';
 
   try {
     const r = await fetch('/api/dashboard/gateway');
@@ -927,10 +927,11 @@ async function showGatewayView(area) {
     if (data?.channels?.length) {
       grid.innerHTML = data.channels.map(function(ch) {
         var iconName = ch.icon?.replace('fa-', '') || 'plug';
-        return '<div class="gateway-card"><div class="gateway-top"><div class="gateway-icon ' + iconName + '"><i class="fa-brands ' + (ch.icon || 'fa-plug') + '"></i></div><span class="gateway-name">' + escapeHtml(ch.name) + '</span><span class="gateway-status ' + ch.status + '">' + ch.status + '</span></div><div class="gateway-meta">' + (ch.message_count || 0) + ' messages' + (ch.last_message ? ' · Last: ' + new Date(ch.last_message).toLocaleString() : '') + '</div>' + (ch.error ? '<div class="gateway-error">' + escapeHtml(ch.error) + '</div>' : '') + '</div>';
+        var statusClass = ch.status === 'running' ? 'connected' : ch.status === 'error' ? 'error' : 'disconnected';
+        return '<div class="gateway-card"><div class="gateway-top"><div class="gateway-icon ' + iconName + '"><i class="fa-brands ' + (ch.icon || 'fa-plug') + '"></i></div><span class="gateway-name">' + escapeHtml(ch.name) + '</span><span class="gateway-status ' + statusClass + '">' + ch.status + '</span></div><div class="gateway-meta">' + (ch.message_count || 0) + ' messages' + (ch.last_message ? ' · Last: ' + new Date(ch.last_message).toLocaleString() : '') + '</div>' + (ch.error ? '<div class="gateway-error">' + escapeHtml(ch.error) + '</div>' : '') + '<div style="margin-top:6px"><button class="send-btn" style="width:auto;padding:4px 12px;border-radius:6px;font-size:11px;background:var(--error);color:#fff" onclick="stopGateway(\'' + ch.name.toLowerCase() + '\')">Disconnect</button></div></div>';
       }).join('');
     } else {
-      grid.innerHTML = '<div class="empty-state"><i class="fa-solid fa-tower-broadcast"></i><h3>No channels configured</h3><p>Add Telegram, Discord, or SMS channels to enable multi-platform communication.</p></div>';
+      grid.innerHTML = '<div class="empty-state"><i class="fa-solid fa-tower-broadcast"></i><h3>No channels connected</h3><p>Enter a bot token above and click Connect to get started.</p></div>';
     }
     setActivity('Ready', '—');
   } catch(e) {
@@ -939,6 +940,38 @@ async function showGatewayView(area) {
     setActivity('Ready', '—');
   }
 }
+
+window.startGateway = async function() {
+  var platform = document.getElementById('gw-platform')?.value;
+  var token = document.getElementById('gw-token')?.value;
+  if (!platform || !token) { showToast('Enter platform and token', 'error'); return; }
+  try {
+    var r = await fetch('/api/gateway/start', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({platform:platform, token:token})
+    });
+    var d = await r.json();
+    if (d.status === 'ok') {
+      showToast(platform + ' connected!', 'success');
+      showGatewayView(document.getElementById('messagesArea'));
+    } else {
+      showToast(d.message || 'Failed', 'error');
+    }
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.stopGateway = async function(platform) {
+  if (!confirm('Disconnect ' + platform + '?')) return;
+  try {
+    var r = await fetch('/api/gateway/stop', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({platform:platform})
+    });
+    var d = await r.json();
+    showToast(platform + ' disconnected', 'info');
+    showGatewayView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
 
 // ═══════════════ SKILLS VIEW ═══════════════════
 
