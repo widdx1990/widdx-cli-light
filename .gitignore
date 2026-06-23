@@ -68,3 +68,6 @@ scan_report/
 
 # Debug scripts
 _debug_brain.py
+
+# Log files
+*.log
