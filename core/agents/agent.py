@@ -116,7 +116,8 @@ class AutonomousAgent:
     """
 
     def __init__(self, provider, tool_defs: list, cfg: dict, state: dict,
-                 custom_prompt: Optional[str] = None):
+                 custom_prompt: Optional[str] = None,
+                 on_event: Optional[Any] = None):
         self.provider = provider
         self.tool_defs = tool_defs
         self.cfg = cfg
@@ -124,9 +125,25 @@ class AutonomousAgent:
         self.custom_prompt = custom_prompt
         self.steps: list[AgentStep] = []
         self.cost = 0.0
+        self._on_event = on_event  # callable(event_dict) for live Web UI streaming
 
-    def run(self, user_input: str) -> tuple[list[AgentStep], str]:
-        """Execute the agentic loop. Returns (steps, summary_text)."""
+    def _emit(self, event: dict):
+        """Emit a streaming event to the Web UI if callback is set."""
+        if self._on_event:
+            try:
+                self._on_event(event)
+            except Exception:
+                pass
+
+    def run(self, user_input: str, on_event=None) -> tuple[list[AgentStep], str]:
+        """Execute the agentic loop. Returns (steps, summary_text).
+        
+        Args:
+            user_input: The task to execute.
+            on_event: Optional callback for live streaming (overrides constructor on_event).
+        """
+        if on_event:
+            self._on_event = on_event
         messages = [
             {"role": "system", "content": self._build_prompt()},
             {"role": "user", "content": user_input},
@@ -157,8 +174,12 @@ class AutonomousAgent:
                     content, tool_calls = self.provider.chat(
                         messages, self.tool_defs, temperature
                     )
+                    # Emit final text if no streaming
+                    if content and self._on_event:
+                        self._emit({"type": "text", "data": content})
             except Exception as e:
                 print_system_msg(f"Agent error: {e}")
+                self._emit({"type": "error", "data": str(e)})
                 break
 
             model = self.state.get("model", "").split("/")[-1] or "unknown"
@@ -175,9 +196,22 @@ class AutonomousAgent:
                 messages.append({"role": "assistant", "content": content or None, "tool_calls": tc_list})
 
                 for tc in tool_calls:
+                    # Emit tool start event for live Web UI
+                    self._emit({"type": "tool", "data": {"name": tc.name, "args": tc.args}})
+
                     result = self._execute_tool(tc)
                     step = AgentStep(len(self.steps) + 1, tc.name, tc.args, result)
                     self.steps.append(step)
+
+                    # Emit tool result event for live Web UI
+                    self._emit({
+                        "type": "tool_result",
+                        "data": {
+                            "name": tc.name,
+                            "success": step.status == "done",
+                            "result": result[:300],
+                        }
+                    })
 
                     # ── Loop detection: same tool + same args 3x in a row → abort ──
                     call_sig = (tc.name, json.dumps(tc.args, sort_keys=True))
@@ -200,9 +234,14 @@ class AutonomousAgent:
                     if tc.name in {"write", "edit"} and not step.result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed", "No such", "File not found")):
                         file_path = tc.args.get("file_path")
                         if file_path:
+                            self._emit({"type": "tool", "data": {"name": "validate", "args": {"file_path": file_path}}})
                             val_result = self._auto_validate_file(file_path)
                             validation_step = AgentStep(len(self.steps) + 1, "validate", {"file_path": file_path}, val_result)
                             self.steps.append(validation_step)
+                            self._emit({
+                                "type": "tool_result",
+                                "data": {"name": "validate", "success": not val_result.startswith(("❌", "Error")), "result": val_result[:200]}
+                            })
 
                     # Append tool result to messages for context
                     messages.append({
@@ -259,6 +298,7 @@ class AutonomousAgent:
         live, update, done = print_ai_stream()
         content_chunks = []
         reasoning_chunks = []
+        saw_reasoning = False
         tool_calls = None
         err_msg = None
 
@@ -267,8 +307,18 @@ class AutonomousAgent:
                 if event["type"] == "content":
                     update(event["data"])
                     content_chunks.append(event["data"])
+                    # Emit to Web UI if streaming without reasoning mixed in
+                    if saw_reasoning:
+                        self._emit({"type": "text", "data": event["data"]})
                 elif event["type"] == "reasoning":
+                    if not saw_reasoning:
+                        saw_reasoning = True
+                        # Flush buffered content as reasoning
+                        for chunk in content_chunks:
+                            self._emit({"type": "reasoning", "data": chunk})
+                        content_chunks = []
                     reasoning_chunks.append(event["data"])
+                    self._emit({"type": "reasoning", "data": event["data"]})
                 elif event["type"] == "error":
                     err_msg = event["data"]
                     break
@@ -281,6 +331,10 @@ class AutonomousAgent:
             return "", []
 
         content = "".join(content_chunks)
+        # If no reasoning was seen, emit all content chunks as text
+        if not saw_reasoning and content:
+            self._emit({"type": "text", "data": content})
+
         if content and tool_calls:
             done()
 

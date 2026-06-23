@@ -232,12 +232,21 @@ class ChatHandler:
                 break
             yield event
 
-        # Yield final cleaned text if no streaming text was emitted
-        if result_container and not had_text_events[0]:
-            content = getattr(result_container[0], "summary", "") or ""
-            clean = self._clean_content(content)
-            if clean:
-                yield {"type": "text", "data": clean}
+        # Yield tool events from the result (tools are only available after processing)
+        if result_container:
+            result = result_container[0]
+            tools_used = getattr(result, "tools_used", []) or []
+            for tc in tools_used:
+                name = tc.get("name", str(tc)) if isinstance(tc, dict) else str(tc)
+                args = tc if isinstance(tc, dict) else {}
+                yield {"type": "tool", "data": {"name": name, "args": args}}
+
+            # Yield final cleaned text if no streaming text was emitted
+            if not had_text_events[0]:
+                content = getattr(result, "summary", "") or ""
+                clean = self._clean_content(content)
+                if clean:
+                    yield {"type": "text", "data": clean}
         yield {"type": "done", "data": None}
 
     @property

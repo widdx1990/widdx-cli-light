@@ -784,7 +784,7 @@ body:has(.sidebar.collapsed) .sidebar-floating-toggle i {
 }
 
 .message-wrapper.ai,
-.message-wrapper.assistant { display: flex; gap: 12px; }
+.message-wrapper.assistant { display: flex; flex-direction: column; gap: 8px; }
 .ai-avatar {
   width: 30px; height: 30px; border-radius: var(--radius-full);
   background: linear-gradient(135deg, #0284f0, #7c3aed);

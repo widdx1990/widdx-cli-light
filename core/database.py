@@ -16,6 +16,8 @@ from typing import Any
 def get_db_path(project_dir=None):
     if project_dir is None:
         project_dir = Path.cwd()
+    else:
+        project_dir = Path(project_dir)
     widdx_dir = project_dir / ".widdx"
     widdx_dir.mkdir(exist_ok=True)
     return widdx_dir / "widdx.db"
@@ -135,6 +137,14 @@ class Database:
                 for r in rows
             ]
     
+    def count_messages(self, session_id: str) -> int:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
     def update_session(self, session_id, **kwargs):
         allowed_fields = ["name", "branch", "metadata"]
         updates = []

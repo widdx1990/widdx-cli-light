@@ -162,11 +162,12 @@ class SessionSearcher:
             for r in rows
         ]
 
-    def list_recent(self, limit: int = 10) -> list[dict]:
+    def list_recent(self, limit: int = 20) -> list[dict]:
         """List recently updated sessions with message counts."""
-        return [
-            dict(r) for r in self._db.list_sessions(limit=limit)
-        ]
+        sessions = self._db.list_sessions(limit=limit)
+        for s in sessions:
+            s["message_count"] = self._count_messages(s["id"])
+        return sessions
 
     def get_session_context(self, session_id: str, max_messages: int = 50) -> dict | None:
         """Get session details with recent messages."""

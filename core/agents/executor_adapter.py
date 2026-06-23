@@ -93,15 +93,37 @@ def _make_on_event_provider(provider, on_event):
 
 
 def _run_with_stream_events(provider, tool_defs, temperature, msgs, on_event):
-    """Run provider.stream() forwarding events via on_event, return (content, tool_calls)."""
-    content_chunks = []
-    tool_calls = []
+    """Run provider.stream() forwarding events via on_event, return (content, tool_calls).
+
+    Smart forwarding:
+    - If provider yields ``reasoning`` events: content is clean → forward as ``text``
+    - If no reasoning events: content has reasoning embedded → buffer, clean later
+    """
+    content_chunks: list[str] = []
+    tool_calls: list = []
+    reasoning_chunks: list[str] = []
+    saw_reasoning = False
+
     for event in provider.stream(msgs, tool_defs, temperature):
         if event["type"] == "content":
-            content_chunks.append(event["data"])
-            if on_event:
-                on_event({"type": "text", "data": event["data"]})
+            if saw_reasoning:
+                # Provider separates reasoning → content is clean, forward as text
+                content_chunks.append(event["data"])
+                if on_event:
+                    on_event({"type": "text", "data": event["data"]})
+            else:
+                # Might have reasoning embedded — buffer, don't forward yet
+                content_chunks.append(event["data"])
         elif event["type"] == "reasoning":
+            if not saw_reasoning:
+                saw_reasoning = True
+                # Flush buffered content as reasoning (it was reasoning tokens)
+                for chunk in content_chunks:
+                    reasoning_chunks.append(chunk)
+                    if on_event:
+                        on_event({"type": "reasoning", "data": chunk})
+                content_chunks = []
+            reasoning_chunks.append(event["data"])
             if on_event:
                 on_event({"type": "reasoning", "data": event["data"]})
         elif event["type"] == "tool_call":
@@ -112,6 +134,7 @@ def _run_with_stream_events(provider, tool_defs, temperature, msgs, on_event):
         elif event["type"] == "done":
             _, tc_list = event["data"]
             tool_calls = tc_list or tool_calls
+
     return "".join(content_chunks), tool_calls
 
 
@@ -200,6 +223,7 @@ def autonomous_executor(
     ctx: ExecutionContext,
     user_input: str,
     messages: list[dict] | None = None,
+    on_event: Callable | None = None,
 ) -> ExecutionResult:
     """Execute a task using ``AutonomousAgent`` with full tool-calling loop.
 
@@ -207,6 +231,7 @@ def autonomous_executor(
         ctx: Execution context carrying provider, tool_defs, cfg, state.
         user_input: Raw user message text.
         messages: Ignored for autonomous mode (agent builds its own messages).
+        on_event: Optional callback for live streaming events to Web UI.
 
     Returns:
         ExecutionResult with structured step counts and tool usage.
@@ -227,7 +252,8 @@ def autonomous_executor(
         from .agent import AutonomousAgent
 
         state["tools_used"] = []
-        agent = AutonomousAgent(provider, tool_defs, cfg, state)
+        # Pass on_event to agent for live Web UI streaming
+        agent = AutonomousAgent(provider, tool_defs, cfg, state, on_event=on_event)
         steps, summary = agent.run(planned_input)
 
         completed, failed = _count_success_fail(steps)

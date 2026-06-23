@@ -23,7 +23,7 @@ async function refreshSessionList() {
       el.innerHTML = sessions.map(function(s) {
         const id = s.id || s.session_id || '';
         const name = s.name || 'Untitled';
-        const date = s.created_at || s.timestamp || '';
+        const date = s.created_at ? new Date(s.created_at * 1000).toLocaleString() : (s.timestamp || '');
         const msgCount = s.message_count || s.messages?.length || 0;
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
           + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(date) + ' \u00b7 ' + msgCount + ' messages</span></div>'
@@ -99,7 +99,7 @@ async function loadSidebar() {
         var item = document.createElement('div');
         item.className = 'chat-item';
         var sid = s.id || s.session_id || '';
-        item.innerHTML = '<div class="chat-item-content"><div class="chat-item-title">' + escapeHtml(s.title || s.name || 'Chat') + '</div><div class="chat-item-meta">' + (s.created ? new Date(s.created).toLocaleDateString() : '') + '</div></div>';
+        item.innerHTML = '<div class="chat-item-content"><div class="chat-item-title">' + escapeHtml(s.name || s.title || 'Chat') + '</div><div class="chat-item-meta">' + (s.created_at ? new Date(s.created_at * 1000).toLocaleDateString() : '') + '</div></div>';
         item.onclick = function() {
           if (sid && typeof loadSession === 'function') {
             loadSession(sid);
