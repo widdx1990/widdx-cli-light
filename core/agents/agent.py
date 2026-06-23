@@ -127,11 +127,34 @@ class AutonomousAgent:
         self.cost = 0.0
         self._on_event = on_event  # callable(event_dict) for live Web UI streaming
 
+    def _clean_event(self, event: dict) -> dict:
+        """Remove surrogate characters from event data."""
+        if not event:
+            return event
+        import re
+        _sur = re.compile(r'[\ud800-\udfff]')
+        cleaned = {}
+        for k, v in event.items():
+            if isinstance(v, str):
+                cleaned[k] = _sur.sub('\ufffd', v)
+            elif isinstance(v, dict):
+                cleaned[k] = self._clean_event(v)
+            elif isinstance(v, list):
+                cleaned[k] = [
+                    self._clean_event(i) if isinstance(i, dict)
+                    else _sur.sub('\ufffd', i) if isinstance(i, str)
+                    else i
+                    for i in v
+                ]
+            else:
+                cleaned[k] = v
+        return cleaned
+
     def _emit(self, event: dict):
         """Emit a streaming event to the Web UI if callback is set."""
         if self._on_event:
             try:
-                self._on_event(event)
+                self._on_event(self._clean_event(event))
             except Exception:
                 pass
 

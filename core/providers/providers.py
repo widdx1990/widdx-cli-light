@@ -18,6 +18,26 @@ logger = __import__("logging").getLogger("widdx.providers")
 from ..proxy import proxy_manager, ZEN_BASE
 from ..config.keychain import get_key
 
+# ── Surrogate sanitizer ───────────────────────────────────────────────
+_SURROGATE_RE = None  # lazy-compiled
+
+
+def _clean_surrogates(text: str) -> str:
+    """Remove lone surrogate characters (U+D800–U+DFFF) from a string.
+
+    Surrogates are invalid in UTF-8 and crash ``json.dumps`` /
+    ``websocket.send_json``. They can enter the system when a provider
+    API returns JSON that contains ``\\uD800``-style escapes.
+    """
+    if not isinstance(text, str):
+        return text
+    global _SURROGATE_RE
+    if _SURROGATE_RE is None:
+        import re
+        _SURROGATE_RE = re.compile(r'[\ud800-\udfff]')
+    return _SURROGATE_RE.sub('\ufffd', text)
+
+
 # ── Constants ─────────────────────────────────────────────
 _DEFAULT_MAX_TOKENS = 32768
 
@@ -103,7 +123,7 @@ class Provider:
         if func.get("name"):
             current_tool_calls[idx]["function"]["name"] += func["name"]
         if func.get("arguments"):
-            current_tool_calls[idx]["function"]["arguments"] += func["arguments"]
+            current_tool_calls[idx]["function"]["arguments"] += _clean_surrogates(func["arguments"])
         if t.get("id"):
             current_tool_calls[idx]["id"] = t["id"]
 
@@ -121,8 +141,8 @@ class Provider:
         Returns:
             (content, list_of_ToolCall).
         """
-        content = "".join(content_chunks)
-        full_reasoning = "".join(reasoning_chunks)
+        content = _clean_surrogates("".join(content_chunks))
+        full_reasoning = _clean_surrogates("".join(reasoning_chunks))
         if full_reasoning:
             content = f"[thinking]\n{full_reasoning}\n[/thinking]\n\n" + (content or "")
         calls = []
@@ -251,19 +271,20 @@ class OllamaProvider(Provider):
         choice = data.get("choices", [{}])[0]
         msg = choice.get("message", {})
 
-        content = msg.get("content") or ""
+        content = _clean_surrogates(msg.get("content") or "")
 
-        # \u2500\u2500 Native reasoning_content (DeepSeek-R1, QwQ, etc.) \u2500\u2500
-        reasoning = msg.get("reasoning_content") or ""
+        # ── Native reasoning_content (DeepSeek-R1, QwQ, etc.) ──
+        reasoning = _clean_surrogates(msg.get("reasoning_content") or "")
         if reasoning:
             content = f"[thinking]\n{reasoning}\n[/thinking]\n\n" + (content or "")
 
-        # \u2500\u2500 Native tool_calls \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # ── Native tool_calls ──────────────────────────────────
         calls: list[ToolCall] = []
         for tc in msg.get("tool_calls") or []:
             func = tc.get("function", {})
             raw = func.get("arguments", "{}")
             if isinstance(raw, str):
+                raw = _clean_surrogates(raw)
                 try:
                     raw = json.loads(raw) if raw.strip() else {}
                 except json.JSONDecodeError:
@@ -613,12 +634,14 @@ class OpenAICompatibleProvider(Provider):
                         delta = choices[0].get("delta", {})
                         if not delta:
                             continue
-                        if delta.get("content"):
-                            content_chunks.append(delta["content"])
-                            yield {"type": "content", "data": delta["content"]}
-                        if delta.get("reasoning_content"):
-                            reasoning_chunks.append(delta["reasoning_content"])
-                            yield {"type": "reasoning", "data": delta["reasoning_content"]}
+                            if delta.get("content"):
+                                clean = _clean_surrogates(delta["content"])
+                                content_chunks.append(clean)
+                                yield {"type": "content", "data": clean}
+                            if delta.get("reasoning_content"):
+                                clean = _clean_surrogates(delta["reasoning_content"])
+                                reasoning_chunks.append(clean)
+                                yield {"type": "reasoning", "data": clean}
                         tc = delta.get("tool_calls")
                         if tc:
                             for t in tc:
@@ -791,11 +814,13 @@ class OpenCodeZenProvider(OpenAICompatibleProvider):
                             if not delta:
                                 continue
                             if delta.get("content"):
-                                content_chunks.append(delta["content"])
-                                yield {"type": "content", "data": delta["content"]}
+                                clean = _clean_surrogates(delta["content"])
+                                content_chunks.append(clean)
+                                yield {"type": "content", "data": clean}
                             if delta.get("reasoning_content"):
-                                reasoning_chunks.append(delta["reasoning_content"])
-                                yield {"type": "reasoning", "data": delta["reasoning_content"]}
+                                clean = _clean_surrogates(delta["reasoning_content"])
+                                reasoning_chunks.append(clean)
+                                yield {"type": "reasoning", "data": clean}
                             tc = delta.get("tool_calls")
                             if tc:
                                 for t in tc:
@@ -1271,7 +1296,7 @@ class GGUFDirectProvider(Provider):
             )
             try:
                 for token in stream:
-                    chunk = token["choices"][0]["text"]
+                    chunk = _clean_surrogates(token["choices"][0]["text"])
                     content_chunks.append(chunk)
                     yield {"type": "content", "data": chunk}
             finally:
