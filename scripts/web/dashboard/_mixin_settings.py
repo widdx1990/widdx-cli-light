@@ -106,21 +106,29 @@ class SettingsMixin:
 
 
     def _fetch_models(self, provider_id: str) -> list[str]:
-        """Fetch available models for a provider with timeout."""
-        try:
-            from core.providers.providers import get_available_models
-            import threading
-            result = []
-            thread = threading.Thread(target=lambda: result.extend(get_available_models(provider_id)))
-            thread.daemon = True
-            thread.start()
-            thread.join(timeout=5.0)
-            if thread.is_alive():
-                logger.warning("Model fetch timeout for %s", provider_id)
-                return []
-            return result[:50] if result else []
-        except Exception:
-            return []
+        """Fetch available models for a provider — static defaults, then async refresh."""
+        # Static defaults for instant UI response
+        defaults = {
+            "opencode-zen": ["deepseek-v4-flash-free", "mimo-v2.5-free", "qwen3.6-plus-free",
+                           "minimax-m3-free", "nemotron-3-ultra-free", "north-mini-code-free"],
+            "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
+            "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
+            "ollama": [],
+            "gguf": [],
+        }
+        # Try live fetch with 2s timeout for dynamic providers only
+        if provider_id in ("opencode-zen", "ollama"):
+            try:
+                import threading
+                from core.providers.providers import get_available_models
+                result = []
+                t = threading.Thread(target=lambda: result.extend(get_available_models(provider_id)))
+                t.daemon = True; t.start(); t.join(timeout=2.0)
+                if result:
+                    return result[:50]
+            except Exception:
+                pass
+        return defaults.get(provider_id, [])
 
 
     def get_provider_models(self, provider_id: str) -> dict:
