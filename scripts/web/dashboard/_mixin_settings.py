@@ -7,7 +7,24 @@ logger = logging.getLogger("widdx.web.dashboard")
 import threading
 
 
+def _has_keychain_key(provider_name: str) -> bool:
+    """Check if an API key exists in the keychain (env vars)."""
+    try:
+        from core.config.keychain import has_key
+        return has_key(provider_name)
+    except Exception:
+        return False
+
+
 class SettingsMixin:
+    PROVIDERS_META = [
+        {"id": "opencode-zen", "name": "OpenCode Zen", "icon": "fa-cloud", "default_base": "https://opencode.ai/zen/v1"},
+        {"id": "deepseek", "name": "DeepSeek", "icon": "fa-brain", "default_base": "https://api.deepseek.com"},
+        {"id": "openai", "name": "OpenAI", "icon": "fa-openai", "default_base": "https://api.openai.com/v1"},
+        {"id": "ollama", "name": "Ollama (Local)", "icon": "fa-microchip", "default_base": "http://localhost:11434"},
+        {"id": "gguf", "name": "GGUF (Local)", "icon": "fa-box", "default_base": "http://localhost:11434"},
+    ]
+
     def get_settings(self) -> dict:
         """Return full settings with available providers and models."""
         cfg = {}
@@ -38,7 +55,7 @@ class SettingsMixin:
                 "model": provider_cfg.get("model", ""),
                 "base_url": provider_cfg.get("base_url", ""),
                 "api_key": "",  # Never expose the actual key
-                "has_key": bool(provider_cfg.get("api_key")),
+                "has_key": bool(provider_cfg.get("api_key")) or _has_keychain_key(current_provider),
             },
             "cli_theme": cfg.get("cli_theme", "dark"),
             "system_prompt": cfg.get("system_prompt", ""),
@@ -63,7 +80,14 @@ class SettingsMixin:
             if "base_url" in provider and provider["base_url"]:
                 cfg.setdefault("provider", {})["base_url"] = provider["base_url"]
             if "api_key" in provider and provider["api_key"]:
-                cfg.setdefault("provider", {})["api_key"] = provider["api_key"]
+                # Store in keychain (env var) — the canonical location for API keys
+                try:
+                    from core.config.keychain import set_key
+                    provider_name = provider.get("name") or cfg.get("provider", {}).get("name", "")
+                    if provider_name:
+                        set_key(provider_name, provider["api_key"])
+                except Exception:
+                    pass
 
             if "system_prompt" in data:
                 cfg["system_prompt"] = data["system_prompt"]
