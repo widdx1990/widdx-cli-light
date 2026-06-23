@@ -1,10 +1,14 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" dir="ltr" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark light">
 <title>WIDDX Nexus — AI Agent Platform</title>
+<!-- Google Fonts: Inter (LTR) + Cairo (Arabic RTL) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="/static/css/style.css?v=1781965833">
 </head>
@@ -14,36 +18,46 @@
 <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
   <div class="sidebar-brand">
     <div class="brand-logo">W</div>
-    <span class="brand-text">WIDDX Nexus</span>
-    <span class="brand-badge">v3</span>
+    <span class="brand-text" data-i18n="brand_name">WIDDX Nexus</span>
+    <span class="brand-badge" data-i18n="brand_badge">v3</span>
   </div>
 
   <div class="sidebar-new-task" onclick="showView('chat'); if(window.innerWidth<820)toggleSidebar()">
     <i class="fa-solid fa-plus"></i>
-    New chat
+    <span data-i18n="new_chat">New chat</span>
+  </div>
+
+  <div class="sidebar-search-wrap">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <input type="text" class="sidebar-search" id="sidebarSearch" data-i18n="sidebar_search" data-i18n-attr="placeholder" placeholder="Search conversations…" autocomplete="off">
   </div>
 
   <nav class="sidebar-nav">
+    <div class="nav-item" data-view="scheduler" data-tooltip="Scheduler">
+      <i class="fa-solid fa-calendar-clock"></i>
+      <span data-i18n="nav_scheduler">Scheduler</span>
+      <span class="nav-badge" id="cronBadge" style="display:none">0</span>
+    </div>
     <div class="nav-item active" data-view="chat" data-tooltip="Chat">
       <i class="fa-solid fa-comment-dots"></i>
-      Chat
-      <span class="nav-badge live-badge">● Live</span>
+      <span data-i18n="nav_chat">Chat</span>
+      <span class="nav-badge live-badge" data-i18n="nav_live">● Live</span>
     </div>
     <div class="nav-item" data-view="dashboard" data-tooltip="Dashboard">
       <i class="fa-solid fa-gauge-high"></i>
-      Dashboard
+      <span data-i18n="nav_dashboard">Dashboard</span>
     </div>
     <div class="nav-item" data-view="settings" data-tooltip="Settings">
       <i class="fa-solid fa-sliders"></i>
-      Settings
+      <span data-i18n="nav_settings">Settings</span>
     </div>
   </nav>
 
   <div class="sidebar-footer">
     <div class="user-avatar">W</div>
     <div class="user-meta">
-      <div class="user-name">WIDDX User</div>
-      <div class="user-plan" id="plan-badge">Connected</div>
+      <div class="user-name" data-i18n="user_name">WIDDX User</div>
+      <div class="user-plan" id="plan-badge" data-i18n="user_connected">Connected</div>
     </div>
     <div class="user-actions">
       <button id="btn-refresh-nav" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
@@ -75,22 +89,23 @@
           <i class="fa-solid fa-chevron-down model-chevron"></i>
         </div>
         <div class="model-dropdown" id="modelDropdown" style="display:none">
-          <div class="model-dropdown-header">Switch Model</div>
+          <div class="model-dropdown-header" data-i18n="header_switch_model">Switch Model</div>
           <div class="model-dropdown-list" id="modelDropdownList"></div>
-          <div class="model-dropdown-footer" onclick="showView('settings')">Open Settings</div>
+          <div class="model-dropdown-footer" onclick="showView('settings')" data-i18n="header_open_settings">Open Settings</div>
         </div>
         <div class="chat-header-spacer"></div>
         <div class="chat-header-actions">
-          <button class="header-btn" id="starBtn" title="Star this chat" onclick="toggleStar()">
+          <button class="header-btn" id="starBtn" data-i18n="header_star" data-i18n-attr="title" title="Star this chat" onclick="toggleStar()">
             <i class="fa-solid fa-star"></i>
           </button>
-          <button class="header-btn" title="Copy chat link" onclick="shareChat()">
+          <button class="header-btn" data-i18n="header_share" data-i18n-attr="title" title="Copy chat link" onclick="shareChat()">
             <i class="fa-solid fa-share-nodes"></i>
           </button>
-          <button class="header-btn" title="Commands (Ctrl+K)" onclick="openCommandPalette()">
+          <button class="header-btn" data-i18n="header_commands" data-i18n-attr="title" title="Commands (Ctrl+K)" onclick="openCommandPalette()">
             <i class="fa-solid fa-terminal"></i>
           </button>
-          <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">
+          <button class="lang-btn" id="langToggleBtn" onclick="Lang.toggle()" title="Switch language" data-i18n="header_toggle_lang">عربي</button>
+          <button class="theme-btn" onclick="toggleTheme()" data-i18n="header_toggle_theme" data-i18n-attr="title" title="Toggle theme">
             <i class="fa-solid fa-sun icon-sun"></i>
             <i class="fa-solid fa-moon icon-moon"></i>
           </button>
@@ -101,50 +116,55 @@
       <div class="messages-area" id="messagesArea" role="log" aria-live="polite">
         <div class="onboarding" id="onboarding">
           <div class="onboarding-logo">W</div>
-          <h1>Welcome to WIDDX Nexus</h1>
-          <p>Terminal AI Workspace — by <strong>MUHAMMAD MUSLIH</strong></p>
+          <h1 data-i18n="welcome_title">Welcome to WIDDX Nexus</h1>
+          <p><span data-i18n="welcome_sub">Terminal AI Workspace — by</span> <strong data-i18n="welcome_by">MUHAMMAD MUSLIH</strong></p>
           <div class="onboarding-actions">
             <div class="onboarding-card" onclick="sendOnboardingMsg('Hello! What can you do?')">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
-              <span>Introduce yourself</span>
+              <span data-i18n="ob_intro">Introduce yourself</span>
             </div>
             <div class="onboarding-card" onclick="sendOnboardingMsg('Write a Python script to analyze text files in a folder')">
               <i class="fa-solid fa-code"></i>
-              <span>Write code</span>
+              <span data-i18n="ob_code">Write code</span>
             </div>
             <div class="onboarding-card" onclick="sendOnboardingMsg('Research the latest AI agent frameworks')">
               <i class="fa-solid fa-compass"></i>
-              <span>Research</span>
+              <span data-i18n="ob_research">Research</span>
             </div>
             <div class="onboarding-card" onclick="sendOnboardingMsg('Explain how the UIL pipeline works in WIDDX')">
               <i class="fa-solid fa-brain"></i>
-              <span>How WIDDX works</span>
+              <span data-i18n="ob_howwiddx">How WIDDX works</span>
             </div>
           </div>
           <div class="onboarding-tips">
-            <span><kbd>Ctrl+K</kbd> Commands</span>
-            <span><kbd>/</kbd> Slash commands</span>
-            <span><kbd>Ctrl+B</kbd> Navigation</span>
+            <span><kbd>Ctrl+K</kbd> <span data-i18n="tip_commands">Commands</span></span>
+            <span><kbd>/</kbd> <span data-i18n="tip_slash">Slash commands</span></span>
+            <span><kbd>Ctrl+B</kbd> <span data-i18n="tip_nav">Navigation</span></span>
           </div>
         </div>
       </div>
 
+      <!-- Scroll to bottom -->
+      <button class="scroll-bottom-btn" id="scrollBottomBtn" onclick="scrollBottom()" title="Scroll to bottom">
+        <i class="fa-solid fa-chevron-down"></i>
+      </button>
+
       <!-- Typing -->
       <div class="typing-indicator" id="typingIndicator">
         <div class="typing-dots"><span></span><span></span><span></span></div>
-        <span class="typing-label">WIDDX is thinking&hellip;</span>
+        <span class="typing-label" data-i18n="status_processing">WIDDX is processing…</span>
       </div>
 
       <!-- Activity Bar -->
       <div class="activity-bar">
         <div class="activity-status">
           <span class="activity-dot"></span>
-          <span class="activity-label" id="activityLabel">Ready</span>
+          <span class="activity-label" id="activityLabel" data-i18n="status_ready">Ready</span>
           <span class="activity-divider"></span>
           <span class="activity-tool" id="activityTool">—</span>
         </div>
         <div class="activity-actions">
-          <button class="activity-btn" onclick="toggleComputer()" title="Toggle computer panel">
+          <button class="activity-btn" onclick="toggleComputer()" data-i18n="panel_computer" data-i18n-attr="title" title="Toggle computer panel">
             <i class="fa-solid fa-desktop"></i>
           </button>
         </div>
@@ -153,10 +173,10 @@
       <!-- Input -->
       <div class="input-area-wrapper">
         <div class="input-container">
-          <textarea class="input-textarea" id="messageInput" placeholder="Send a message to WIDDX..." rows="1" onkeydown="handleInputKey(event)"></textarea>
+          <textarea class="input-textarea" id="messageInput" data-i18n="input_placeholder" data-i18n-attr="placeholder" placeholder="Send a message to WIDDX..." rows="1" onkeydown="handleInputKey(event)"></textarea>
           <div class="input-toolbar">
             <div class="input-toolbar-left">
-              <button class="input-toolbar-btn" title="Commands" onclick="openCommandPalette()">
+              <button class="input-toolbar-btn" data-i18n="cmd_actions" data-i18n-attr="title" title="Commands" onclick="openCommandPalette()">
                 <i class="fa-solid fa-terminal"></i>
               </button>
             </div>
@@ -165,38 +185,39 @@
             </button>
           </div>
         </div>
-        <div class="input-hint">Enter to send · Shift+Enter for new line · Ctrl+K for commands</div>
-        <div class="disclaimer">WIDDX may produce inaccurate information. Verify important outputs.</div>
+        <div class="input-hint" data-i18n="input_hint">Enter to send · Shift+Enter for new line · Ctrl+K for commands</div>
+        <div class="disclaimer" data-i18n="disclaimer">WIDDX may produce inaccurate information. Verify important outputs.</div>
       </div>
     </div>
 
     <!-- RIGHT PANEL — Hidden by default -->
     <aside class="right-panel collapsed" id="computerPanel">
       <div class="right-panel-header">
-        <span class="right-panel-indicator"></span>
-        <span class="right-panel-title">WIDDX Computer</span>
+        <span class="status-dot running"></span>
+        <span class="right-panel-title" data-i18n="panel_computer">WIDDX Computer</span>
+        <span class="right-panel-subtitle"><i class="fa-solid fa-circle"></i> <span data-i18n="panel_live">Live</span></span>
         <span class="right-panel-header-spacer"></span>
         <button class="right-panel-close" onclick="toggleComputer()" title="Close">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <div class="right-panel-tabs">
-        <div class="right-panel-tab active" onclick="switchTab(this, 'desktop')"><i class="fa-solid fa-desktop"></i> Desktop</div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'terminal')"><i class="fa-solid fa-terminal"></i> Terminal</div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'browser')"><i class="fa-solid fa-globe"></i> Browser</div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'files')"><i class="fa-solid fa-folder"></i> Files</div>
+        <div class="right-panel-tab active" onclick="switchTab(this, 'desktop')"><i class="fa-solid fa-desktop"></i> <span data-i18n="tab_desktop">Desktop</span></div>
+        <div class="right-panel-tab" onclick="switchTab(this, 'terminal')"><i class="fa-solid fa-terminal"></i> <span data-i18n="tab_terminal">Terminal</span></div>
+        <div class="right-panel-tab" onclick="switchTab(this, 'browser')"><i class="fa-solid fa-globe"></i> <span data-i18n="tab_browser">Browser</span></div>
+        <div class="right-panel-tab" onclick="switchTab(this, 'files')"><i class="fa-solid fa-folder"></i> <span data-i18n="tab_files">Files</span></div>
       </div>
       <div class="right-panel-body" id="panelBody">
         <div class="panel-desktop-view">
           <i class="fa-solid fa-display"></i>
-          <div class="panel-desktop-text">Loading system info...</div>
+          <div class="panel-desktop-text" data-i18n="panel_loading">Loading system info...</div>
         </div>
       </div>
       <div class="right-panel-footer">
         <span class="panel-footer-dot"></span>
         <div class="progress-wrap">
           <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-          <span class="progress-count" id="progressCount">Ready</span>
+          <span class="progress-count" id="progressCount" data-i18n="panel_ready">Ready</span>
         </div>
         <span class="panel-footer-spacer"></span>
         <span id="elapsedTime">—</span>
@@ -212,35 +233,60 @@
 <!-- Command Palette -->
 <div class="cmd-palette-overlay" id="cmdPaletteOverlay" onclick="if(event.target===this)closeCommandPalette()">
   <div class="cmd-palette">
-    <input type="text" class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search…" oninput="if(typeof filterPalette==='function')filterPalette(this.value)" onkeydown="if(event.key==='Escape'){if(typeof closeCommandPalette==='function')closeCommandPalette();}if(event.key==='Enter'){const a=document.querySelector('.cmd-palette-item:not([style*=\"display:none\"])');if(a)a.click();}">
+    <input type="text" class="cmd-palette-input" id="cmdPaletteInput" data-i18n="cmd_placeholder" data-i18n-attr="placeholder" placeholder="Type a command or search…" autocomplete="off">
     <div class="cmd-palette-results" id="cmdPaletteResults">
-      <div class="cmd-palette-section">Actions</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('new-task')"><i class="fa-solid fa-plus"></i> New Chat<span class="shortcut">Ctrl+N</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-sidebar')"><i class="fa-solid fa-sidebar"></i> Toggle Navigation<span class="shortcut">Ctrl+B</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-panel')"><i class="fa-solid fa-desktop"></i> Toggle Computer Panel<span class="shortcut">Ctrl+J</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-theme')"><i class="fa-solid fa-circle-half-stroke"></i> Toggle Theme</div>
-      <div class="cmd-palette-section">Views</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-chat')"><i class="fa-solid fa-comment-dots"></i> Chat</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-dashboard')"><i class="fa-solid fa-gauge-high"></i> Dashboard</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-settings')"><i class="fa-solid fa-sliders"></i> Settings</div>
-      <div class="cmd-palette-section">Tools</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-scheduled')"><i class="fa-solid fa-calendar-clock"></i> Task Scheduler</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-sessions')"><i class="fa-solid fa-clock-rotate-left"></i> Sessions</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-memory')"><i class="fa-solid fa-brain"></i> Memory</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-skills')"><i class="fa-solid fa-toolbox"></i> Skills</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gateway')"><i class="fa-solid fa-tower-broadcast"></i> Gateway</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-tasks')"><i class="fa-solid fa-diagram-project"></i> Delegation</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-activity')"><i class="fa-solid fa-chart-simple"></i> Activity</div>
-      <div class="cmd-palette-section">Conversation</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('clear-chat')"><i class="fa-solid fa-eraser"></i> Clear Conversation</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('export')"><i class="fa-solid fa-file-export"></i> Export</div>
-      <div class="cmd-palette-section">Help</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('shortcuts')"><i class="fa-solid fa-keyboard"></i> Keyboard Shortcuts</div>
+      <div class="cmd-palette-section" data-i18n="cmd_actions">Actions</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('new-task')"><i class="fa-solid fa-plus"></i> <span data-i18n="cmd_new_chat">New Chat</span><span class="shortcut">Ctrl+N</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-sidebar')"><i class="fa-solid fa-sidebar"></i> <span data-i18n="cmd_toggle_nav">Toggle Navigation</span><span class="shortcut">Ctrl+B</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-panel')"><i class="fa-solid fa-desktop"></i> <span data-i18n="cmd_toggle_panel">Toggle Computer Panel</span><span class="shortcut">Ctrl+J</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-theme')"><i class="fa-solid fa-circle-half-stroke"></i> <span data-i18n="cmd_toggle_theme">Toggle Theme</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof Lang!=='undefined')Lang.toggle()"><i class="fa-solid fa-language"></i> <span data-i18n="cmd_toggle_lang">Switch Language</span></div>
+      <div class="cmd-palette-section" data-i18n="cmd_views">Views</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-chat')"><i class="fa-solid fa-comment-dots"></i> <span data-i18n="cmd_view_chat">Chat</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-dashboard')"><i class="fa-solid fa-gauge-high"></i> <span data-i18n="cmd_view_dashboard">Dashboard</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-settings')"><i class="fa-solid fa-sliders"></i> <span data-i18n="cmd_view_settings">Settings</span></div>
+      <div class="cmd-palette-section" data-i18n="cmd_tools">Tools</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-scheduled')"><i class="fa-solid fa-calendar-clock"></i> <span data-i18n="cmd_scheduler">Task Scheduler</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-sessions')"><i class="fa-solid fa-clock-rotate-left"></i> <span data-i18n="cmd_sessions">Sessions</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-memory')"><i class="fa-solid fa-brain"></i> <span data-i18n="cmd_memory">Memory</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-skills')"><i class="fa-solid fa-toolbox"></i> <span data-i18n="cmd_skills">Skills</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gateway')"><i class="fa-solid fa-tower-broadcast"></i> <span data-i18n="cmd_gateway">Gateway</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-tasks')"><i class="fa-solid fa-diagram-project"></i> <span data-i18n="cmd_delegation">Delegation</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-activity')"><i class="fa-solid fa-chart-simple"></i> <span data-i18n="cmd_activity">Activity</span></div>
+      <div class="cmd-palette-section" data-i18n="cmd_conversation">Conversation</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('clear-chat')"><i class="fa-solid fa-eraser"></i> <span data-i18n="cmd_clear">Clear Conversation</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('export')"><i class="fa-solid fa-file-export"></i> <span data-i18n="cmd_export">Export</span></div>
+      <div class="cmd-palette-section" data-i18n="cmd_help">Help</div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('shortcuts')"><i class="fa-solid fa-keyboard"></i> <span data-i18n="cmd_shortcuts">Keyboard Shortcuts</span></div>
     </div>
   </div>
 </div>
 
-<script src="/static/js/ui.js?v=1781965833"></script>
-<script src="/static/js/nexus.js?v=1781965833"></script>
+<script src="/static/js/lang.js?v=1781966000"></script>
+<script src="/static/js/ui.js?v=1781966000"></script>
+<script src="/static/js/nexus.js?v=1781966000"></script>
+<script src="/static/js/views/cron.js?v=1781966000"></script>
+<script src="/static/js/views/settings.js?v=1781966000"></script>
+<script src="/static/js/views/mcp.js?v=1781966000"></script>
+<script src="/static/js/views/dashboard.js?v=1781966000"></script>
+<script src="/static/js/views/delegation.js?v=1781966000"></script>
+<script src="/static/js/views/memory.js?v=1781966000"></script>
+<script src="/static/js/views/gateway.js?v=1781966000"></script>
+<script src="/static/js/views/skills.js?v=1781966000"></script>
+<script src="/static/js/views/activity.js?v=1781966000"></script>
+<script src="/static/js/views/sessions.js?v=1781966000"></script>
+<script src="/static/js/views/checkpoints.js?v=1781966000"></script>
+<script src="/static/js/views/git.js?v=1781966000"></script>
+<script src="/static/js/views/doctor.js?v=1781966000"></script>
+<script src="/static/js/views/debug.js?v=1781966000"></script>
+<script src="/static/js/views/permissions.js?v=1781966000"></script>
+<script src="/static/js/views/plugins.js?v=1781966000"></script>
+<script src="/static/js/views/workflows.js?v=1781966000"></script>
+<script src="/static/js/views/proxy.js?v=1781966000"></script>
+<script src="/static/js/views/gguf.js?v=1781966000"></script>
+<script src="/static/js/views/manifest.js?v=1781966000"></script>
+<script src="/static/js/views/tokenbudget.js?v=1781966000"></script>
+<script src="/static/js/views/autocommit.js?v=1781966000"></script>
+<script src="/static/js/views/apikeys.js?v=1781966000"></script>
 </body>
 </html>

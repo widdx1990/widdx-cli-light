@@ -86,19 +86,53 @@ _DANGEROUS_PATTERNS: list[tuple[str, str]] = [
     (r'\biptables\s+-F\b', "flush iptables rules"),
     (r'\broute\s+add\s+-net\s+0\.0\.0\.0\b', "route table manipulation"),
     (r'\btcpkill\b', "kill TCP connections"),
+
+    # ── Bypass coverage: separate flags, long options, symbolic notation ────
+    (r'\brm\s+(-\w+\s+)*--?r(?:ecursive)?\b', "recursive delete (any flag form)"),
+    (r'\bgit\s+push\s+(-f|--force)\b', "force push (short or long flag)"),
+    (r'\bgit\s+push\s+.*--force-with-lease\b', "force push with lease"),
+    (r'\bchmod\s+\d*7\d*7\d*7\b', "world-writable (any octal variant)"),
+    (r'\bchmod\s+.*[ugo]\+[rwx]', "permissive symbolic chmod"),
+    (r'\bcurl\b.*\$\(', "curl with command substitution"),
+    (r'\bwget\b.*\$\(', "wget with command substitution"),
+    (r'\bbash\s+-c\s*".*\$\(.*curl', "bash -c with curl substitution"),
+    (r'\bbash\s+-c\s*\'.*\$\(.*curl', "bash -c with curl substitution (single quotes)"),
+    (r'\btee\s+/dev/[hs]d[a-z]\b', "tee to raw device"),
+    (r'\bdd\s+of=', "dd output to device (of= variant)"),
+    (r'\bRemove-Item\s+.*-Recurse\b', "PowerShell recursive delete (any order)"),
+    (r'\bmv\s+.*\s+/etc/',
+     "move to /etc/"),
+    (r'\bchown\s+-R\b', "recursive ownership change"),
+]
+
+# Patterns that are suspicious but not definitively malicious.
+# These trigger a WARNING rather than a BLOCK.
+_WARN_PATTERNS: list[tuple[str, str]] = [
+    (r'\bdocker\s+(run|exec)\b', "docker container execution — verify image source"),
+    (r'\bsudo\b', "superuser privileges requested"),
+    (r'\bpip\s+install\b', "package installation — verify package name"),
+    (r'\bnpm\s+install\s+-g\b', "global npm install — verify package name"),
+    (r'\bchmod\s+\+x\b', "making file executable"),
+    (r'\bsystemctl\s+(start|stop|restart|enable|disable)\b', "systemd service control"),
+    (r'\bsource\s+.*\|\s*\b', "sourcing piped content"),
+    (r'\beval\b', "eval usage — high risk of code injection"),
 ]
 
 
-def _scan_dangerous(command: str) -> list[str]:
-    """Scan a command for dangerous patterns.
+def _scan_dangerous(command: str) -> tuple[list[str], list[str]]:
+    """Scan a command for dangerous and suspicious patterns.
 
-    Returns a list of risk descriptions found.
+    Returns (blocked_risks, warning_risks).
     """
-    found = []
+    blocked = []
     for pattern, risk_desc in _DANGEROUS_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
-            found.append(risk_desc)
-    return found
+            blocked.append(risk_desc)
+    warnings = []
+    for pattern, risk_desc in _WARN_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            warnings.append(risk_desc)
+    return blocked, warnings
 
 
 def register_dynamic(tool_defs: list[dict], tool_map: dict[str, callable]):
@@ -314,15 +348,18 @@ def _bash(command: str, description: str | None = None) -> str:
     desc = description or command[:50]
 
     # \u2500\u2500 Security: scan for dangerous patterns \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    risks = _scan_dangerous(command)
-    if risks:
-        risk_list = "\n".join(f"  \u2022 {r}" for r in risks)
+    blocked, warnings_list = _scan_dangerous(command)
+    if blocked:
+        risk_list = "\n".join(f"  \u2022 {r}" for r in blocked)
         return (
             f"\ud83d\udeab BLOCKED \u2014 Dangerous command detected:\n\n"
             f"Command: {command[:200]}\n\n"
             f"Risks found:\n{risk_list}\n\n"
             f"Tip: Use safer alternatives or confirm with the user first."
         )
+    prefix = ""
+    if warnings_list:
+        prefix = "\u26a0\ufe0f WARNING \u2014 Suspicious patterns:\n" + "\n".join(f"  \u2022 {r}" for r in warnings_list) + "\n\n"
 
     try:
         from .sandbox import SandboxExecutor
@@ -330,7 +367,7 @@ def _bash(command: str, description: str | None = None) -> str:
         result = sb.execute(command, timeout=BASH_TIMEOUT)
         out = result.stdout[:MAX_STDOUT_CHARS]
         err = result.stderr[:MAX_STDERR_CHARS]
-        ret = f"\U0001f4b2 {desc}\n"
+        ret = prefix + f"\U0001f4b2 {desc}\n"
         if out:
             ret += f"\U0001f4e4 stdout:\n{out}\n"
         if err:
@@ -1128,7 +1165,7 @@ def _handle_edit_files(files: list[dict]) -> str:
 
 register(
     "edit_files",
-    "Apply multiple surgical file edits in a single atomic operation. Each edit: {path, old_string, new_string}. Supports rollback on failure. Uses diff preview.",
+    "Apply multiple surgical file edits in a single atomic operation. Each edit: {{path, old_string, new_string}}. Supports rollback on failure. Uses diff preview.",
     {
         "type": "object",
         "properties": {

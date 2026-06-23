@@ -136,6 +136,10 @@ class AutonomousAgent:
         temperature = self.cfg.get("temperature", 0.7)
         self.steps = []
 
+        # ── Loop safety: detect repeated identical tool calls ─────
+        _recent_calls: list[tuple[str, str]] = []  # (tool_name, json(args))
+        _progress_markers = 0
+
         print_system_msg("Starting autonomous execution...")
 
         for iteration in range(max_iter):
@@ -175,6 +179,23 @@ class AutonomousAgent:
                     step = AgentStep(len(self.steps) + 1, tc.name, tc.args, result)
                     self.steps.append(step)
 
+                    # ── Loop detection: same tool + same args 3x in a row → abort ──
+                    call_sig = (tc.name, json.dumps(tc.args, sort_keys=True))
+                    _recent_calls.append(call_sig)
+                    if len(_recent_calls) > 3:
+                        _recent_calls.pop(0)
+                    if len(_recent_calls) >= 3 and len(set(_recent_calls)) == 1:
+                        print_system_msg("🔁 Loop detected — same tool called 3 times in a row. Aborting.")
+                        return self.steps, f"Aborted: repeated {tc.name} with same arguments."
+
+                    # ── Progress tracking: count files written + bash successes ──
+                    if tc.name in {"write", "edit"} and step.status == "done":
+                        _progress_markers += 1
+                    elif tc.name == "bash" and step.status == "done":
+                        _progress_markers += 1
+                    if iteration > 4 and _progress_markers == 0:
+                        print_system_msg("⏳ No files written or successful bash commands after 5 iterations — agent may be stuck.")
+
                     # If the tool wrote or edited a file, run validation immediately
                     if tc.name in {"write", "edit"} and not step.result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed", "No such", "File not found")):
                         file_path = tc.args.get("file_path")
@@ -196,6 +217,28 @@ class AutonomousAgent:
             else:
                 # AI responded without tool calls — task is complete (or AI is asking a question)
                 summary = content or "Task completed."
+
+                # ── Auto-validate written files before declaring done ──
+                written_steps = [
+                    s for s in self.steps
+                    if s.tool_name in {"write", "edit"} and s.status == "done"
+                ]
+                if written_steps:
+                    # Validate the last 3 written files
+                    validation_failures = []
+                    for step in written_steps[-3:]:
+                        file_path = step.args.get("file_path", "")
+                        if file_path:
+                            val = self._auto_validate_file(file_path)
+                            if val.startswith(("❌", "Error", "Failed")):
+                                validation_failures.append(f"{file_path}: {val[:120]}")
+                    if validation_failures:
+                        summary = (
+                            "⚠️ Output written but validation found issues:\n"
+                            + "\n".join(validation_failures)
+                            + "\n\nOriginal summary: " + (content or "(none)")
+                        )
+
                 self._show_final_result(content)
                 print_agent_done(self.steps, summary)
                 return self.steps, summary
@@ -386,12 +429,20 @@ class AutonomousAgent:
         skill_names = [s.name for s in _skill_manager.list_all()]
         skill_text = "\n".join(f"  {s}" for s in skill_names) if skill_names else "  (none)"
 
-        prompt_template = self.custom_prompt or AGENT_PROMPT
-        return prompt_template.format(
+        if self.custom_prompt:
+            return self.custom_prompt
+
+        # Escape curly braces in tool descriptions — they contain JSON schemas
+        # that would break str.format()
+        safe_tool = tool_text.replace("{", "{{").replace("}", "}}")
+        safe_mcp = mcp_text.replace("{", "{{").replace("}", "}}")
+        safe_skill = skill_text.replace("{", "{{").replace("}", "}}")
+
+        return AGENT_PROMPT.format(
             tool_descriptions=(
-                f"Built-in tools:\n{tool_text}\n\n"
-                f"MCP tools:\n{mcp_text}\n\n"
-                f"Skills:\n{skill_text}"
+                f"Built-in tools:\n{safe_tool}\n\n"
+                f"MCP tools:\n{safe_mcp}\n\n"
+                f"Skills:\n{safe_skill}"
             )
         )
 

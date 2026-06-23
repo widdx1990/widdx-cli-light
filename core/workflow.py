@@ -17,12 +17,127 @@ from typing import Any, Callable, Optional
 class WorkflowEngine:
     """Orchestrates multiple sub-agents for complex tasks."""
 
-    def __init__(self, provider, tool_defs: list, cfg: dict, state: dict):
-        self.provider = provider
-        self.tool_defs = tool_defs
-        self.cfg = cfg
-        self.state = state
+    def __init__(
+        self,
+        provider: Any = None,
+        tool_defs: list[dict[str, Any]] | None = None,
+        cfg: dict[str, Any] | None = None,
+        state: dict[str, Any] | None = None,
+    ) -> None:
+        """Initialize WorkflowEngine. If provider or tool_defs are not supplied,
+
+        load the active defaults from settings and core.
+        """
+        from pathlib import Path
+        if provider is None:
+            from core.config.settings import load as load_cfg
+            from core.providers.providers import create_provider
+            self.cfg = load_cfg()
+            self.provider = create_provider(self.cfg)
+        else:
+            self.provider = provider
+            self.cfg = cfg or {}
+
+        if tool_defs is None:
+            from core import tools
+            self.tool_defs = list(tools.TOOL_DEFINITIONS)
+        else:
+            self.tool_defs = tool_defs
+
+        self.state = state or {}
         self._results: dict[str, Any] = {}
+        self._workflows_dir = Path.cwd() / ".widdx" / "workflows"
+        self._workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    def create(self, name: str, steps: list[dict[str, Any]]) -> Any:
+        """Create and save a new workflow as a JSON file.
+
+        Args:
+            name: The human-readable name of the workflow.
+            steps: The list of workflow step definitions.
+
+        Returns:
+            An object containing the workflow ID.
+        """
+        import uuid
+        workflow_id = f"wf_{uuid.uuid4().hex[:12]}"
+        workflow_data = {
+            "id": workflow_id,
+            "name": name,
+            "steps": steps,
+            "created_at": time.time(),
+        }
+        path = self._workflows_dir / f"{workflow_id}.json"
+        path.write_text(json.dumps(workflow_data, indent=2), encoding="utf-8")
+        return type("Workflow", (object,), {"id": workflow_id})()
+
+    def list_workflows(self) -> list[dict[str, Any]]:
+        """List all saved workflows from .widdx/workflows/.
+
+        Returns:
+            List of saved workflow dictionaries.
+        """
+        workflows = []
+        if not self._workflows_dir.exists():
+            return []
+        for p in self._workflows_dir.glob("*.json"):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                workflows.append(data)
+            except Exception:
+                pass
+        return sorted(workflows, key=lambda x: x.get("created_at", 0), reverse=True)
+
+    def run(self, workflow_id: str) -> str:
+        """Execute the steps of a saved workflow.
+
+        Args:
+            workflow_id: The ID of the workflow to run.
+
+        Returns:
+            Status summary of the executed workflow.
+        """
+        path = self._workflows_dir / f"{workflow_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(f"Workflow {workflow_id} not found")
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        steps = data.get("steps", [])
+
+        try:
+            from core.activity import add as add_event
+            add_event("system", detail=f"Starting workflow: {data.get('name')}", icon="fa-play", agent="workflow", status="running")
+        except Exception:
+            pass
+
+        results = []
+        for i, step in enumerate(steps):
+            step_type = step.get("type", "agent")
+            prompt = step.get("prompt", "")
+
+            try:
+                from core.activity import add as add_event
+                add_event("system", detail=f"Running step {i+1}/{len(steps)}: {prompt[:50]}", icon="fa-gears", agent="workflow", status="running")
+            except Exception:
+                pass
+
+            if step_type == "agent":
+                res = self.agent(prompt, label=f"step-{i+1}")
+                results.append(res)
+            elif step_type == "parallel":
+                tasks = step.get("tasks", [])
+                thunks = [lambda t=task: self.agent(t, label=f"step-{i+1}-p") for task in tasks]
+                res = self.parallel(thunks)
+                results.extend(res)
+
+        try:
+            from core.activity import add as add_event
+            add_event("system", detail=f"Completed workflow: {data.get('name')}", icon="fa-check-double", agent="workflow", status="done")
+        except Exception:
+            pass
+
+        return f"Workflow completed successfully. Executed {len(steps)} steps."
+
 
     # ── agent — run a single sub-agent ────────────────────────────────
 

@@ -269,3 +269,47 @@ def get_hot_reloader(
             if auto_start:
                 _hot_reloader.start()
         return _hot_reloader
+
+
+class PluginLoader:
+    """Interface for managing skills as plugins in the Web UI."""
+
+    def list_plugins(self) -> list[dict[str, str | bool]]:
+        """List all skills as plugins with their active status.
+
+        Returns:
+            List of plugin info dicts with 'name', 'enabled', and 'description'.
+        """
+        from core.skills import skill_manager
+        skills = skill_manager.list_all()
+        active = skill_manager.active
+        return [
+            {
+                "name": s.name,
+                "enabled": active is not None and active.name == s.name,
+                "description": s.description,
+            }
+            for s in skills
+        ]
+
+    def enable(self, name: str) -> bool:
+        """Activate a skill plugin by name.
+
+        Args:
+            name: The name of the skill plugin to enable.
+
+        Returns:
+            True if activation succeeded, False otherwise.
+        """
+        from core.skills import skill_manager
+        return skill_manager.activate(name)
+
+    def disable(self, name: str) -> None:
+        """Deactivate the active skill plugin.
+
+        Args:
+            name: The name of the skill plugin to disable.
+        """
+        from core.skills import skill_manager
+        skill_manager.deactivate()
+

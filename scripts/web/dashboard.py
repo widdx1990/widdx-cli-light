@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("widdx.web.dashboard")
 
 from core._path import ensure_project_root
 ensure_project_root()
+
+# Project root — used for disk-usage and file-tree operations
+ROOT = Path(__file__).resolve().parent.parent
 
 
 class Dashboard:
@@ -254,6 +258,7 @@ class Dashboard:
                 "api_key": "",  # Never expose the actual key
                 "has_key": bool(provider_cfg.get("api_key")),
             },
+            "cli_theme": cfg.get("cli_theme", "dark"),
             "system_prompt": cfg.get("system_prompt", ""),
             "temperature": cfg.get("temperature", 0.7),
             "max_turns": cfg.get("max_turns", 10),
@@ -283,6 +288,8 @@ class Dashboard:
                 cfg["temperature"] = float(data["temperature"])
             if "max_turns" in data:
                 cfg["max_turns"] = int(data["max_turns"])
+            if "cli_theme" in data:
+                cfg["cli_theme"] = str(data["cli_theme"]).lower()
 
             save_cfg(cfg)
             return {"status": "ok", "message": "Settings saved"}
@@ -601,8 +608,10 @@ class Dashboard:
 
     def _check_provider(self) -> dict:
         try:
-            from core.providers.providers import get_provider
-            p = get_provider()
+            from core.providers.providers import create_provider
+            from core.config.settings import load as load_cfg
+            cfg = load_cfg()
+            p = create_provider(cfg)
             return {"status": "ok" if p else "warning", "message": f"Provider: {p.name if p else 'None'}"}
         except Exception as e:
             return {"status": "error", "message": str(e)}

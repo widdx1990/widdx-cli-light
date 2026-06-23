@@ -13,6 +13,8 @@ import httpx
 from pathlib import Path
 from typing import Optional
 
+logger = __import__("logging").getLogger("widdx.providers")
+
 from ..proxy import proxy_manager, ZEN_BASE
 from ..config.keychain import get_key
 

@@ -29,6 +29,16 @@ from .contract import (ExecutionMode, ExecutionPlan, RoutingDecision,
 from .knowledge import KnowledgeBase
 from .verifier import get_verifier
 
+# ── v4.0 Engine adapters (feature-flagged, safe by default) ──
+try:
+    from core.engine_adapters import (
+        engine_enabled, engine_flags_summary,
+        adapt_classification, adapt_plan, adapt_validation,
+    )
+    _ENGINES_AVAILABLE = True
+except ImportError:
+    _ENGINES_AVAILABLE = False
+
 
 # -------------------------------------------------------------------
 # Execution Mode Executor Map — imported lazily to avoid circular
@@ -125,9 +135,71 @@ class UnifiedIntelligenceLayer:
             context=ctx_analyzer or None,
         )
 
+        # ── v4.0: Intelligence Engine parallel classification ──
+        if _ENGINES_AVAILABLE and engine_enabled(cfg or {}, "intelligence"):
+            try:
+                from core.intelligence.classifier import classify_input
+                new_cr = classify_input(user_input)
+                adapted = adapt_classification(new_cr)
+                logger.info(
+                    "IntelligenceEngine: %s (%.2f) vs Analyzer: %s (%.2f)",
+                    adapted.task_type.value, adapted.confidence,
+                    classification.task_type.value, classification.confidence,
+                )
+                if adapted.task_type != classification.task_type:
+                    logger.warning(
+                        "Engine DISAGREE: intelligence=%s analyzer=%s → using analyzer",
+                        adapted.task_type.value, classification.task_type.value,
+                    )
+                # Future: when confidence is high enough, use engine result
+                # For now: old analyzer always wins (safe default)
+            except Exception as e:
+                logger.debug("IntelligenceEngine unavailable: %s", e)
+
+        # Step 1.5: Validate — check classification confidence
+        # Correction boundary: if fallback + very low confidence → force CHAT
+        if getattr(classification, 'is_fallback', False) and classification.confidence < 0.4:
+            logger.warning(
+                "Fallback classification with very low confidence (%.2f) — "
+                "forcing CHAT to prevent cascading errors.",
+                classification.confidence,
+            )
+            classification.task_type = classification.task_type.__class__.CHAT \
+                if hasattr(classification.task_type, '__class__') else TaskType.CHAT
+            try:
+                from core.uil.contract import TaskType as _TT
+                classification.task_type = _TT.CHAT
+                classification.confidence = 0.3
+            except Exception:
+                pass
+
+        if classification.confidence < 0.4:
+            logger.warning(
+                "Low classification confidence (%.2f) for '%s' — "
+                "classified as %s. Execution may produce poor results.",
+                classification.confidence, user_input[:60],
+                classification.task_type.value,
+            )
+        elif classification.confidence < 0.6:
+            logger.info(
+                "Moderate confidence (%.2f) for '%s' → %s",
+                classification.confidence, user_input[:60],
+                classification.task_type.value,
+            )
+
         # Step 2: Route — decide how to execute
         decision = self.router.route(classification, self._tool_defs,
                                         knowledge=self.knowledge)
+
+        # Correction boundary: low-confidence → never run AUTONOMOUS or EXPERT_TEAM
+        if classification.confidence < 0.5:
+            if decision.plan.mode in (ExecutionMode.AUTONOMOUS, ExecutionMode.EXPERT_TEAM):
+                logger.warning(
+                    "Low confidence (%.2f) — downgrading %s → SIMPLE_CHAT with full tools",
+                    classification.confidence, decision.plan.mode.value,
+                )
+                decision.plan.mode = ExecutionMode.SIMPLE_CHAT
+                decision.tool_defs = self._tool_defs  # give all tools so LLM can still help
 
         # Step 2.5: Plan — ALWAYS runs (Phase 2.1: dead-code removal)
         plan = self.planner.plan(classification, user_input)
@@ -169,8 +241,22 @@ class UnifiedIntelligenceLayer:
         executor = self._resolve_executor(decision, executors)
         t0 = time.perf_counter()
         err_msg: str | None = None
+
+        # Inject plan steps into executor input so LLM-guided executors follow the plan
+        enriched_input = user_input
+        if plan and plan.steps and not plan.is_minimal:
+            plan_text = "\n".join(
+                f"  [{s.id}] {s.description}"
+                for s in plan.steps
+            )
+            enriched_input = (
+                f"{user_input}\n\n"
+                f"Execution Plan ({len(plan.steps)} steps):\n{plan_text}\n\n"
+                f"Follow this plan step by step."
+            )
+
         try:
-            raw = executor(ctx, user_input, messages)
+            raw = executor(ctx, enriched_input, messages)
         except Exception as exc:
             err_msg = str(exc)
             raw = ExecutionResult(
@@ -222,19 +308,80 @@ class UnifiedIntelligenceLayer:
                              else logging.WARNING)
                     logger.log(level, "  [%s] %s — %s", f.severity.value, f.check_name, f.message)
 
-        # Auto-retry on critical verification failures (max once)
-        _retried = False
-        if verification_report.criticals and not _retried:
-            _retried = True
+        # ── v4.0: Validation Engine parallel check ──
+        if _ENGINES_AVAILABLE and engine_enabled(cfg or {}, "validation"):
+            try:
+                from core.validation.reporter import validate_result
+                val_report = validate_result(
+                    raw if isinstance(raw, ExecutionResult) else ExecutionResult(
+                        success=True, summary=raw_text, error=err_msg,
+                    ),
+                    classification,
+                    context=verifier_context,
+                )
+                logger.info(
+                    "ValidationEngine: score=%.2f (syntax=%.2f runtime=%.2f quality=%.2f) "
+                    "vs old verifier: %s",
+                    val_report.overall,
+                    val_report.syntax_score, val_report.runtime_score,
+                    val_report.quality_score,
+                    verification_report.summarize(),
+                )
+                # Attach adapted report for comparison
+                adapted_val = adapt_validation(val_report)
+                if adapted_val.passed_all != verification_report.passed_all:
+                    logger.warning(
+                        "Validation DISAGREE: new=%s old=%s",
+                        "PASS" if adapted_val.passed_all else "FAIL",
+                        "PASS" if verification_report.passed_all else "FAIL",
+                    )
+            except Exception as e:
+                logger.debug("ValidationEngine unavailable: %s", e)
+
+        # Auto-retry on critical verification failures (up to 3 retries)
+        MAX_RETRIES = 3
+        for retry_attempt in range(1, MAX_RETRIES + 1):
+            if not verification_report.criticals:
+                break
+
             logger.warning(
-                "Verification CRITICAL — retrying execution with error context. "
-                "(%d criticals)", len(verification_report.criticals)
+                "Verification CRITICAL — retry %d/%d with re-analysis. "
+                "(%d criticals)",
+                retry_attempt, MAX_RETRIES, len(verification_report.criticals),
             )
             error_hint = "VERIFICATION FAILED:\n" + "\n".join(
                 f"  - {f.message}" for f in verification_report.criticals
             )
+            # Re-analyze with error context — may change task type
+            retry_input = user_input + "\n\n[PREVIOUS OUTPUT HAD BUGS]\n" + error_hint
+            retry_classification = self.analyzer.analyze(
+                retry_input,
+                context=ctx_analyzer or None,
+            )
+            # Only re-route if confidence dropped or task type changed
+            if (retry_classification.task_type != classification.task_type
+                    or retry_classification.confidence < classification.confidence):
+                retry_decision = self.router.route(
+                    retry_classification, self._tool_defs,
+                    knowledge=self.knowledge,
+                )
+                retry_plan = self.planner.plan(retry_classification, retry_input)
+                retry_decision.plan.decomposed = retry_plan
+                retry_ctx = ExecutionContext(
+                    decision=retry_decision,
+                    task_plan=retry_plan,
+                    provider=getattr(self, "provider", None),
+                    tool_defs=retry_decision.tool_defs,
+                    cfg=cfg or {},
+                    state=state or {},
+                )
+                retry_executor = self._resolve_executor(retry_decision, executors)
+            else:
+                retry_ctx = ctx
+                retry_executor = executor
+
             try:
-                raw = executor(ctx, user_input + "\n\n" + error_hint, messages)
+                raw = retry_executor(retry_ctx, retry_input, messages)
                 elapsed = time.perf_counter() - t0
                 # Re-run verification on the retry output
                 raw_text = raw.summary if isinstance(raw, ExecutionResult) else str(raw)
@@ -250,13 +397,29 @@ class UnifiedIntelligenceLayer:
                         success=True,
                         summary=raw_text,
                     ),
-                    classification=classification,
+                    classification=retry_classification,
                     context=verifier_context if verifier_context else None,
                 )
                 verification_report.execution_time = round(time.perf_counter() - verify_t0, 4)
-                logger.info("Retry verification: %s", verification_report.summarize())
+                logger.info(
+                    "Retry %d/%d verification: %s",
+                    retry_attempt, MAX_RETRIES, verification_report.summarize(),
+                )
+                if not verification_report.criticals:
+                    logger.info("Retry %d succeeded — criticals resolved.", retry_attempt)
             except Exception as retry_err:
-                logger.warning("Retry also failed: %s", retry_err)
+                logger.warning(
+                    "Retry %d/%d failed with exception: %s",
+                    retry_attempt, MAX_RETRIES, retry_err,
+                )
+        else:
+            # Loop completed all retries without breaking (still has criticals)
+            if verification_report.criticals:
+                logger.warning(
+                    "All %d retries exhausted. %d critical(s) remain unresolved. "
+                    "Delivering best-effort result.",
+                    MAX_RETRIES, len(verification_report.criticals),
+                )
 
         # Step 5: Feedback — build ExecutionResult + populate telemetry
         steps_count = len(plan.steps) if plan and plan.steps else 0
@@ -299,6 +462,21 @@ class UnifiedIntelligenceLayer:
                 f"Verification failed: {len(verification_report.criticals)} critical "
                 f"issue(s). Run with /debug or check logs for details."
             )
+
+        # ── Quality score: multi-signal metric beyond "no exception" ──
+        score = 1.0
+        score -= 0.3 * len(verification_report.criticals)
+        score -= 0.1 * len([f for f in verification_report.findings if not f.passed])
+        if result.summary and len(result.summary) < 50:
+            score -= 0.2  # suspiciously short output
+        if hasattr(result, 'steps_completed') and result.steps_completed > 0:
+            tool_failures = sum(
+                1 for sr in (ctx.step_results or [])
+                if getattr(sr, 'status', '') == 'failed'
+            )
+            if tool_failures > 0:
+                score -= 0.1 * (tool_failures / result.steps_completed)
+        result.quality_score = round(max(0.0, min(1.0, score)), 2)
 
         # Mark step_results as completed/failed based on execution outcome
         if ctx.step_results:

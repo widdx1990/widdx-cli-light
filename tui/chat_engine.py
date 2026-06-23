@@ -282,6 +282,12 @@ class ChatEngine:
             for event in state.provider.stream(msgs, state.tool_defs, cfg_t):
                 if event["type"] == "content":
                     chunks.append(event["data"])
+                    # Send chunk for typewriter effect (batch every few chars for efficiency)
+                    if len(chunks) >= 5 or event["data"].endswith((".", "!", "?", "\n")):
+                        chunk_text = "".join(chunks[-5:]) if len(chunks) >= 5 else event["data"]
+                        self.app.call_from_thread(
+                            self.screen._handle_stream_chunk, chunk_text
+                        )
                 elif event["type"] == "reasoning":
                     reasoning += event["data"]
                 elif event["type"] == "error":

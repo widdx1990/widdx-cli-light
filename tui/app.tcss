@@ -16,6 +16,8 @@ $dim:       #475569;
 $accent:    #f5a623;
 $err:       #ef4444;
 
+/* Animations are managed via Python in Textual */
+
 Screen { layout: vertical; background: $bg; color: $text; }
 
 /* ── Header Widget ───────────────────────── */
@@ -131,11 +133,16 @@ Screen { layout: vertical; background: $bg; color: $text; }
 #processing.thinking {
     background: $secondary;
 }
+/* Enhanced shimmer bar variant for extra polish */
+#processing.shimmer {
+    background: $primary;
+}
 #body {
     height: 1fr;
 }
 #body.sidebar-open #chat-log {
     width: 62%;
+    transition: width 0.25s;
 }
 #body.sidebar-open #view-panel {
     width: 38%;
@@ -147,6 +154,7 @@ Screen { layout: vertical; background: $bg; color: $text; }
     background: $bg;
     padding: 1 2;
     border: none;
+    transition: width 0.25s;
 }
 #stream-output {
     height: 1fr;
@@ -166,8 +174,13 @@ Screen { layout: vertical; background: $bg; color: $text; }
     border-left: solid $border;
     overflow: hidden;
     layout: vertical;
+    transition: width 0.25s, opacity 0.25s;
+    opacity: 0;
 }
-#view-panel.active { display: block; }
+#view-panel.active {
+    display: block;
+    opacity: 1;
+}
 #view-panel #view-title { height: 3; background: $bg; border-bottom: solid $border; color: $accent; text-style: bold; content-align: center middle; margin-bottom: 1; }
 #view-panel #view-list { height: 1fr; padding: 0; }
 #view-panel #view-back { height: 3; width: 100%; margin-top: 1; background: $panel-bg; border: solid $border; color: $muted; }
@@ -562,7 +575,12 @@ Button {
     background: transparent; border: none; padding: 0 2; color: #cbd5e1;
     transition: background 120ms, color 120ms;
 }
-Button:hover { color: $phover; }
+Button:hover {
+    color: $phover;
+}
+Button:focus {
+    background: $phover;
+}
 Button.primary { background: $primary; color: #0b0f19; text-style: bold; }
 Button.primary:hover { background: $phover; }
 Button.error { background: #b91c1c; color: $text; text-style: bold; }
@@ -586,9 +604,18 @@ TextArea:focus { border: solid $primary; }
     background: #1e1b4b;
     border-top: solid $primary;
     text-style: bold;
+    transition: opacity 0.3s;
 }
-.toast-hidden { display: none; }
-.toast-visible { display: block; }
+.toast-hidden {
+    display: none;
+    opacity: 0;
+}
+.toast-visible {
+    display: block;
+    opacity: 1;
+}
+.toast-fade-out {
+}
 
 Scrollbar { width: 1; background: transparent; }
 Scrollbar > .scrollbar--track { background: transparent; }
@@ -779,3 +806,4 @@ App.theme-light .grid-icon-btn { background: #e6e9ef; border: round #ccd0da; col
 App.theme-light .grid-icon-btn:hover { background: #dce0e8; border: round #4f46e5; color: #6366f1; }
 App.theme-light .sess-btn { border: solid #ccd0da; }
 App.theme-light .sess-btn:hover { background: #dce0e8; border: solid #4f46e5; color: #6366f1; }
+/* Light theme animations are managed via Python in Textual */

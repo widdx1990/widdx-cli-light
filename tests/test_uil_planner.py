@@ -267,9 +267,9 @@ def test_planner_selective_in_brain():
         ExecutionMode.EXPERT_TEAM: mock_exec,
     }
 
-    # COMPLEX → full decomposition, many steps
+    # Use input with NO explicit code/db keywords → features-only → COMPLEX → EXPERT_TEAM
     result_complex, decision_complex = uil.process(
-        "build a web app with React and Flask",
+        "a complete frontend application with user interface",
         executors=executors,
     )
     assert "minimal=False" in result_complex.summary or "steps=" in result_complex.summary

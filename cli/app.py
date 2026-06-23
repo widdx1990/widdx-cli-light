@@ -275,7 +275,14 @@ class CLIApp:
 
     def _process_message(self, user_input: str):
         """Process a normal message through UIL."""
-        self.messages.append({"role": "user", "content": user_input})
+        # ── Vision: detect images in input ──────────────────────
+        try:
+            from core.vision import process_user_input_with_vision
+            clean_input, self.messages = process_user_input_with_vision(user_input, self.messages)
+        except Exception:
+            clean_input = user_input
+
+        self.messages.append({"role": "user", "content": clean_input or user_input})
 
         # Build tool definitions
         tool_defs = list(tools.TOOL_DEFINITIONS)

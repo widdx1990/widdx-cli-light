@@ -17,3 +17,4 @@ from core.delegation import DelegationManager
 from core.voice import TTSEngine
 from core.cron.scheduler import CronScheduler
 from core.gateway import GatewayCore, Platform, Message, Reply
+from core.vision import describe_image, VisionMode, process_user_input_with_vision

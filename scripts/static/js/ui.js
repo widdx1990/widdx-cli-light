@@ -147,21 +147,16 @@ document.addEventListener('keydown', (e) => {
 
 // ═══════════════ SCROLL TO BOTTOM ═══════════════════
 
-const messagesArea = document.getElementById('messagesArea');
-const scrollBtn = document.getElementById('scrollBottomBtn');
-if (messagesArea && scrollBtn) {
-  messagesArea.addEventListener('scroll', () => {
-    const distFromBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight;
-    scrollBtn.classList.toggle('visible', distFromBottom > 200);
-  });
-}
-
-function scrollToBottom() {
-  if (messagesArea) {
-    messagesArea.scrollTo({ top: messagesArea.scrollHeight, behavior: 'smooth' });
+(function initScrollBtn() {
+  const area = document.getElementById('messagesArea');
+  const btn = document.getElementById('scrollBottomBtn');
+  if (area && btn) {
+    area.addEventListener('scroll', function() {
+      var dist = area.scrollHeight - area.scrollTop - area.clientHeight;
+      btn.classList.toggle('visible', dist > 200);
+    });
   }
-  if (scrollBtn) scrollBtn.classList.remove('visible');
-}
+})();
 
 // ═══════════════ TEXTAREA AUTO-RESIZE ═══════════════════
 
@@ -224,20 +219,33 @@ function escapeHtml(str) {
 
 // ═══════════════ MARKDOWN ═══════════════════
 // Canonical markdown parser — used by both ui.js and nexus.js
+// NOTE: Every regex callback MUST escape captured groups before inserting into HTML.
+
+/** Very basic tag-stripping sanitizer — removes any leftover <script>, <style>, on*= */
+function _sanitizeHtml(html) {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/\bon\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/javascript\s*:/gi, 'blocked:');
+}
 
 function parseMarkdown(text) {
   if (!text) return '';
-  var html = escapeHtml(text);
+  // First pass: strip any raw HTML tags / event handlers before escaping
+  var html = _sanitizeHtml(text);
+  // Second pass: escape HTML entities so any remaining < > & become harmless
+  html = escapeHtml(html);
 
-  // Strip thinking tags
+  // Strip thinking tags (both bracketed and XML forms)
   html = html.replace(/\[?\/?thinking\]?/gi, '');
-  html = html.replace(/<thinking>/gi, '').replace(/<\/thinking>/gi, '');
+  html = html.replace(/&lt;thinking&gt;/gi, '').replace(/&lt;\/thinking&gt;/gi, '');
 
-  // Fenced code blocks
+  // Fenced code blocks — content is already escaped; labels are re-escaped for safety
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(match, lang, code) {
     var escaped = code.trimEnd();
     var langLabel = lang ? '<span class="code-lang-label">' + escapeHtml(lang) + '</span>' : '';
-    return '</div><div class="code-block-wrapper">' + langLabel + '<button class="copy-code-btn" onclick="copyCodeBlock(this)" title="Copy code"><i class="fa-solid fa-copy"></i></button><pre><code>' + escaped + '</code></pre></div><div class="ai-text">';
+    return '<div class="code-block-wrapper">' + langLabel + '<button class="copy-code-btn" onclick="copyCodeBlock(this)" title="Copy code"><i class="fa-solid fa-copy"></i></button><pre><code>' + escaped + '</code></pre></div>';
   });
 
   // Inline code
@@ -270,8 +278,12 @@ function parseMarkdown(text) {
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
 
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Links — both label and URL are passed through escapeHtml in callback for safety
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, url) {
+    var safeLabel = escapeHtml(label);
+    var safeUrl = escapeHtml(url);
+    return '<a href="' + safeUrl + '" target="_blank" rel="noopener">' + safeLabel + '</a>';
+  });
 
   // Paragraphs: double newline
   var parts = html.split(/\n\n+/);
@@ -287,6 +299,11 @@ function parseMarkdown(text) {
   // Single newlines to <br>
   html = html.replace(/\n/g, '<br>');
 
+  // Convert ⚙ tool calls into step cards
+  html = html.replace(/⚙ (\w+):(.+?)(?=<br>|$)/g, function(_, name, detail) {
+    return '<div class="step-card"><div class="step-head open" tabindex="0" role="button" aria-expanded="true"><span class="step-check done"><i class="fa-solid fa-check"></i></span><i class="fa-solid fa-wrench step-icon"></i><span class="step-title">' + escapeHtml(name) + '</span><span class="step-time">done</span><i class="fa-solid fa-chevron-down step-chevron"></i></div><div class="step-body open"><div class="step-body-inner"><div class="step-description">' + escapeHtml(detail) + '</div></div></div></div>';
+  });
+
   // Clean up empty paragraphs
   html = html.replace(/<p><br><\/p>/g, '');
   html = html.replace(/<p>\s*<\/p>/g, '');
@@ -294,11 +311,9 @@ function parseMarkdown(text) {
   return html;
 }
 
-// Tool call renderer — converts ⚙ tool calls into step cards
+// Tool call renderer — kept for external use, delegates to parseMarkdown
 function parseToolCalls(text) {
-  return text.replace(/⚙ (\w+):(.+?)(?=<br>|$)/g, function(_, name, detail) {
-    return '<div class="step-card"><div class="step-head" onclick="this.classList.toggle(\'open\');this.nextElementSibling.classList.toggle(\'open\')"><span class="step-check done"><i class="fa-solid fa-check"></i></span><i class="fa-solid fa-wrench step-icon"></i><span class="step-title">' + escapeHtml(name) + '</span><span class="step-time">done</span><i class="fa-solid fa-chevron-down step-chevron"></i></div><div class="step-body open"><div class="step-body-inner"><div class="step-description">' + escapeHtml(detail) + '</div></div></div></div>';
-  });
+  return parseMarkdown(text);
 }
 
 // ═══════════════ COMMAND PALETTE ═══════════════════
@@ -313,6 +328,31 @@ function toggleCommandPalette() {
   if (input) { input.value = ''; input.focus(); }
   filterPalette('');
 }
+
+(function initCommandPaletteInput() {
+  var input = document.getElementById('cmdPaletteInput');
+  if (!input) return;
+  input.addEventListener('input', function() {
+    filterPalette(input.value);
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeCommandPalette();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var items = document.querySelectorAll('.cmd-palette-item');
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].style.display !== 'none') {
+          items[i].click();
+          break;
+        }
+      }
+    }
+  });
+})();
 
 window.openCommandPalette = toggleCommandPalette;
 
@@ -410,7 +450,7 @@ function createStepCard(title, icon, status) {
     '<i class="fa-solid fa-circle" style="color:var(--text-muted);font-size:8px;"></i>';
   var checkClass = status === 'done' ? ' done' : '';
   var checkStyle = status === 'running' ? ' style="border-color:var(--accent);"' : status === 'error' ? ' style="border-color:var(--warning);"' : '';
-  card.innerHTML = '<div class="step-head"><span class="step-check' + checkClass + '"' + checkStyle + '>' + statusIcon + '</span><i class="fa-solid ' + icon + ' step-icon"></i><span class="step-title">' + escapeHtml(title) + '</span><span class="step-time"></span><i class="fa-solid fa-chevron-down step-chevron"></i></div><div class="step-body"><div class="step-body-inner"></div></div>';
+  card.innerHTML = '<div class="step-head" tabindex="0" role="button" aria-expanded="false"><span class="step-check' + checkClass + '"' + checkStyle + '>' + statusIcon + '</span><i class="fa-solid ' + icon + ' step-icon"></i><span class="step-title">' + escapeHtml(title) + '</span><span class="step-time"></span><i class="fa-solid fa-chevron-down step-chevron"></i></div><div class="step-body"><div class="step-body-inner"></div></div>';
   return card;
 }
 
@@ -474,7 +514,56 @@ async function streamText(container, fullText, speed) {
   }
 }
 
+// ═══════════════ CONFIRM DIALOG ═══════════════════
+
+var _dialogResolve = null;
+
+function showConfirm(title, desc, opts) {
+  opts = opts || {};
+  var overlay = document.getElementById('confirmDialog');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.id = 'confirmDialog';
+    overlay.onclick = function(e) { if (e.target === overlay) closeConfirm(false); };
+    document.body.appendChild(overlay);
+  }
+  var iconType = opts.type || 'warning';
+  var iconMap = { warning: 'fa-triangle-exclamation', error: 'fa-circle-xmark', info: 'fa-circle-info' };
+  var confirmText = opts.confirmText || 'Confirm';
+  var cancelText = opts.cancelText || 'Cancel';
+  var confirmClass = opts.danger ? 'dialog-btn danger' : 'dialog-btn primary';
+  overlay.innerHTML = '<div class="dialog-box"><div class="dialog-icon ' + iconType + '"><i class="fa-solid ' + (iconMap[iconType] || 'fa-triangle-exclamation') + '"></i></div><div class="dialog-title">' + escapeHtml(title) + '</div><div class="dialog-desc">' + escapeHtml(desc) + '</div><div class="dialog-actions"><button class="dialog-btn secondary" id="confirmCancel">' + cancelText + '</button><button class="' + confirmClass + '" id="confirmOk">' + confirmText + '</button></div></div>';
+  overlay.classList.add('open');
+  document.getElementById('confirmOk').onclick = function() { closeConfirm(true); };
+  document.getElementById('confirmCancel').onclick = function() { closeConfirm(false); };
+  document.getElementById('confirmOk').focus();
+  return new Promise(function(resolve) { _dialogResolve = resolve; });
+}
+
+function closeConfirm(result) {
+  var overlay = document.getElementById('confirmDialog');
+  if (overlay) overlay.classList.remove('open');
+  if (_dialogResolve) _dialogResolve(result);
+  _dialogResolve = null;
+}
+
 // ═══════════════ RANDOM HELPERS ═══════════════════
 
 function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function nowTime() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+// ═══════════════ LOCALIZATION INIT ═══════════════════
+
+// When lang.js fires a 'langchange' event, update dynamic-only elements
+// (static [data-i18n] elements are already handled by Lang._translateDOM)
+document.addEventListener('langchange', function(e) {
+  var lang = e.detail && e.detail.lang;
+
+  // Update document title
+  document.title = (lang === 'ar') ? 'ويدكس نيكسس — منصة الذكاء الاصطناعي' : 'WIDDX Nexus — AI Agent Platform';
+
+  // The lang-btn text content is managed by data-i18n="header_toggle_lang"
+  // which Lang._translateDOM already handles, so nothing extra needed there.
+});
+

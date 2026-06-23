@@ -9,6 +9,8 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
 
 
 def get_db_path(project_dir=None):
@@ -322,3 +324,72 @@ def get_db():
     if _db is None:
         _db = Database()
     return _db
+
+
+class SessionDB:
+    """Wrapper over Database class to match the Web UI dashboard requirements."""
+
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        """Initialize the SessionDB wrapper.
+
+        Args:
+            db_path: Path to the SQLite database file.
+        """
+        self.db = Database(db_path=db_path)
+
+    def save(self, name: str, messages: list[dict]) -> str:
+        """Save a new session and its messages.
+
+        Args:
+            name: Name of the session.
+            messages: List of message dicts containing role and content.
+
+        Returns:
+            The generated session ID.
+        """
+        session_id = self.db.create_session(name)
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls")
+            self.db.add_message(session_id, role, content, tool_calls)
+        return session_id
+
+    def load(self, session_id: str) -> dict[str, Any] | None:
+        """Load a session and its messages.
+
+        Args:
+            session_id: The ID of the session to load.
+
+        Returns:
+            A dictionary containing session details and message history,
+            or None if the session does not exist.
+        """
+        session = self.db.get_session(session_id)
+        if not session:
+            return None
+        messages = self.db.get_messages(session_id)
+        return {
+            "id": session["id"],
+            "name": session["name"],
+            "branch": session["branch"],
+            "created": session["created_at"] * 1000,  # convert to ms for JS
+            "messages": [
+                {
+                    "role": m["role"],
+                    "content": m["content"],
+                    "tool_calls": m["tool_calls"],
+                    "timestamp": m["timestamp"],
+                }
+                for m in messages
+            ]
+        }
+
+    def delete(self, session_id: str) -> None:
+        """Delete a session.
+
+        Args:
+            session_id: The ID of the session to delete.
+        """
+        self.db.delete_session(session_id)
+

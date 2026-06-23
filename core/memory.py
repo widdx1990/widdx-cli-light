@@ -58,11 +58,34 @@ class MemoryStore:
     # ── CRUD ───────────────────────────────────────────────────────────
 
     def save(self, name: str, content: str, metadata: dict | None = None) -> Path:
-        """Save a memory. Updates MEMORY.md index."""
+        """Save a memory. Updates MEMORY.md index.
+        Detects conflicts: if same slug exists with different content,
+        saves the old version as .old.md before overwriting.
+        """
         slug = to_slug(name)
         filepath = self.memory_dir / f"{slug}.md"
 
+        # ── Conflict detection ──────────────────────────────────────
+        existing_body = self.get(name)
+        if existing_body is not None and existing_body.strip() != content.strip():
+            old_path = self.memory_dir / f"{slug}.old.md"
+            try:
+                old_path.write_text(filepath.read_text(encoding="utf-8"),
+                                    encoding="utf-8")
+                import logging
+                logging.getLogger("widdx.memory").warning(
+                    "Memory conflict: '%s' overwritten with different content. "
+                    "Previous version saved to %s", name, old_path,
+                )
+            except OSError:
+                pass
+
         meta = metadata or {}
+        # Add timestamp metadata if not present
+        if "created" not in meta and "updated" not in meta:
+            from datetime import datetime, timezone
+            meta["updated"] = datetime.now(timezone.utc).isoformat()
+
         meta_str = ""
         if meta:
             meta_lines = ["metadata:"]

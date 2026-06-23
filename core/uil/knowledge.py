@@ -103,21 +103,49 @@ class KnowledgeBase:
 
     def record(self, classification: Any, result: Any,
                decision: Any) -> None:
-        """Store an execution outcome and persist to disk."""
+        """Store an execution outcome and persist to disk.
+
+        Self-correction: if verification found critical issues or
+        confidence is very low, override success=False to prevent
+        the knowledge system from reinforcing bad classifications.
+        """
         verify_crit = 0
         verify_err = 0
         if hasattr(result, "verification") and result.verification:
             verify_crit = len(result.verification.criticals)
             verify_err = len(result.verification.errors)
 
+        # Override success if verification found critical issues
+        raw_success = result.success if hasattr(result, 'success') else False
+        if verify_crit > 0 and raw_success:
+            raw_success = False
+            logger.info(
+                "Knowledge override: marking as failed due to %d "
+                "verification criticals", verify_crit,
+            )
+
+        # Check classification confidence — low confidence = unreliable record
+        classification_confidence = 0.0
+        if hasattr(classification, 'confidence'):
+            classification_confidence = classification.confidence
+            if classification_confidence < 0.3:
+                logger.info(
+                    "Knowledge noting: classification confidence very low (%.2f) "
+                    "— record may be unreliable", classification_confidence,
+                )
+
+        task_type = (classification.task_type.value
+                     if hasattr(classification, 'task_type')
+                     else str(classification))
+
         record = ExecutionRecord(
-            task_type=classification.task_type.value if hasattr(classification, 'task_type') else str(classification),
+            task_type=task_type,
             execution_mode=result.mode.value if hasattr(result, 'mode') and result.mode else "",
             steps_planned=result.steps_planned if hasattr(result, 'steps_planned') else 0,
             steps_completed=result.steps_completed if hasattr(result, 'steps_completed') else 0,
             steps_failed=result.steps_failed if hasattr(result, 'steps_failed') else 0,
             execution_time=result.execution_time if hasattr(result, 'execution_time') else 0.0,
-            success=result.success if hasattr(result, 'success') else False,
+            success=raw_success,
             timestamp=time.time(),
             tools_used=list(result.tools_used) if hasattr(result, 'tools_used') and result.tools_used else None,
             verification_criticals=verify_crit,

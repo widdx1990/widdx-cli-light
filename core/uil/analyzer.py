@@ -25,6 +25,7 @@ _LLM_CLASSIFIER_PROMPT = (
     "1. TASK TYPE: code_read, code_write, code_modify, code_review, research, browser, database, reasoning, chat, file_ops, complex\n"
     "2. EXECUTION MODE: direct, background, cron, delegation\n"
     "3. COMPLEXITY: simple, medium, complex\n"
+    "4. FEATURES: web, api, database, cli, testing\n"
     "\n"
     "RULES - TASK TYPE:\n"
     "- code_read: user wants to read, view, explain existing code\n"
@@ -50,11 +51,50 @@ _LLM_CLASSIFIER_PROMPT = (
     "- medium: 3-8 steps, needs an agent\n"
     "- complex: 8+ steps, needs delegation/sub-agents\n"
     "\n"
-    "Respond with EXACTLY 3 lines:\n"
+    "RULES - FEATURES (include all that apply, comma-separated from: web, api, database, cli, testing):\n"
+    "- web: if user mentions web, frontend, UI, HTML, CSS, JavaScript, website, موقع\n"
+    "- api: if user mentions API, REST, endpoint, backend server\n"
+    "- database: if user mentions database, SQL, storage, DB, data persistence\n"
+    "- cli: if user mentions CLI, command-line, terminal, console\n"
+    "- testing: if user mentions tests, testing, unittest, pytest, اختبار\n"
+    "\n"
+    "Respond with EXACTLY 4 lines:\n"
     "Line 1: task_type (one word)\n"
     "Line 2: execution_mode (one word)\n"
-    "Line 3: complexity (one word)"
+    "Line 3: complexity (one word)\n"
+    "Line 4: features (comma-separated, or 'none')"
 )
+
+
+def _parse_features_from_string(features_str: str) -> dict[str, bool]:
+    """Parse a comma-separated feature string into detected_features dict.
+
+    Handles: "web, api, database", "none", "web,api", empty string.
+    """
+    known_features = {"web", "api", "database", "cli", "testing"}
+    result = {f: False for f in known_features}
+    if not features_str or features_str.strip() in ("", "none"):
+        return result
+    parts = [p.strip() for p in features_str.split(",") if p.strip()]
+    for part in parts:
+        if part in known_features:
+            result[part] = True
+    return result
+
+
+def _infer_features_from_text(text: str) -> dict[str, bool]:
+    """Infer detected_features from raw user text via keyword matching.
+
+    Used when LLM is unavailable (fallback path).
+    """
+    lower = text.lower()
+    return {
+        "web": any(w in lower for w in ["web", "frontend", "ui", "html", "css", "javascript", "website", "موقع", "واجهة"]),
+        "api": any(w in lower for w in ["api", "rest", "endpoint", "backend"]),
+        "database": any(w in lower for w in ["database", "sql", "storage", "db", "data", "قاعدة بيانات"]),
+        "cli": any(w in lower for w in ["cli", "command-line", "terminal", "console"]),
+        "testing": any(w in lower for w in ["test", "testing", "unittest", "pytest", "اختبار"]),
+    }
 
 
 class LLMClassifier:
@@ -126,6 +166,10 @@ class LLMClassifier:
             execution_mode = lines[1].lower().strip()
             complexity_str = lines[2].lower().strip()
 
+            # Parse optional 4th line: features (web, api, database, cli, testing)
+            features_line = lines[3].lower().strip() if len(lines) >= 4 else ""
+            parsed_features = _parse_features_from_string(features_line)
+
             # Map task type
             type_map = {
                 "code_read": TaskType.CODE_READ,
@@ -184,6 +228,11 @@ class LLMClassifier:
                     "is_background": execution_mode == "background",
                     "is_cron": execution_mode == "cron",
                     "is_delegation": execution_mode == "delegation",
+                    "web": parsed_features.get("web", False),
+                    "api": parsed_features.get("api", False),
+                    "database": parsed_features.get("database", False),
+                    "cli": parsed_features.get("cli", False),
+                    "testing": parsed_features.get("testing", False),
                 },
                 decision_path=[step],
                 is_fallback=False,
@@ -208,6 +257,68 @@ class TaskAnalyzer:
         self.provider = provider
         self._llm = LLMClassifier(provider=provider)
 
+    @staticmethod
+    def _cross_validate(user_input: str,
+                        classification: ClassificationResult
+                        ) -> ClassificationResult:
+        """Cross-validate classification against user input keywords.
+
+        Checks for obvious mismatches between input language and
+        classified task type. Adjusts confidence and may reclassify.
+        """
+        lower = user_input.lower()
+
+        # Keywords that strongly suggest specific task types
+        write_keywords = ["create", "write", "build", "make", "implement",
+                          "new", "develop", "generate", "scaffold",
+                          "أنشئ", "اكتب", "ابن", "ابني", "طور", "صمم", "أضف"]
+        read_keywords = ["read", "show", "display", "view", "open", "explain",
+                         "tell me about", "what is", "اقرأ", "أظهر", "اعرض"]
+        modify_keywords = ["edit", "update", "change", "modify", "fix",
+                           "update", "improve", "refactor",
+                           "عدل", "غير", "أصلح", "حسن"]
+        research_keywords = ["search", "find", "research", "look up",
+                             "investigate", "what is", "how to",
+                             "ابحث", "ادرس", "استقص"]
+
+        # Compute keyword match scores for reclassification hints
+        write_score = sum(1 for w in write_keywords if w in lower)
+        read_score = sum(1 for w in read_keywords if w in lower)
+        modify_score = sum(1 for w in modify_keywords if w in lower)
+        research_score = sum(1 for w in research_keywords if w in lower)
+
+        # If classified as CHAT but has ANY intent keywords → likely misclassification
+        if classification.task_type == TaskType.CHAT:
+            total_intent = write_score + read_score + modify_score + research_score
+            if total_intent >= 1:
+                # Likely misclassification — reduce confidence so downstream can flag
+                reduction = 0.3 if total_intent >= 2 else 0.6
+                classification.confidence = round(classification.confidence * reduction, 2)
+                classification.reasoning += (
+                    f" | CROSS-VALIDATION: classified as CHAT but input has "
+                    f"{total_intent} intent keywords — confidence ×{reduction}"
+                )
+
+        # If write-like but classified as read
+        if (classification.task_type == TaskType.CODE_READ
+                and write_score > read_score):
+            classification.confidence = round(classification.confidence * 0.5, 2)
+            classification.reasoning += (
+                f" | CROSS-VALIDATION: classified as CODE_READ but "
+                f"write keywords ({write_score}) > read keywords ({read_score})"
+            )
+
+        # If write-like but classified as modify
+        if (classification.task_type == TaskType.CODE_MODIFY
+                and write_score >= 2 and modify_score == 0):
+            classification.confidence = round(classification.confidence * 0.6, 2)
+            classification.reasoning += (
+                f" | CROSS-VALIDATION: classified as CODE_MODIFY but "
+                f"write keywords ({write_score}) found with no modify keywords"
+            )
+
+        return classification
+
     def analyze(self, user_input: str, context: dict | None = None,
                 ) -> ClassificationResult:
         """Analyze user input and return a classification result.
@@ -219,22 +330,94 @@ class TaskAnalyzer:
         if result:
             cls_result, steps = result
             cls_result.decision_path = steps
+            # Cross-validate LLM classification
+            cls_result = self._cross_validate(user_input, cls_result)
             return cls_result
 
-        # Fallback: default to chat
+        # Fallback: keyword-based with extended matching + feature detection
+        lower = user_input.lower()
+
+        # Detect features from text (web, api, database, cli, testing)
+        fallback_features = _infer_features_from_text(user_input)
+
+        # Determine task type via extended keyword matching
+        # Order matters: check most specific first
+        if any(w in lower for w in [
+            "create", "write", "build", "make", "implement",
+            "new", "develop", "generate", "scaffold",
+            "أنشئ", "اكتب", "ابن", "ابني", "طور", "صمم",
+        ]):
+            task_type = TaskType.CODE_WRITE
+            domain = Domain.CODE
+            reasoning = "Fallback: keyword CODE_WRITE"
+        elif any(w in lower for w in [
+            "edit", "update", "change", "modify", "fix", "improve",
+            "refactor", "add feature", "patch",
+            "عدل", "غير", "أصلح", "حسن", "طور",
+        ]):
+            task_type = TaskType.CODE_MODIFY
+            domain = Domain.CODE
+            reasoning = "Fallback: keyword CODE_MODIFY"
+        elif any(w in lower for w in [
+            "read", "show", "display", "view", "open", "explain",
+            "tell me about", "what is",
+            "اقرأ", "أظهر", "اعرض", "صف",
+        ]):
+            task_type = TaskType.CODE_READ
+            domain = Domain.CODE
+            reasoning = "Fallback: keyword CODE_READ"
+        elif any(w in lower for w in [
+            "search", "find", "research", "look up", "investigate",
+            "what is", "how to",
+            "ابحث", "ادرس", "استقص",
+        ]):
+            task_type = TaskType.RESEARCH
+            domain = Domain.RESEARCH
+            reasoning = "Fallback: keyword RESEARCH"
+        elif any(w in lower for w in [
+            "query", "select", "insert into", "delete from", "drop table",
+            "database", "sql", "mongodb", "redis",
+            "استعلام", "قاعدة بيانات",
+        ]) or re.search(r'\b(db|sql)\b', lower):
+            task_type = TaskType.DATABASE
+            domain = Domain.DATABASE
+            reasoning = "Fallback: keyword DATABASE"
+        elif fallback_features.get("web") or fallback_features.get("api") or fallback_features.get("database"):
+            # Has development features but no explicit keyword — treat as complex
+            task_type = TaskType.COMPLEX
+            domain = Domain.CODE
+            reasoning = "Fallback: inferred COMPLEX from features"
+        else:
+            task_type = TaskType.CHAT
+            domain = Domain.CHAT
+            reasoning = "Fallback: LLM classifier unavailable"
+
+        complexity = 0.7 if task_type in (TaskType.CODE_WRITE, TaskType.COMPLEX) else (
+            0.5 if task_type == TaskType.CODE_MODIFY else 0.1
+        )
+
         step = DecisionStep(
             component="TaskAnalyzer",
             input_summary=user_input[:80],
-            output="FALLBACK -> chat",
+            output=f"FALLBACK -> {task_type.value}",
             score=0.5,
-            detail="LLM unavailable, defaulting to chat",
+            detail=f"LLM unavailable, keyword fallback to {task_type.value}",
         )
         return ClassificationResult(
-            task_type=TaskType.CHAT,
-            domain=Domain.CHAT,
+            task_type=task_type,
+            domain=domain,
             confidence=0.5,
-            complexity=0.1,
-            reasoning="Fallback: LLM classifier unavailable",
+            complexity=complexity,
+            reasoning=reasoning,
+            keywords=[],
+            detected_features={
+                "execution_mode": "direct",
+                "is_complex": task_type == TaskType.COMPLEX,
+                "is_background": False,
+                "is_cron": False,
+                "is_delegation": task_type == TaskType.COMPLEX,
+                **fallback_features,
+            },
             is_fallback=True,
             decision_path=[step],
         )

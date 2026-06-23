@@ -1,0 +1,63 @@
+/* WIDDX Nexus — Checkpoints View */
+/* Depends on: nexus.js (TEMPLATES, escapeHtml, setActivity, showConfirm, showToast) */
+
+async function showCheckpointsView(area) {
+  setActivity('Loading', 'checkpoints');
+  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
+    + '<h3>\uD83D\uDCF8 Checkpoints</h3>'
+    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Snapshot-based file saves (no Git required)</p>'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;margin-bottom:12px" onclick="createCheckpoint()">\uD83D\uDCF8 Create Checkpoint</button>'
+    + '<div id="checkpoint-list">Loading...</div></div></div>';
+  try {
+    const r = await fetch('/api/checkpoints');
+    const cps = await r.json();
+    const el = document.getElementById('checkpoint-list');
+    if (!Array.isArray(cps) || !cps.length) {
+      el.innerHTML = '<span style="color:var(--text-muted)">No checkpoints yet.</span>';
+    } else {
+      el.innerHTML = cps.map(function(c) {
+        const id = c.id || '';
+        const ts = c.timestamp || c.created_at || '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+          + '<span><strong>' + escapeHtml(id.slice(0, 12)) + '</strong> \u00b7 ' + escapeHtml(ts) + '</span>'
+          + '<span>'
+          + '<button style="background:none;border:none;color:var(--accent);cursor:pointer" onclick="restoreCheckpoint(\'' + escapeHtml(id) + '\')" title="Restore">\u21a9</button>'
+          + '<button style="background:none;border:none;color:var(--error);cursor:pointer" onclick="delCheckpoint(\'' + escapeHtml(id) + '\')" title="Delete">\u2715</button></span></div>';
+      }).join('');
+    }
+    setActivity('Ready', '\u2014');
+  } catch(e) {
+    const el = document.getElementById('checkpoint-list');
+    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    setActivity('Ready', '\u2014');
+  }
+}
+
+window.createCheckpoint = async function() {
+  try {
+    const r = await fetch('/api/checkpoints', { method:'POST' });
+    const d = await r.json();
+    showToast(d.status === 'created' ? 'Checkpoint created' : (d.error || 'Failed'), d.status === 'created' ? 'success' : 'error');
+    showCheckpointsView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.restoreCheckpoint = async function(id) {
+  var ok = await showConfirm('Restore checkpoint?', 'This will overwrite current file state. This action cannot be undone.', { confirmText: 'Restore', danger: true });
+  if (!ok) return;
+  try {
+    const r = await fetch('/api/checkpoints/' + encodeURIComponent(id) + '/restore', { method:'POST' });
+    const d = await r.json();
+    showToast(d.status === 'restored' ? 'Checkpoint restored' : (d.error || 'Failed'), d.status === 'restored' ? 'success' : 'error');
+  } catch(e) { showToast(e.message, 'error'); }
+};
+
+window.delCheckpoint = async function(id) {
+  var ok = await showConfirm('Delete checkpoint?', 'This checkpoint will be permanently removed.', { confirmText: 'Delete', danger: true });
+  if (!ok) return;
+  try {
+    await fetch('/api/checkpoints/' + encodeURIComponent(id), { method:'DELETE' });
+    showToast('Checkpoint deleted', 'success');
+    showCheckpointsView(document.getElementById('messagesArea'));
+  } catch(e) { showToast(e.message, 'error'); }
+};

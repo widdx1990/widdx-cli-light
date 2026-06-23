@@ -198,8 +198,8 @@ def test_brain_full_end_to_end():
     """End-to-end: analyze a task and get the right routing decision."""
     test_cases = [
         ("hello how are you",           ExecutionMode.SIMPLE_CHAT, 0),
-        ("create a new flask app",      ExecutionMode.SIMPLE_CHAT, 6),
-        ("build a complete web app",    ExecutionMode.SIMPLE_CHAT, 13),
+        ("create a new flask app",      ExecutionMode.AUTONOMOUS, 6),
+        ("a complete web app",          ExecutionMode.EXPERT_TEAM, 13),
         ("navigate to google.com",      ExecutionMode.SIMPLE_CHAT, 2),
         ("xylophone purples",           ExecutionMode.SIMPLE_CHAT, 13),
     ]

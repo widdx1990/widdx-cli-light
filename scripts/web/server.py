@@ -2,16 +2,16 @@
 
 Architecture:
   server.py          ← FastAPI app, routes, WebSocket
-  chat.py            ← LLM chat handler
+  chat.py            ← LLM chat handler (UIL Brain pipeline)
   sandbox.py         ← Sandbox (terminal, browser, files)
+  dashboard.py       ← All-system aggregator for the REST API
   static/            ← Frontend assets
-    index.html       ← Main page
-    css/style.css    ← Styling
+    index.html       ← Main page (with RTL/Arabic i18n)
+    css/style.css    ← Full design system (dark/light, RTL)
     js/              ← JavaScript modules
-      app.js         ← Entry point
-      chat.js        ← Chat panel
-      sandbox.js     ← Sandbox panel
-      websocket.js   ← WebSocket client
+      lang.js        ← i18n engine (en/ar)
+      ui.js          ← Theme, sidebar, markdown parser, command palette
+      nexus.js       ← Main app logic, WebSocket, all views
 
 Usage:
     python scripts/web_app.py
@@ -98,23 +98,66 @@ async def status():
     """System status endpoint."""
     chat = get_chat()
     sandbox = get_sandbox()
+    from pathlib import Path
     return {
         "status": "ok",
         "provider": chat.info,
         "sandbox": {"mode": sandbox.mode},
         "version": "3.0.0",
+        "project": Path.cwd().name,
     }
+
+
+@app.get("/api/tools")
+async def api_tools():
+    """List available tools for slash commands and UI."""
+    try:
+        chat = get_chat()
+        defs = chat._get_tool_defs() if hasattr(chat, "_get_tool_defs") else []
+        tools_out = []
+        for td in defs:
+            name = td.get("name") or (td.get("function") or {}).get("name", "")
+            desc = td.get("description") or (td.get("function") or {}).get("description", "")
+            if name:
+                tools_out.append({"name": name, "description": desc[:120] if desc else ""})
+        return {"tools": tools_out, "count": len(tools_out)}
+    except Exception as e:
+        return {"tools": [], "error": str(e)}
+
+
+@app.get("/api/project/session")
+async def api_project_session():
+    """Load current project session (same store as CLI/TUI)."""
+    try:
+        from core.project import state as project_state
+        session = project_state.load_session()
+        if session:
+            return session
+        return {"messages": [], "state": {}}
+    except Exception as e:
+        return {"messages": [], "state": {}, "error": str(e)}
+
+
+@app.get("/api/branches")
+async def api_branches():
+    """List session branches for the current project."""
+    try:
+        from core.project.state import list_branches, get_current_branch
+        return {"current": get_current_branch(), "branches": list_branches()}
+    except Exception as e:
+        return {"current": "main", "branches": ["main"], "error": str(e)}
 
 
 @app.post("/api/chat")
 async def chat_message(request: Request):
-    """Send a chat message (non-streaming)."""
+    """Send a chat message (non-blocking)."""
     data = await request.json()
     message = data.get("message", "")
     history = data.get("history", [])
 
     chat = get_chat()
-    result = chat.chat(message, history)
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, chat.chat, message, history)
     return result
 
 
@@ -545,12 +588,25 @@ async def api_version():
 _ratelimit_store: dict[str, list[float]] = {}
 _RATELIMIT_MAX = 30  # max requests
 _RATELIMIT_WINDOW = 60  # per N seconds
+_RATELIMIT_LAST_CLEANUP: float = 0.0
 
 
 def _check_rate_limit(client_ip: str) -> bool:
-    """Return True if request is allowed, False if rate-limited."""
+    """Return True if request is allowed, False if rate-limited.
+
+    Periodically purges stale entries (IPs with no recent activity)
+    so the dict doesn't grow unbounded.
+    """
+    global _RATELIMIT_LAST_CLEANUP
     now = time.time()
     window = _RATELIMIT_WINDOW
+
+    # ── Periodic full cleanup (every 5 min) ─────────────────
+    if now - _RATELIMIT_LAST_CLEANUP > 300:
+        cutoff = now - window
+        _ratelimit_store.clear()
+        _RATELIMIT_LAST_CLEANUP = now
+
     timestamps = _ratelimit_store.get(client_ip, [])
     # Remove old timestamps outside the window
     timestamps = [t for t in timestamps if now - t < window]
@@ -586,25 +642,61 @@ async def api_computer_info():
 
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
-    """WebSocket endpoint for streaming chat.
+    """WebSocket endpoint for chat — persistent session, non-blocking.
 
     Receives:  {"message": "...", "history": [...]}
-    Sends:     {"type": "text|tool|reasoning|done|error", "data": "..."}
+    Sends:     {"type": "text|tool|done|error", "data": "..."}
     """
     await websocket.accept()
     logger.info("WebSocket connected")
+    loop = asyncio.get_running_loop()
 
     try:
-        data = await websocket.receive_text()
-        payload = json.loads(data)
-        message = payload.get("message", "")
-        history = payload.get("history", [])
+        while True:
+            # Wait for the next message from the client (blocks until data arrives)
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            message = payload.get("message", "")
+            history = payload.get("history", [])
 
-        chat = get_chat()
-        for event in chat.stream_chat(message, history):
-            await websocket.send_json(event)
-            if event["type"] == "done" or event["type"] == "error":
-                break
+            chat = get_chat()
+
+            try:
+                # Run blocking chat.chat() in a thread so the event loop stays free
+                result = await loop.run_in_executor(None, chat.chat, message, history)
+            except Exception as call_err:
+                await websocket.send_json({"type": "error", "data": str(call_err)})
+                await websocket.send_json({"type": "done", "data": ""})
+                continue
+
+            if result.get("error"):
+                await websocket.send_json({"type": "error", "data": result["error"]})
+            else:
+                content = result.get("content", "")
+                if content:
+                    await websocket.send_json({"type": "text", "data": content})
+                # ── Send tool calls ──
+                tools_used = result.get("tools", [])
+                tool_results = result.get("tool_results", [])
+                for i, tc in enumerate(tools_used):
+                    await websocket.send_json({
+                        "type": "tool",
+                        "data": {"name": tc.get("name", "tool"), "args": tc}
+                    })
+                    # Send tool result if available
+                    if i < len(tool_results):
+                        await websocket.send_json({
+                            "type": "tool_result",
+                            "data": tool_results[i]
+                        })
+                # ── Send reasoning if available ──
+                reasoning = result.get("reasoning", "")
+                if reasoning:
+                    await websocket.send_json({
+                        "type": "reasoning",
+                        "data": reasoning
+                    })
+            await websocket.send_json({"type": "done", "data": ""})
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
@@ -634,7 +726,7 @@ async def websocket_events(websocket: WebSocket):
     def send_event(event_dict: dict):
         """Push every new event to this client."""
         try:
-            asyncio.ensure_future(websocket.send_json(event_dict))
+            asyncio.get_running_loop().create_task(websocket.send_json(event_dict))
         except Exception:
             pass
 

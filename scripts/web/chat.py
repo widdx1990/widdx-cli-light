@@ -120,7 +120,64 @@ class ChatHandler:
             clean = content
             for tag in ("[thinking]", "[/thinking]", "<thinking>", "</thinking>"):
                 clean = clean.replace(tag, "")
-            clean = clean.strip()
+
+            # Strip internal chain-of-thought reasoning that leaks into output.
+            # DeepSeek/OpenCode models often include their reasoning in the response.
+            import re
+            marker_pat = (
+                r'(?:^|\n)\s*(?:'
+                r'Response\s+Generation\s*:|'
+                r'Response\s+strategy\s*:|'
+                r'Final\s+Response\s*:|'
+                r'Final\s+Answer\s*:|'
+                r'Output\s*:|'
+                r'Answer\s*:'
+                r')\s*\n*'
+            )
+            split_result = re.split(marker_pat, clean, flags=re.IGNORECASE)
+            if len(split_result) > 1:
+                clean = split_result[-1].strip()
+            else:
+                # No marker — strip reasoning patterns aggressively
+                # DeepSeek format: "Thinking. 1. **Analyze...**" then bullet analysis
+                lines = clean.split('\n')
+                kept = []
+                found_final = False
+                for line in lines:
+                    s = line.strip()
+                    # Skip empty lines before we find content
+                    if not s:
+                        if not found_final:
+                            continue
+                        kept.append(line)
+                        continue
+                    # Detect reasoning/analysis lines to skip
+                    if not found_final:
+                        # "Thinking." or "Thinking" alone
+                        if re.match(r'^Thinking\.?\s*$', s, re.IGNORECASE):
+                            continue
+                        # Numbered analysis: "1. **Thing:**" or "1.  **Thing:**"
+                        if re.match(r'^\d+\.\s+\*\*', s):
+                            continue
+                        # Bullet points in reasoning: "*   Thing:" or "- Thing:"
+                        if re.match(r'^[\*\-]\s{2,}\w+', s):
+                            continue
+                        # "Let's ..." reasoning patterns
+                        if re.match(r"^(Let(?:'s)?\s|I\s(?:should|need|can|will|must|think)|"
+                                    r"My\s|The\s(user|assistant|prompt|model)|"
+                                    r"Wait[,;]|Actually[,;]|Ah[,;]|"
+                                    r"Response\s+strategy|Strategy[:;])",
+                                    s, re.IGNORECASE):
+                            continue
+                        # This is actual response content
+                        found_final = True
+                    kept.append(line)
+
+                if found_final:
+                    clean = '\n'.join(kept).strip()
+                else:
+                    # Nothing matched as reasoning — keep everything
+                    clean = '\n'.join(l for l in lines if l.strip()).strip()
 
             return {
                 "content": clean or "",

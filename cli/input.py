@@ -70,8 +70,9 @@ def _build_completer() -> WordCompleter:
         "/skills", "/sandbox", "/undo", "/doctor", "/debug",
         "/remember", "/memories", "/permissions", "/theme",
         "/version", "/gguf", "/branch", "/mcp", "/exit", "/quit",
-        "/reasoning", "/manifest",
+        "/vision", "/reasoning", "/manifest",
         # sub-commands
+        "/vision mode", "/vision model",
         "/mcp discover", "/mcp add", "/mcp remove",
         "/branch list", "/branch create", "/branch switch",
         "/gguf import", "/gguf list", "/gguf scan", "/gguf remove",

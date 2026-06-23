@@ -10,9 +10,27 @@ Phase 3 enhancements:
 """
 import json
 import logging
+import os
 import subprocess
 import threading
 import time
+
+
+def _mcp_resource_limits():
+    """Apply resource limits to MCP subprocess (Unix only).
+    Limits: 512MB memory, 300s CPU, 256 open files.
+    """
+    try:
+        import resource
+        # 512 MB virtual memory
+        resource.setrlimit(resource.RLIMIT_AS,
+                           (512 * 1024 * 1024, 512 * 1024 * 1024))
+        # 5 minutes CPU time
+        resource.setrlimit(resource.RLIMIT_CPU, (300, 300))
+        # 256 open file descriptors
+        resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
+    except (ImportError, AttributeError, ValueError):
+        pass  # Windows or restricted environment — skip
 import os
 import base64
 import hashlib
@@ -146,13 +164,42 @@ class MCPServerConnection:
             self._error = None
             self._read_timed_out = False
             try:
-                self._proc = subprocess.Popen(
-                    [self.command] + self.args,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
+                # ── v4.0: Isolation Engine — run MCP in container ──
+                _use_container = False
+                if os.name != 'nt':  # container support varies on Windows
+                    try:
+                        from core.engine_adapters import engine_enabled
+                        from core.isolation.container import get_container_manager
+                        cm = get_container_manager()
+                        # Check if isolation engine is enabled AND container available
+                        if cm.available:
+                            _use_container = True
+                            self._proc = subprocess.Popen(
+                                [cm.runtime_name, "run", "--rm",
+                                 "--memory=512m", "--cpus=1.0",
+                                 "--network=none", "--read-only",
+                                 "--tmpfs", "/tmp",
+                                 "node:20-alpine",
+                                 self.command] + self.args,
+                                stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                    except (ImportError, Exception):
+                        pass
+
+                if not _use_container:
+                    self._proc = subprocess.Popen(
+                        [self.command] + self.args,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        preexec_fn=_mcp_resource_limits if os.name != 'nt' else None,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                    )
             except Exception as e:
                 last_err = f"Launch failed: {e}"
                 if attempt < attempts - 1:
@@ -211,7 +258,7 @@ class MCPServerConnection:
             try:
                 self._proc.kill()
             except Exception:
-                logger.debug("MCP server %s: process kill failed", self._name)
+                logger.debug("MCP server %s: process kill failed", self.name)
         self._proc = None
 
     def _convert_tools(self, raw_tools: list[dict]) -> list[dict]:
@@ -296,7 +343,7 @@ class MCPServerConnection:
                     self._proc.kill()
                     self._proc.wait(timeout=2)
                 except Exception:
-                    logger.debug("MCP server %s: force kill failed", self._name)
+                    logger.debug("MCP server %s: force kill failed", self.name)
         self._proc = None
         self._tools = []
         self._error = None

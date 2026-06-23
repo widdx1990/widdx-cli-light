@@ -1,12 +1,38 @@
 """WIDDX Nexus — Web UI launcher.
 
 Usage:
-    python scripts/web_app.py             # → http://localhost:8000
-    widdx-web                              # بعد التثبيت
+    python scripts/web_app.py                  # → http://localhost:8000
+    python scripts/web_app.py --port 9000      # → http://localhost:9000
+    widdx-web                                  # after install
+
+Host/port resolution order (first found wins):
+    1. CLI args: --host 127.0.0.1 --port 9000
+    2. .widdx/config.json: {"server": {"host": "...", "port": ...}}
+    3. Default: 127.0.0.1:8000 (auto-increments if taken)
+
+Multiple projects: run 'widdx-web' from each project directory.
+Each can have its own port in .widdx/config.json.
+If no port specified and default is taken, auto-increments (8001, 8002...).
 """
 
+import json
+import os
+import socket
 import sys
 from pathlib import Path
+
+
+def _find_free_port(start_port: int, host: str = "127.0.0.1") -> int:
+    """Find a free port starting from start_port."""
+    port = start_port
+    for _ in range(100):  # try 100 ports max
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+                return port
+            except OSError:
+                port += 1
+    return start_port  # fallback — let uvicorn handle the error
 
 
 def main():
@@ -21,14 +47,35 @@ def main():
         from core._path import ensure_project_root
         ensure_project_root()
 
-    host = "0.0.0.0"
+    # ── Defaults ──
+    host = "127.0.0.1"  # localhost only — more secure than 0.0.0.0
     port = 8000
 
+    # ── 1. Check .widdx/config.json ──
+    cwd = Path.cwd()
+    config_path = cwd / ".widdx" / "config.json"
+    if config_path.exists():
+        try:
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+            server_cfg = cfg.get("server", {})
+            if "host" in server_cfg:
+                host = server_cfg["host"]
+            if "port" in server_cfg:
+                port = int(server_cfg["port"])
+        except (json.JSONDecodeError, ValueError, OSError):
+            pass
+
+    # ── 2. CLI args override everything ──
     for i, arg in enumerate(sys.argv):
         if arg == "--host" and i + 1 < len(sys.argv):
             host = sys.argv[i + 1]
         elif arg == "--port" and i + 1 < len(sys.argv):
             port = int(sys.argv[i + 1])
+
+    # ── 3. If default port is taken, find a free one ──
+    port = _find_free_port(port, host)
+    if port != 8000:
+        print(f"⚠ Port 8000 in use — using port {port}")
 
     from scripts.web.server import run as _run
 
@@ -39,6 +86,7 @@ def main():
     except Exception:
         pass
 
+    print(f"WIDDX Nexus — http://{host}:{port}")
     _run(host=host, port=port)
 
 

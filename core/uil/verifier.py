@@ -52,6 +52,7 @@ class Verifier:
         t0 = time.perf_counter()
 
         self._check_basic(result, report)
+        self._check_output_quality(result, classification, report)
 
         report.execution_time = round(time.perf_counter() - t0, 4)
         return report
@@ -86,6 +87,45 @@ class Verifier:
                 severity=VerificationSeverity.ERROR,
                 message=f"{result.steps_failed}/{result.steps_planned} steps failed",
                 passed=False,
+            )
+
+    def _check_output_quality(self, result: ExecutionResult,
+                               classification: ClassificationResult | None,
+                               report: VerificationReport) -> None:
+        """Check output quality: length, placeholder content, meaningfulness."""
+        summary = result.summary or ""
+
+        # Check: output is too short for code/research tasks
+        if classification and classification.domain.value in ("code", "research"):
+            if len(summary.strip()) < 20:
+                report.add(
+                    check_name="output_too_short",
+                    severity=VerificationSeverity.WARNING,
+                    message=f"Output is very short ({len(summary.strip())} chars) "
+                            f"for a {classification.task_type.value} task",
+                    passed=len(summary.strip()) >= 10,
+                )
+
+        # Check: output contains placeholder content
+        placeholders = ["lorem ipsum", "your code here", "todo:", "fixme",
+                        "replace this", "implement this", "your_logic_here",
+                        "change this"]
+        found_placeholders = [p for p in placeholders if p in summary.lower()]
+        if found_placeholders:
+            report.add(
+                check_name="placeholder_content",
+                severity=VerificationSeverity.WARNING,
+                message=f"Output contains placeholder text: {', '.join(found_placeholders)}",
+                passed=False,
+            )
+
+        # Check: output contains actual code markers that suggest incomplete work
+        if "..." in summary and len(summary) > 100:
+            report.add(
+                check_name="ellipsis_in_code",
+                severity=VerificationSeverity.INFO,
+                message="Output contains '...' which may indicate incomplete implementation",
+                passed=True,  # INFO level, not a failure
             )
 
 
@@ -324,25 +364,36 @@ class HtmlVerifier(Verifier):
             )
 
             if not has_reveal_mechanism and not has_scroll_visibility:
-                # Look more broadly for any visibility mechanism
+                # Expanded reveal detection: cover common JS visibility patterns
                 has_any_reveal = bool(
                     re.search(r'(visible|reveal|show|fadeIn|unhide|appear)',
                               js_all, re.IGNORECASE)
                 )
+                # Also check for direct style manipulation, setAttribute, jQuery-style
+                has_style_reveal = bool(
+                    re.search(r'\.style\.(opacity|display)\s*=', js_all)
+                    or re.search(r'setAttribute\s*\(\s*["\'](?:class|style)["\']', js_all)
+                    or re.search(r'\.(show|hide|toggle|fadeIn|fadeOut|slideDown|slideUp)\s*\(', js_all)
+                )
+                has_any_classlist = bool(
+                    re.search(r'classList\.(add|toggle|remove)\s*\(', js_all)
+                )
 
-                if not has_any_reveal:
+                if not has_any_reveal and not has_style_reveal:
+                    severity = VerificationSeverity.WARNING if has_any_classlist else VerificationSeverity.CRITICAL
                     report.add(
                         check_name="css_hidden_no_reveal",
-                        severity=VerificationSeverity.CRITICAL,
+                        severity=severity,
                         message=(
                             f"CSS hides '.{cls}' with opacity:0 / display:none "
-                            f"but JS has NO mechanism to reveal it. "
-                            f"The element will be INVISIBLE."
+                            f"but JS has NO clear mechanism to reveal it. "
+                            f"The element may be permanently INVISIBLE."
                         ),
                         location=f"class: .{cls}",
                         suggestion=(
                             f"Add JS code like: "
                             f"el.classList.add('visible') on scroll/event, "
+                            f"el.style.display = 'block', "
                             f"OR remove opacity:0 from CSS"
                         ),
                         passed=False,
@@ -472,7 +523,9 @@ class CodeVerifier(Verifier):
             )
         else:
             self._check_syntax_indicators(code, report)
+            self._check_python_syntax(code, report)
             self._check_common_code_bugs(code, report)
+            self._check_logical_bugs(code, report)
 
         report.execution_time = round(time.perf_counter() - t0, 4)
         return report
@@ -503,6 +556,34 @@ class CodeVerifier(Verifier):
                 passed=False,
             )
 
+    def _check_python_syntax(self, code: str,
+                              report: VerificationReport) -> None:
+        """Actual Python syntax checking via compile()."""
+        # Only check if it looks like Python (has Python keywords)
+        python_indicators = ["def ", "import ", "class ", "if __name__",
+                             "print(", "return ", "elif ", "except "]
+        if not any(indicator in code for indicator in python_indicators):
+            return
+
+        try:
+            compile(code, "<verifier>", "exec")
+        except SyntaxError as e:
+            report.add(
+                check_name="python_syntax_error",
+                severity=VerificationSeverity.ERROR,
+                message=f"Python syntax error: {e.msg} at line {e.lineno}",
+                location=f"line {e.lineno}: {e.text.strip() if e.text else '?'}",
+                suggestion=f"Fix syntax: {e.msg}",
+                passed=False,
+            )
+        except (ValueError, OverflowError) as e:
+            report.add(
+                check_name="python_compile_error",
+                severity=VerificationSeverity.ERROR,
+                message=f"Code compilation failed: {e}",
+                passed=False,
+            )
+
     def _check_common_code_bugs(self, code: str,
                                  report: VerificationReport) -> None:
         """Check for patterns known to cause runtime errors."""
@@ -516,6 +597,94 @@ class CodeVerifier(Verifier):
                     suggestion="If this is a script, add necessary imports",
                     passed=True,  # Not strictly a bug
                 )
+
+        # Check for bare except clauses
+        if re.search(r'except\s*:', code):
+            report.add(
+                check_name="bare_except",
+                severity=VerificationSeverity.WARNING,
+                message="Bare 'except:' clause catches ALL exceptions, "
+                        "including KeyboardInterrupt and SystemExit",
+                suggestion="Use 'except Exception:' or catch specific exceptions",
+                passed=False,
+            )
+
+        # Check for hardcoded secrets
+        secret_patterns = [
+            (r'password\s*=\s*["\'][^"\']+["\']', "hardcoded password"),
+            (r'api_key\s*=\s*["\'][^"\']+["\']', "hardcoded API key"),
+            (r'secret\s*=\s*["\'][^"\']+["\']', "hardcoded secret"),
+            (r'token\s*=\s*["\'][^"\']{8,}["\']', "hardcoded token (8+ chars)"),
+        ]
+        for pattern, desc in secret_patterns:
+            if re.search(pattern, code):
+                report.add(
+                    check_name="hardcoded_secret",
+                    severity=VerificationSeverity.WARNING,
+                    message=f"Potential {desc} detected in code",
+                    suggestion="Use environment variables or a secrets manager",
+                    passed=False,
+                )
+
+        # Check for debugging code left in
+        if 'import pdb; pdb.set_trace()' in code or 'breakpoint()' in code:
+            report.add(
+                check_name="debugger_left_in",
+                severity=VerificationSeverity.WARNING,
+                message="Debugger statement left in production code",
+                suggestion="Remove pdb.set_trace() or breakpoint() calls",
+                passed=False,
+            )
+
+    def _check_logical_bugs(self, code: str,
+                             report: VerificationReport) -> None:
+        """Check for common logical errors in generated code."""
+        # Check: multiplication with 0.1 where 1.1 is expected (tax/discount)
+        matches = re.findall(r'\*\s*0\.1[^0-9]', code)
+        if matches:
+            report.add(
+                check_name="possible_off_by_factor",
+                severity=VerificationSeverity.INFO,
+                message=f"Found '* 0.1' which may be an off-by-factor error "
+                        f"(often '* 1.1' is intended for 10% increase)",
+                location=code[code.find(matches[0])-20:code.find(matches[0])+20]
+                        if len(code) > 40 else "",
+                passed=True,
+            )
+
+        # Check: empty return in non-void function
+        if re.search(r'def \w+\(.*\)\s*->\s*(?!None)[^:]*:', code):
+            # Function has return type hint that's not None
+            # Check if it has a return statement
+            if 'return' not in code:
+                report.add(
+                    check_name="missing_return",
+                    severity=VerificationSeverity.WARNING,
+                    message="Function with non-None return type has no return statement",
+                    suggestion="Add a return statement or change return type to None",
+                    passed=False,
+                )
+
+        # Check: comparing boolean to True/False with ==
+        if re.search(r'==\s*True', code) or re.search(r'==\s*False', code):
+            report.add(
+                check_name="redundant_boolean_compare",
+                severity=VerificationSeverity.INFO,
+                message="Comparing boolean to True/False with '==' instead of 'is'",
+                suggestion="Use 'if x:' instead of 'if x == True:', "
+                          "or 'if not x:' instead of 'if x == False:'",
+                passed=True,
+            )
+
+        # Check: potential division by zero
+        div_by_zero = re.findall(r'/\s*[a-z_]+\s*\*\*\s*[-]?\d+', code, re.IGNORECASE)
+        if div_by_zero:
+            report.add(
+                check_name="potential_division_pattern",
+                severity=VerificationSeverity.INFO,
+                message="Found potential division pattern that may cause ZeroDivisionError",
+                passed=True,
+            )
 
 
 # -------------------------------------------------------------------

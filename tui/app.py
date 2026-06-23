@@ -77,6 +77,8 @@ class MainScreen(Screen):
     """Main chat screen for WIDDX TUI."""
 
     _show_thinking: bool = False  # toggle for displaying reasoning content
+    _anim_dots_count: int = 0  # counter for animated dots
+    _anim_timer: any = None     # timer reference for cleanup
 
     BINDINGS = [
         Binding("ctrl+q", "app.quit", "Quit", show=False, priority=True),
@@ -244,11 +246,40 @@ class MainScreen(Screen):
         except Exception:
             pass
 
-    def _set_processing(self, active: bool, label: str = "  ◈  WIDDX is thinking…  "):
+    def _set_processing(self, active: bool, label: str = "  ◈  WIDDX is thinking"):
         proc = self.query_one("#processing", Static)
-        proc.update(label)
-        proc.set_class(active, "active")
-        proc.set_class(active, "thinking")
+        if active:
+            # Reset dots and start animation
+            self._anim_dots_count = 0
+            proc.update(f"{label}   ")
+            proc.set_class(True, "active")
+            proc.set_class(True, "thinking")
+            # Add shimmer class for enhanced look
+            proc.set_class(True, "shimmer")
+            # Start animated dots timer
+            self._anim_timer = self.set_interval(0.5, self._update_anim_dots, label)
+        else:
+            proc.set_class(False, "active")
+            proc.set_class(False, "thinking")
+            proc.set_class(False, "shimmer")
+            # Stop animation timer
+            if self._anim_timer:
+                try:
+                    self._anim_timer.stop()
+                except Exception:
+                    pass
+                self._anim_timer = None
+
+    def _update_anim_dots(self, label: str = "  ◈  WIDDX is thinking"):
+        """Update the animated dots on the processing bar."""
+        try:
+            self._anim_dots_count = (self._anim_dots_count + 1) % 4
+            dots = "." * self._anim_dots_count
+            spaces = " " * (3 - self._anim_dots_count)
+            proc = self.query_one("#processing", Static)
+            proc.update(f"{label}{dots}{spaces}")
+        except Exception:
+            pass
 
     # ── Input handling ─────────────────────────────────────
     async def on_input_submitted(self, event: Input.Submitted):
@@ -339,19 +370,38 @@ class MainScreen(Screen):
     def _show_chat(self):
         body = self.query_one("#body", Horizontal)
         vp = self.query_one("#view-panel", ViewPanel)
+        # Animate: first fade out view panel, then remove
         body.remove_class("sidebar-open")
         vp.remove_class("active")
-        vp.display = False
+        # Small delay to allow CSS transition to play
+        self.set_timer(0.25, lambda: self._set_view_visibility(False))
         self._active_view = None
+
+    def _set_view_visibility(self, visible: bool):
+        """After transition delay, toggle display."""
+        try:
+            vp = self.query_one("#view-panel", ViewPanel)
+            vp.display = visible
+        except Exception:
+            pass
 
     def _show_view(self, title: str):
         body = self.query_one("#body", Horizontal)
         vp = self.query_one("#view-panel", ViewPanel)
-        body.add_class("sidebar-open")
         vp.display = True
-        vp.add_class("active")
-        vp.set_title(title)
-        self._active_view = title
+        # Small delay to let display take effect before animation
+        self.set_timer(0.01, lambda: self._activate_view(title))
+
+    def _activate_view(self, title: str):
+        try:
+            body = self.query_one("#body", Horizontal)
+            vp = self.query_one("#view-panel", ViewPanel)
+            body.add_class("sidebar-open")
+            vp.add_class("active")
+            vp.set_title(title)
+            self._active_view = title
+        except Exception:
+            pass
 
     # ── Navigation actions ─────────────────────────────────
     async def _do_action(self, action: str):
@@ -493,6 +543,8 @@ class MainScreen(Screen):
         self._log_message("assistant", display, elapsed=getattr(msg, "elapsed", None))
         self.state.messages = msg.msgs
         self.state.save_session()
+        # Clear streaming buffer
+        self._stream_buffer = ""
         self._show_chat()
         self._set_processing(False)
         self._update_status()
@@ -606,15 +658,38 @@ class MainScreen(Screen):
             else:
                 inp.value = ""
 
-    # ── Toast notifications ────────────────────────────────
+    # ── Toast notifications (with slide animation) ─────────
     def _show_toast(self, msg: str, kind: str = "info", duration: float = 3.0):
         toast = self.query_one("#toast", Static)
         toast.update(f"  {msg}  ")
         toast.set_class(False, "toast-hidden")
-        self.set_timer(duration, self._hide_toast)
+        toast.set_class(True, "toast-visible")
+        toast.set_class(False, "toast-fade-out")
+        # Remove any existing timer for hide
+        try:
+            self.set_timer(duration, self._hide_toast_animated)
+        except Exception:
+            self.set_timer(duration, self._hide_toast)
+
+    def _hide_toast_animated(self):
+        """Animate toast out with fade, then hide."""
+        try:
+            toast = self.query_one("#toast", Static)
+            toast.set_class(True, "toast-fade-out")
+            toast.set_class(False, "toast-visible")
+            # After animation completes, fully hide
+            self.set_timer(0.35, self._hide_toast)
+        except Exception:
+            self._hide_toast()
 
     def _hide_toast(self):
-        self.query_one("#toast", Static).set_class(True, "toast-hidden")
+        try:
+            toast = self.query_one("#toast", Static)
+            toast.set_class(True, "toast-hidden")
+            toast.set_class(False, "toast-visible")
+            toast.set_class(False, "toast-fade-out")
+        except Exception:
+            pass
 
     # ── Header & View Panel event handlers ──────────────────
 

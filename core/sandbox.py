@@ -567,7 +567,30 @@ class SandboxExecutor:
     def _execute_subprocess(
         self, command: str, timeout: int, env: dict | None,
     ) -> SandboxResult:
-        """Run command in a resource-limited subprocess."""
+        """Run command in a resource-limited subprocess (or container if enabled)."""
+        # ── v4.0: Isolation Engine — container-based execution ──
+        try:
+            from core.engine_adapters import engine_enabled, adapt_container_result
+            if engine_enabled(getattr(self, '_cfg', {}) or {}, "isolation"):
+                from core.isolation.container import get_container_manager
+                cm = get_container_manager()
+                if cm.available:
+                    import time
+                    t0 = time.perf_counter()
+                    cresult = cm.execute(command, profile="bash", timeout=timeout)
+                    elapsed = (time.perf_counter() - t0) * 1000
+                    logger.info(
+                        "IsolationEngine: container=%s success=%s timeout=%s",
+                        cresult.actual_isolation, cresult.success, cresult.was_timeout,
+                    )
+                    return adapt_container_result(cresult, elapsed)
+                else:
+                    logger.debug("IsolationEngine: no container runtime — using subprocess")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug("IsolationEngine unavailable: %s", e)
+
         # Strip WIDDX API keys from child process environment
         merged_env = {k: v for k, v in os.environ.items() if not k.startswith("WIDDX_API_KEY")}
         if env:
@@ -586,6 +609,8 @@ class SandboxExecutor:
                 stderr=subprocess.PIPE,
                 text=True,
                 env=merged_env,
+                preexec_fn=self._apply_resource_limits if hasattr(os, 'setrlimit') else None,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
             )
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)
@@ -619,6 +644,8 @@ class SandboxExecutor:
                         stderr=subprocess.PIPE,
                         text=True,
                         env=merged_env,
+                        preexec_fn=self._apply_resource_limits if hasattr(os, 'setrlimit') else None,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
                     )
                     stdout, stderr = proc.communicate(timeout=timeout)
                     return SandboxResult(

@@ -127,6 +127,18 @@
       "description": "Diff Engine — Unified-diff-based file editing."
     },
     {
+      "path": "core/engine_adapters.py",
+      "description": "Engine Adapters — bridge between new engines and existing UIL contract types."
+    },
+    {
+      "path": "core/engine_arbiter.py",
+      "description": "Engine Arbiter — determines truth when engines disagree."
+    },
+    {
+      "path": "core/engine_trust.py",
+      "description": "Trust Accumulator — learns which engine to trust over time."
+    },
+    {
       "path": "core/gateway/discord.py",
       "description": "Discord adapter for WIDDX Gateway."
     },
@@ -137,6 +149,42 @@
     {
       "path": "core/guard.py",
       "description": "Dangerous Command Guard — Prevent destructive shell commands."
+    },
+    {
+      "path": "core/intelligence/classifier.py",
+      "description": "Embedding-based task classifier — classifies user input WITHOUT an LLM."
+    },
+    {
+      "path": "core/intelligence/decision_engine.py",
+      "description": "Learning decision tree for routing — upgrades router.py from static to adaptive."
+    },
+    {
+      "path": "core/intelligence/embeddings.py",
+      "description": "Local embedding computation — zero external API dependencies."
+    },
+    {
+      "path": "core/intelligence/learner.py",
+      "description": "Pattern learner — extracts new patterns from successful executions."
+    },
+    {
+      "path": "core/intelligence/patterns.py",
+      "description": "Software pattern knowledge base — REAL knowledge about how to build things."
+    },
+    {
+      "path": "core/intelligence/planner.py",
+      "description": "Pattern-aware task decomposer — plans REAL steps from a knowledge base."
+    },
+    {
+      "path": "core/isolation/container.py",
+      "description": "Container manager — Docker/podman-based process isolation."
+    },
+    {
+      "path": "core/isolation/policy.py",
+      "description": "Isolation policy — determines what's allowed at each permission level."
+    },
+    {
+      "path": "core/isolation/profiles.py",
+      "description": "Isolation profiles — what each execution environment allows."
     },
     {
       "path": "core/linter.py",
@@ -291,8 +339,20 @@
       "description": "Shared utilities used across the WIDDX codebase."
     },
     {
+      "path": "core/validation/reporter.py",
+      "description": "Validation Reporter — generates structured quality reports."
+    },
+    {
+      "path": "core/validation/runner.py",
+      "description": "Safe code execution harness — actually runs code and captures results."
+    },
+    {
       "path": "core/vector_memory.py",
       "description": "Vector Memory Store — Semantic memory search using embeddings."
+    },
+    {
+      "path": "core/vision.py",
+      "description": "WIDDX Vision Module — Multi-Modal Image Understanding"
     },
     {
       "path": "core/voice.py",

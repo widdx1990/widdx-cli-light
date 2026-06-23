@@ -57,6 +57,7 @@ class CLICommands:
             "/permissions": self.permissions,
             "/apikey": self.apikey,
             "/theme": self.theme,
+            "/vision": self.vision,
         }
 
         handler = handlers.get(cmd)
@@ -90,7 +91,7 @@ class CLICommands:
         self.app.show_system("  /history /save /load /export /remember /memories")
         self.app.show_system("  /manifest /reasoning /debug /doctor /undo")
         self.app.show_system("  /proxy /sandbox /mcp /gguf /branch /version")
-        self.app.show_system("  /permissions /apikey /theme /exit")
+        self.app.show_system("  /permissions /apikey /theme /vision /exit")
         self.app.show_system("  !skill_name — activate a skill  |  !off — deactivate")
 
     def clear(self, arg, p, s, msgs):
@@ -320,3 +321,53 @@ class CLICommands:
         else:
             prompt_key(p.name)
             self.app.show_system(f"API key stored for {p.name}")
+
+    # ── Vision ─────────────────────────────────────────────────
+    def vision(self, arg, p, s, msgs):
+        """Configure vision/image understanding mode.
+
+        Usage:
+          /vision                 — show status
+          /vision mode pipeline   — Two-Stage Pipeline (HuggingFace محلي)
+          /vision mode ollama     — Ollama Vision Model (deepseek-vl2/llava)
+          /vision mode deepseek   — DeepSeek Vision API
+          /vision model <name>    — تعيين نموذج Ollama (مثال: deepseek-vl2)
+          /vision on|off          — تفعيل/تعطيل الرؤية
+        """
+        from core.vision import update_config, get_status, VisionMode
+
+        if not arg:
+            status = get_status()
+            mode_names = {
+                VisionMode.PIPELINE: "Two-Stage Pipeline (محلي)",
+                VisionMode.OLLAMA: f"Ollama ({status.get('ollama_model', '?')})",
+                VisionMode.DEEPSEEK: "DeepSeek Vision API",
+            }
+            self.app.show_system(f"🖼️ Vision: {'مفعل' if status.get('enabled') else 'معطل'}")
+            self.app.show_system(f"   الوضع: {mode_names.get(status.get('mode', ''), status.get('mode', ''))}")
+            if status.get('mode') == VisionMode.OLLAMA:
+                avail = "متاح ✅" if status.get('ollama_available') else "غير متاح ❌"
+                self.app.show_system(f"   النموذج: {status.get('ollama_model')} ({avail})")
+            self.app.show_system(f"   Pipeline: {status.get('pipeline_model')}")
+            self.app.show_system(f"\n   /vision mode pipeline|ollama|deepseek")
+            self.app.show_system(f"   /vision model <name>")
+            self.app.show_system(f"   /vision on|off")
+            return
+
+        parts = arg.split(None, 1)
+        cmd = parts[0].lower()
+        val = parts[1] if len(parts) > 1 else ""
+
+        if cmd == "mode" and val:
+            msg = update_config("mode", val)
+            self.app.show_system(msg)
+        elif cmd == "model" and val:
+            msg = update_config("model", val)
+            self.app.show_system(msg)
+        elif cmd in ("on", "off"):
+            msg = update_config(cmd, "")
+            self.app.show_system(msg)
+        else:
+            self.app.show_system("Usage: /vision mode pipeline|ollama|deepseek")
+            self.app.show_system("       /vision model <model_name>")
+            self.app.show_system("       /vision on|off")

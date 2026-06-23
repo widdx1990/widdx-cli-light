@@ -284,17 +284,43 @@ class ExpertTeam:
         # Phase 2: Researcher for medium+ complexity
         if complexity >= 2:
             self._print_phase(str(n), "widdx-researcher", "Researching requirements")
-            research = self._run("researcher",
-                "Research requirements and best practices for:\n%s" % user_input, context=ctx)
-            ctx += "\n--- RESEARCH FINDINGS ---\n%s\n" % research
-            n += 1
 
-        # Phase 3: Coder (always)
-        self._print_phase(str(n), "widdx-coder", "Implementing solution")
-        code = self._run("coder",
-            "Implement the complete project with high quality:\n%s" % user_input, context=ctx)
-        ctx += "\n--- CODE IMPLEMENTATION ---\n%s\n" % code
-        n += 1
+            # ── Parallel: Researcher + Coder run concurrently ────
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                research_future = pool.submit(
+                    self._run, "researcher",
+                    "Research requirements and best practices for:\n%s" % user_input,
+                    context=ctx,
+                )
+                coder_future = pool.submit(
+                    self._run, "coder",
+                    "Implement the complete project with high quality:\n%s" % user_input,
+                    context=ctx,
+                )
+                # Both run in parallel — wall clock = max(research_time, code_time)
+                research = research_future.result()
+                code = coder_future.result()
+
+            ctx = self._build_context(
+                project_dir=project_dir,
+                plan=plan,
+                research=research,
+                code=code,
+            )
+            self._print_phase_done("Research+Code", "Completed in parallel")
+            n += 2
+        else:
+            # Simple task: sequential Coder only
+            self._print_phase(str(n), "widdx-coder", "Implementing solution")
+            code = self._run("coder",
+                "Implement the complete project with high quality:\n%s" % user_input, context=ctx)
+            ctx = self._build_context(
+                project_dir=project_dir,
+                plan=plan,
+                code=code,
+            )
+            n += 1
 
         # Phase 4: Reviewer (always)
         self._print_phase(str(n), "widdx-reviewer", "Reviewing implementation")
@@ -327,6 +353,18 @@ class ExpertTeam:
 
     # ── internal helpers ───────────────────────────────────────────────
 
+    @staticmethod
+    def _build_context(**sections: str) -> str:
+        """Build structured context for the next expert with clear section headers.
+        Each section is labeled with a delimiter so experts can parse it easily.
+        """
+        parts = []
+        for name, content in sections.items():
+            if content:
+                header = name.upper().replace("_", " ")
+                parts.append(f"## {header}\n\n{content}\n")
+        return "\n---\n".join(parts)
+
     def _run(self, profile_key: str, task: str, context: str = "") -> str:
         profile = EXPERT_PROFILES[profile_key]
         agent = ExpertAgent(profile, self.provider, self.tool_defs,
@@ -340,12 +378,30 @@ class ExpertTeam:
         return result
 
     def _needs_fix(self, review: str) -> bool:
-        """Check if the review found issues that need fixing."""
+        """Check if the review found issues that need fixing.
+        Negation-aware: 'no issues found' does NOT trigger a fix request.
+        """
         lower = review.lower()
+        # Remove negated phrases before counting keywords
+        cleaned = lower
+        cleaned = re.sub(
+            r'\b(no|zero|0)\s+(issues?|errors?|bugs?|problems?'
+            r'|vulnerabilities?|warnings?|findings?)\b',
+            '', cleaned)
+        cleaned = re.sub(
+            r'\b(not?\s+)?found\s+(no|any|zero)\s+(issues?|errors?|bugs?)\b',
+            '', cleaned)
+        cleaned = re.sub(
+            r'\b(all|everything)\s+(is\s+)?(good|fine|ok|okay|clean|clear'
+            r'|working|passing|correct)\b',
+            '', cleaned)
         keywords = ["issue", "error", "bug", "fix", "problem", "warning",
                      "vulnerability", "security", "not found", "failed",
-                     "incorrect", "missing"]
-        count = sum(1 for kw in keywords if kw in lower)
+                     "incorrect", "missing", "must fix", "needs? (to be )?fixed"]
+        count = 0
+        for kw in keywords:
+            if re.search(r'\b' + kw + r'\b', cleaned):
+                count += 1
         return count >= 2
 
     def _print_phase(self, num, name, action):
