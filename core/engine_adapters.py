@@ -212,17 +212,17 @@ def engine_enabled(cfg: dict, engine_name: str) -> bool:
     Safe: returns False if config key is missing or malformed.
     """
     if not cfg or not isinstance(cfg, dict):
-        return False
+        return True
     engines = cfg.get("engines")
     if not engines or not isinstance(engines, dict):
-        return False
-    return bool(engines.get(engine_name, False))
+        return True
+    return bool(engines.get(engine_name, True))
 
 
 def engine_flags_summary(cfg: dict) -> str:
     """Human-readable summary of which engines are enabled."""
     if not cfg:
-        return "engines: all OFF (no config)"
+        return "engines: all ON (no config)"
     return (
         f"engines: "
         f"intelligence={'ON' if engine_enabled(cfg, 'intelligence') else 'OFF'}, "

@@ -80,14 +80,24 @@ function renderMemoryList(mems) {
   }).join('') + '</div>';
 }
 
-window.filterMemoryView = function(query) {
-  if (!_allMemories.length) return;
-  var q = query.toLowerCase().trim();
-  var filtered = q ? _allMemories.filter(function(m) {
-    var text = ((m.name || m.target || m.fact || '') + ' ' + (m.description || m.content || m.value || '')).toLowerCase();
-    return text.indexOf(q) !== -1;
-  }) : _allMemories;
-  renderMemoryList(filtered);
+window.filterMemoryView = async function(query) {
+  var q = (query || '').trim();
+  if (!q) {
+    renderMemoryList(_allMemories);
+    return;
+  }
+  try {
+    var r = await fetch('/api/memories/search?q=' + encodeURIComponent(q));
+    var results = await r.json();
+    renderMemoryList(Array.isArray(results) ? results : []);
+  } catch(e) {
+    // Fallback to client-side search
+    var filtered = _allMemories.filter(function(m) {
+      var text = ((m.name || m.target || m.fact || '') + ' ' + (m.description || m.content || m.value || '')).toLowerCase();
+      return text.indexOf(q.toLowerCase()) !== -1;
+    });
+    renderMemoryList(filtered);
+  }
 };
 
 window.loadMemoryView = function() {

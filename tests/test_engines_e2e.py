@@ -9,6 +9,7 @@ Tests that the engines work:
 
 import pytest
 import sys
+import re
 from pathlib import Path
 
 # Ensure project root is on path
@@ -312,37 +313,42 @@ class TestAdapters:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestFeatureFlags:
-    """Test that feature flags default to OFF (safe)."""
+    """Test that feature flags default to ON (safe defaults)."""
 
-    def test_all_off_by_default(self):
+    def test_all_on_by_default(self):
         from core.engine_adapters import engine_enabled
-        assert not engine_enabled({}, "intelligence")
-        assert not engine_enabled({}, "validation")
-        assert not engine_enabled({}, "isolation")
+        assert engine_enabled({}, "intelligence")
+        assert engine_enabled({}, "validation")
+        assert engine_enabled({}, "isolation")
 
-    def test_off_with_missing_engines_key(self):
+    def test_on_with_missing_engines_key(self):
         from core.engine_adapters import engine_enabled
-        assert not engine_enabled({"engines": {}}, "intelligence")
+        assert engine_enabled({"engines": {}}, "intelligence")
 
-    def test_on_when_enabled(self):
+    def test_can_disable_individual_engine(self):
         from core.engine_adapters import engine_enabled
-        cfg = {"engines": {"intelligence": True}}
-        assert engine_enabled(cfg, "intelligence")
-        assert not engine_enabled(cfg, "validation")
-
-    def test_all_on(self):
-        from core.engine_adapters import engine_enabled
-        cfg = {"engines": {"intelligence": True, "validation": True, "isolation": True}}
-        assert engine_enabled(cfg, "intelligence")
+        cfg = {"engines": {"intelligence": False}}
+        assert not engine_enabled(cfg, "intelligence")
         assert engine_enabled(cfg, "validation")
-        assert engine_enabled(cfg, "isolation")
+
+    def test_all_off_explicitly(self):
+        from core.engine_adapters import engine_enabled
+        cfg = {"engines": {"intelligence": False, "validation": False, "isolation": False}}
+        assert not engine_enabled(cfg, "intelligence")
+        assert not engine_enabled(cfg, "validation")
+        assert not engine_enabled(cfg, "isolation")
 
     def test_summary_string(self):
         from core.engine_adapters import engine_flags_summary
         cfg = {"engines": {"intelligence": True}}
         summary = engine_flags_summary(cfg)
         assert "intelligence=ON" in summary
-        assert "validation=OFF" in summary
+        assert "isolation=ON" in summary
+
+    def test_summary_no_config(self):
+        from core.engine_adapters import engine_flags_summary
+        summary = engine_flags_summary(None)
+        assert "all ON" in summary
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -394,3 +400,80 @@ class TestTrustTracker:
             tracker2 = TrustTracker(tmp)
             trust = tracker2.get("intelligence")
             assert trust.total_comparisons == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Brain Integration Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestBrainEngineIntegration:
+    """Test that brain.py correctly wires the 3 engines."""
+
+    def test_validation_merge_recompute(self):
+        """Test that merging Validation findings into VerificationReport works."""
+        from core.uil.contract import (
+            VerificationReport, VerificationFinding, VerificationSeverity,
+        )
+        report = VerificationReport(passed_all=True)
+        assert report.passed_all
+
+        # Add a critical finding via merge simulation
+        report.findings.append(VerificationFinding(
+            check_name="test", severity=VerificationSeverity.CRITICAL,
+            message="fail", passed=False,
+        ))
+        report.recompute()
+        assert not report.passed_all
+
+    def test_recompute_clears(self):
+        """Test recompute resets passed_all accurately."""
+        from core.uil.contract import (
+            VerificationReport, VerificationFinding, VerificationSeverity,
+        )
+        report = VerificationReport(passed_all=False)
+        report.recompute()
+        assert report.passed_all  # no findings = passed
+
+        report.findings.append(VerificationFinding(
+            check_name="warn", severity=VerificationSeverity.WARNING,
+            message="warning", passed=False,
+        ))
+        report.recompute()
+        assert report.passed_all  # warnings don't fail
+
+    def test_engine_enabled_true_by_default(self):
+        """Test that brain passes cfg=None safely with new defaults."""
+        from core.engine_adapters import engine_enabled
+        assert engine_enabled(None, "intelligence")
+
+    def test_classifier_new_examples_200_plus(self):
+        """Test that expanded examples list has 200+ entries."""
+        from core.intelligence.classifier import _LABELED_EXAMPLES
+        assert len(_LABELED_EXAMPLES) >= 200
+
+    def test_classifier_new_reasoning_type(self):
+        """Test that 'reasoning' task type is classified."""
+        from core.intelligence.classifier import classify_input
+        r = classify_input("solve this math problem step by step")
+        assert r.task_type == "reasoning"
+        assert r.confidence >= 0.3
+
+    def test_classifier_complex_type(self):
+        """Test 'complex' type classification."""
+        from core.intelligence.classifier import classify_input
+        r = classify_input("design a full e-commerce platform from scratch")
+        assert r.task_type == "complex"
+        assert r.confidence >= 0.3
+
+    def test_classifier_complex_needs_2_plus_keywords(self):
+        """Test single unrelated word doesn't classify as complex."""
+        from core.intelligence.classifier import classify_input
+        r = classify_input("pizza party")
+        assert r.task_type != "complex"
+
+    def test_keyword_rules_include_reasoning(self):
+        """Test that keyword rules now include 'reasoning'."""
+        from core.intelligence.classifier import _KEYWORD_RULES
+        types = [t for t, _ in _KEYWORD_RULES]
+        assert "reasoning" in types
+        assert "complex" in types

@@ -3,15 +3,15 @@
 
 async function showGitView(area) {
   setActivity('Loading', 'git');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83D\uDD00 Git Status</h3>'
-    + '<div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">'
-    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px" onclick="refreshGitView()">\uD83D\uDD04 Refresh</button>'
-    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;background:var(--error);color:#fff" onclick="gitUndo()">\u21a9 Undo Last Commit</button>'
+  area.innerHTML = TEMPLATES.view('fa-code-branch', 'Git Status', 'Source control overview',
+    '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px" onclick="refreshGitView()"><i class="fa-solid fa-rotate"></i> Refresh</button>'
+    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;background:var(--error);color:#fff" onclick="gitUndo()"><i class="fa-solid fa-rotate-left"></i> Undo Last Commit</button>'
     + '</div>'
     + '<div id="git-status">Loading...</div>'
-    + '<h4 style="margin-top:16px">Branches</h4>'
-    + '<div id="git-branches">Loading...</div></div></div>';
+    + '<h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-secondary)"><i class="fa-solid fa-code-fork"></i> Branches</h4>'
+    + '<div id="git-branches">Loading...</div>'
+  );
   await refreshGitView();
   setActivity('Ready', '\u2014');
 }

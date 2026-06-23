@@ -124,6 +124,10 @@ const S = {
   _activeAIWrapper: null,
   _activeAIContent: null,
   _activeAITextEl: null,
+  _activeThinking: null,
+  _activeThinkingStrip: null,
+  _activeToolCard: null,
+  _toolCount: 0,
 };
 
 // ═══════════════ CHAT — REAL API ONLY ═══════════════════
@@ -400,8 +404,7 @@ function createAssistantWrapper(content) {
 }
 
 /**
- * Add a THINKING block — shows the model's reasoning process.
- * Collapsible, amber-tinted, distinct from tool calls and final response.
+ * Add a THINKING strip — compact expandable indicator.
  */
 function addThinkingBlock(reasoningText) {
   if (!S._activeAIWrapper) {
@@ -409,21 +412,26 @@ function addThinkingBlock(reasoningText) {
     document.getElementById('messagesArea').appendChild(S._activeAIWrapper);
   }
   const body = S._activeAIBody;
-  const block = document.createElement('div');
-  block.className = 'think-block';
-  block.innerHTML =
-    '<div class="think-head" onclick="this.parentElement.classList.toggle(\'collapsed\')">'
-    + '<i class="fa-solid fa-brain"></i>'
-    + '<span>Thinking</span>'
-    + '<span class="think-preview">' + escapeHtml(reasoningText?.slice(0, 80) || '') + '</span>'
-    + '<i class="fa-solid fa-chevron-down think-chevron"></i>'
-    + '</div>'
-    + '<div class="think-body"><div class="think-content">'
-    + '<p>' + escapeHtml(reasoningText || '...') + '</p>'
+  const strip = document.createElement('div');
+  strip.className = 'think-strip';
+  const tid = 'think-' + Date.now();
+  strip.innerHTML =
+    '<button class="think-toggle" onclick="'
+    + 'var s=document.getElementById(\'' + tid + '\');var opened=s.style.display!==\'block\';'
+    + 's.style.display=opened?\'block\':\'none\';'
+    + 'this.querySelector(\'.think-label\').textContent=opened?\'Hide reasoning\':\'Show reasoning\';'
+    + 'this.querySelector(\'.think-chevron\').style.transform=opened?\'rotate(90deg)\':\'rotate(0deg)\''
+    + '">'
+    + '<span class="think-chevron">&#9654;</span>'
+    + '<span class="think-label">Show reasoning</span>'
+    + '</button>'
+    + '<div class="think-body" id="' + tid + '"><div class="think-content">'
+    + '<p>' + escapeHtml(reasoningText || '') + '</p>'
     + '</div></div>';
-  body.appendChild(block);
-  S._activeThinking = block.querySelector('.think-content');
-  return block;
+  body.appendChild(strip);
+  S._activeThinking = strip.querySelector('.think-content');
+  S._activeThinkingStrip = strip;
+  return strip;
 }
 
 function appendThinking(chunk) {
@@ -435,12 +443,17 @@ function appendThinking(chunk) {
 }
 
 function finishThinking() {
+  if (S._activeThinkingStrip) {
+    S._activeThinkingStrip.querySelector('.think-body').style.display = 'none';
+    S._activeThinkingStrip.querySelector('.think-label').textContent = 'Show reasoning';
+    S._activeThinkingStrip.querySelector('.think-chevron').style.transform = 'rotate(0deg)';
+  }
   S._activeThinking = null;
+  S._activeThinkingStrip = null;
 }
 
 /**
- * Add a TOOL CALL card — shows which tool is being used with its parameters.
- * Professional card with: icon, name, status indicator, expandable params.
+ * Add a TOOL PILL — compact inline status indicator.
  */
 function addToolCard(toolName, toolArgs) {
   if (!S._activeAIWrapper) {
@@ -449,44 +462,32 @@ function addToolCard(toolName, toolArgs) {
   }
   S._toolCount++;
   const body = S._activeAIBody;
-  const id = 'tool-' + S._toolCount + '-' + Date.now();
-  const card = document.createElement('div');
-  card.className = 'tool-card running';
-  card.id = id;
-  card.innerHTML =
-    '<div class="tool-card-head" onclick="document.getElementById(\'' + id + '\').classList.toggle(\'expanded\')">'
-    + '<div class="tool-card-status"><i class="fa-solid fa-spinner fa-spin"></i></div>'
-    + '<i class="fa-solid fa-wrench tool-card-icon"></i>'
-    + '<span class="tool-card-name">' + escapeHtml(toolName) + '</span>'
-    + '<span class="tool-card-badge">#' + S._toolCount + '</span>'
-    + '<i class="fa-solid fa-chevron-down tool-card-chevron"></i>'
-    + '</div>'
-    + '<div class="tool-card-params"><code>' + escapeHtml(JSON.stringify(toolArgs || {}, null, 2)) + '</code></div>';
-  body.appendChild(card);
-  S._activeToolCard = card;
+  const pill = document.createElement('div');
+  pill.className = 'tool-pill running';
+  var argStr = '';
+  if (toolArgs) {
+    var vals = Object.values(toolArgs).filter(function(v) { return typeof v === 'string'; });
+    argStr = escapeHtml(vals.join(', ').slice(0, 80));
+  }
+  pill.innerHTML =
+    '<span class="tool-pill-status"><span class="tp-spinner"></span></span>'
+    + '<span class="tool-pill-name">' + escapeHtml(toolName) + '</span>'
+    + (argStr ? '<span class="tool-pill-args">' + argStr + '</span>' : '');
+  body.appendChild(pill);
+  S._activeToolCard = pill;
   scrollBottom();
-  return card;
+  return pill;
 }
 
 function updateToolCard(success, result) {
   if (!S._activeToolCard) return;
-  const card = S._activeToolCard;
-  card.classList.remove('running');
-  card.classList.add(success ? 'success' : 'failed');
-  const statusIcon = card.querySelector('.tool-card-status i');
-  if (statusIcon) {
-    statusIcon.className = 'fa-solid ' + (success ? 'fa-circle-check' : 'fa-circle-xmark');
-  }
-  // Append result to card
-  if (result) {
-    let resultEl = card.querySelector('.tool-result');
-    if (!resultEl) {
-      resultEl = document.createElement('div');
-      resultEl.className = 'tool-result';
-      card.appendChild(resultEl);
-    }
-    resultEl.textContent = typeof result === 'string' ? result.slice(0, 600) : JSON.stringify(result).slice(0, 600);
-  }
+  const pill = S._activeToolCard;
+  pill.classList.remove('running');
+  pill.classList.add(success ? 'success' : 'failed');
+  var icon = pill.querySelector('.tp-spinner');
+  if (icon) icon.outerHTML = success
+    ? '<i class="fa-solid fa-check" style="font-size:10px;color:var(--success)"></i>'
+    : '<i class="fa-solid fa-xmark" style="font-size:10px;color:var(--error)"></i>';
   S._activeToolCard = null;
   scrollBottom();
 }
@@ -552,8 +553,10 @@ function handleWSMessage(msg) {
       break;
 
     case 'text':
-      // Streaming response text
-      if (!S._activeAITextEl && S._activeThinking) finishThinking();
+      // Streaming response text — auto-collapse thinking
+      if (!S._activeAITextEl) {
+        if (S._activeThinking) finishThinking();
+      }
       appendResponseChunk(msg.data || msg.content || '');
       setActivity('Responding', (msg.data || '').slice(0, 40));
       break;
@@ -566,7 +569,9 @@ function handleWSMessage(msg) {
       S._activeAIBody = null;
       S._activeAITextEl = null;
       S._activeThinking = null;
+      S._activeThinkingStrip = null;
       S._activeToolCard = null;
+      S._toolCount = 0;
       updateProgress(100, 'Complete');
       setActivity('Ready', '—');
       break;
@@ -578,6 +583,10 @@ function handleWSMessage(msg) {
       S._activeAIWrapper = null;
       S._activeAIBody = null;
       S._activeAITextEl = null;
+      S._activeThinking = null;
+      S._activeThinkingStrip = null;
+      S._activeToolCard = null;
+      S._toolCount = 0;
       updateProgress(0, 'Error');
       setActivity('Ready', '—');
       addMsg('system', '⚠ ' + (msg.data || 'Unknown error'));
@@ -937,6 +946,18 @@ function showView(view) {
     showPluginsView(area);
   } else if (view === 'workflows') {
     showWorkflowsView(area);
+  } else if (view === 'proxy') {
+    showProxyView(area);
+  } else if (view === 'gguf') {
+    showGGUFView(area);
+  } else if (view === 'manifest') {
+    showManifestView(area);
+  } else if (view === 'tokenbudget') {
+    showTokenBudgetView(area);
+  } else if (view === 'autocommit') {
+    showAutoCommitView(area);
+  } else if (view === 'apikeys') {
+    showApiKeysView(area);
   }
 }
 
@@ -959,6 +980,7 @@ window.switchTab = function(el, view) {
   else if (view === 'terminal') showTerminal();
   else if (view === 'browser') showBrowser();
   else if (view === 'files') showFiles();
+  else if (view === 'screenshot') showScreenshot();
 };
 
 async function showDesktop() {
@@ -1030,6 +1052,37 @@ async function showFiles() {
     body.innerHTML = '<div class="panel-desktop-view"><span style="color:var(--error)">' + escapeHtml(e.message) + '</span></div>';
   }
 }
+
+async function showScreenshot() {
+  const body = document.getElementById('panelBody');
+  body.innerHTML = '<div style="display:flex;flex-direction:column;height:100%;padding:12px;gap:10px;align-items:center">'
+    + '<button id="ss-btn" onclick="takeScreenshot()" style="padding:8px 20px;border-radius:6px;border:1px solid var(--border-main);background:var(--bg-card);color:var(--text-primary);cursor:pointer;font-size:13px"><i class="fa-solid fa-camera"></i> Take Screenshot</button>'
+    + '<div id="ss-result" style="flex:1;width:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px">Click the button to capture a browser screenshot.</div></div>';
+}
+
+window.takeScreenshot = async function() {
+  var btn = document.getElementById('ss-btn');
+  var res = document.getElementById('ss-result');
+  if (btn) { btn.disabled = true; btn.textContent = 'Capturing...'; }
+  if (res) res.innerHTML = '<span style="color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin"></i> Taking screenshot...</span>';
+  try {
+    const r = await fetch('/api/sandbox/screenshot', { method:'POST' });
+    const d = await r.json();
+    if (d.success && d.data) {
+      var imgUrl = typeof d.data === 'string' && d.data.startsWith('data:') ? d.data : (d.data.image_url || d.data.url || '');
+      if (imgUrl) {
+        if (res) res.innerHTML = '<img src="' + escapeHtml(imgUrl) + '" style="max-width:100%;max-height:100%;border-radius:6px;border:1px solid var(--border-light);box-shadow:0 2px 12px rgba(0,0,0,0.3)">';
+      } else {
+        if (res) res.innerHTML = '<pre style="font-size:11px;color:var(--text-muted);max-height:100%;overflow:auto">' + escapeHtml(JSON.stringify(d.data, null, 2)) + '</pre>';
+      }
+    } else {
+      if (res) res.innerHTML = '<span style="color:var(--error)">' + escapeHtml(d.error || 'Screenshot failed') + '</span>';
+    }
+  } catch(e) {
+    if (res) res.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-camera"></i> Take Screenshot'; }
+};
 
 function renderTree(items, depth) {
   return items.map(function(i) {

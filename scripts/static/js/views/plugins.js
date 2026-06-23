@@ -3,10 +3,9 @@
 
 async function showPluginsView(area) {
   setActivity('Loading', 'plugins');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83E\uDDE9 Plugins</h3>'
-    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Manage installed plugins</p>'
-    + '<div id="plugin-list">Loading...</div></div></div>';
+  area.innerHTML = TEMPLATES.view('fa-puzzle-piece', 'Plugins', 'Manage installed plugins',
+    '<div id="plugin-list">Loading...</div>'
+  );
   try {
     const r = await fetch('/api/plugins');
     const plugins = await r.json();

@@ -3,10 +3,9 @@
 
 async function showPermissionsView(area) {
   setActivity('Loading', 'permissions');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83D\uDEE1\ufe0f Permissions</h3>'
-    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Control the level of command and tool access</p>'
-    + '<div id="perm-status">Loading...</div></div></div>';
+  area.innerHTML = TEMPLATES.view('fa-shield', 'Permissions', 'Control the level of command and tool access',
+    '<div id="perm-status">Loading...</div>'
+  );
   try {
     const r = await fetch('/api/permissions');
     const d = await r.json();

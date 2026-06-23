@@ -660,43 +660,31 @@ async def websocket_chat(websocket: WebSocket):
             history = payload.get("history", [])
 
             chat = get_chat()
+            event_queue: asyncio.Queue = asyncio.Queue()
+
+            async def _stream_runner():
+                """Run chat.chat_stream() in executor, feeding events into the queue."""
+                def _sync_run():
+                    for event in chat.chat_stream(message, history):
+                        loop.call_soon_threadsafe(event_queue.put_nowait, event)
+                await loop.run_in_executor(None, _sync_run)
+
+            stream_task = asyncio.create_task(_stream_runner())
 
             try:
-                # Run blocking chat.chat() in a thread so the event loop stays free
-                result = await loop.run_in_executor(None, chat.chat, message, history)
-            except Exception as call_err:
-                await websocket.send_json({"type": "error", "data": str(call_err)})
+                while True:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=300.0)
+                    if event["type"] == "done":
+                        # Forward done to frontend so it resets streaming state
+                        await websocket.send_json({"type": "done", "data": ""})
+                        break
+                    await websocket.send_json(event)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "error", "data": "Response timed out"})
                 await websocket.send_json({"type": "done", "data": ""})
-                continue
-
-            if result.get("error"):
-                await websocket.send_json({"type": "error", "data": result["error"]})
-            else:
-                content = result.get("content", "")
-                if content:
-                    await websocket.send_json({"type": "text", "data": content})
-                # ── Send tool calls ──
-                tools_used = result.get("tools", [])
-                tool_results = result.get("tool_results", [])
-                for i, tc in enumerate(tools_used):
-                    await websocket.send_json({
-                        "type": "tool",
-                        "data": {"name": tc.get("name", "tool"), "args": tc}
-                    })
-                    # Send tool result if available
-                    if i < len(tool_results):
-                        await websocket.send_json({
-                            "type": "tool_result",
-                            "data": tool_results[i]
-                        })
-                # ── Send reasoning if available ──
-                reasoning = result.get("reasoning", "")
-                if reasoning:
-                    await websocket.send_json({
-                        "type": "reasoning",
-                        "data": reasoning
-                    })
-            await websocket.send_json({"type": "done", "data": ""})
+            finally:
+                if not stream_task.done():
+                    stream_task.cancel()
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")

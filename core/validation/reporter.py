@@ -152,8 +152,12 @@ class ValidationReporter:
         """Syntax-level checks (regex-based, fast)."""
         findings = []
 
-        # Python syntax
-        if code and code.strip():
+        # Python syntax — only if content looks like code
+        _LOOKS_LIKE_CODE = re.compile(
+            r'(def\s|class\s|import\s|from\s|print\(|return\s|if\s|for\s|while\s|'
+            r'lambda\s|with\s|try:|except|else:|\w+\s*=\s*|\w+\(.*\))'
+        )
+        if code and code.strip() and _LOOKS_LIKE_CODE.search(code):
             try:
                 compile(code, "<validation>", "exec")
                 findings.append(Finding(

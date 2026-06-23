@@ -3,15 +3,14 @@
 
 async function showWorkflowsView(area) {
   setActivity('Loading', 'workflows');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83D\uDD01 Workflows</h3>'
-    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Automated multi-step processes</p>'
-    + '<div style="display:flex;gap:8px;margin:8px 0">'
+  area.innerHTML = TEMPLATES.view('fa-diagram-project', 'Workflows', 'Automated multi-step processes',
+    '<div style="display:flex;gap:8px;margin-bottom:12px">'
     + '<input id="wf-name" style="flex:1;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Workflow name">'
     + '<input id="wf-steps" style="flex:2;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Steps (comma-separated): research, code, review">'
     + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" onclick="createWorkflow()">Create</button>'
     + '</div>'
-    + '<div id="workflow-list">Loading...</div></div></div>';
+    + '<div id="workflow-list">Loading...</div>'
+  );
   try {
     const r = await fetch('/api/workflows');
     const workflows = await r.json();

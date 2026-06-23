@@ -160,6 +160,37 @@ class MemoryStore:
             except Exception:
                 pass
 
+        # ── TF-IDF similarity search ────────────────────────
+        try:
+            from core.intelligence.embeddings import get_embedder
+            embedder = get_embedder()
+            contents = []
+            file_map = []
+            for f in self.memory_dir.glob("*.md"):
+                text = f.read_text(encoding="utf-8")
+                body = strip_frontmatter(text)
+                if body.strip():
+                    contents.append(body)
+                    file_map.append(f)
+            if contents:
+                embedder.index(contents)
+                matches = embedder.search(query, top_k=5, min_score=0.08)
+                if matches:
+                    results = []
+                    for score, matched_text in matches:
+                        idx = contents.index(matched_text)
+                        f = file_map[idx]
+                        meta, _ = parse_frontmatter(f.read_text(encoding="utf-8"), nested_metadata=True)
+                        results.append({
+                            "name": meta.get("name", f.stem),
+                            "description": meta.get("description", "")[:80],
+                            "snippet": matched_text[:200],
+                            "score": round(score, 3),
+                        })
+                    return results
+        except Exception:
+            pass
+
         # ── Keyword fallback ────────────────────────────────
         query_lower = query.lower()
         results = []

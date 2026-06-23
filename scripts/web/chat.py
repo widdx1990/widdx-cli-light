@@ -16,7 +16,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.uil.contract import ExecutionResult
 
 logger = logging.getLogger("widdx.web.chat")
 
@@ -69,6 +72,58 @@ class ChatHandler:
         except Exception:
             return []
 
+    def _clean_content(self, content: str) -> str:
+        """Strip thinking tags and internal reasoning from content."""
+        clean = content
+        for tag in ("[thinking]", "[/thinking]", "<thinking>", "</thinking>"):
+            clean = clean.replace(tag, "")
+
+        import re
+        marker_pat = (
+            r'(?:^|\n)\s*(?:'
+            r'Response\s+Generation\s*:|'
+            r'Response\s+strategy\s*:|'
+            r'Final\s+Response\s*:|'
+            r'Final\s+Answer\s*:|'
+            r'Output\s*:|'
+            r'Answer\s*:'
+            r')\s*\n*'
+        )
+        split_result = re.split(marker_pat, clean, flags=re.IGNORECASE)
+        if len(split_result) > 1:
+            clean = split_result[-1].strip()
+        else:
+            lines = clean.split('\n')
+            kept = []
+            found_final = False
+            for line in lines:
+                s = line.strip()
+                if not s:
+                    if not found_final:
+                        continue
+                    kept.append(line)
+                    continue
+                if not found_final:
+                    if re.match(r'^Thinking\.?\s*$', s, re.IGNORECASE):
+                        continue
+                    if re.match(r'^\d+\.\s+\*\*', s):
+                        continue
+                    if re.match(r'^[\*\-]\s{2,}\w+', s):
+                        continue
+                    if re.match(r"^(Let(?:'s)?\s|I\s(?:should|need|can|will|must|think)|"
+                                r"My\s|The\s(user|assistant|prompt|model)|"
+                                r"Wait[,;]|Actually[,;]|Ah[,;]|"
+                                r"Response\s+strategy|Strategy[:;])",
+                                s, re.IGNORECASE):
+                        continue
+                    found_final = True
+                kept.append(line)
+            if found_final:
+                clean = '\n'.join(kept).strip()
+            else:
+                clean = '\n'.join(l for l in lines if l.strip()).strip()
+        return clean
+
     def chat(self, message: str, history: list[dict] | None = None) -> dict:
         """Send a message through the UIL Brain pipeline.
 
@@ -86,10 +141,11 @@ class ChatHandler:
             # Convert history to UIL format
             uil_history = list(history or [])
 
-            # Process through UIL Brain
+            # Process through UIL Brain (pass cfg for engine feature flags)
             result, _routing = self._uil.process(
                 user_input=message,
                 messages=uil_history,
+                cfg=self._cfg,
             )
 
             # Log to ActivityStore
@@ -116,68 +172,7 @@ class ChatHandler:
                 else:
                     tools_result.append({"name": str(tc)})
 
-            # Strip thinking tags for clean display
-            clean = content
-            for tag in ("[thinking]", "[/thinking]", "<thinking>", "</thinking>"):
-                clean = clean.replace(tag, "")
-
-            # Strip internal chain-of-thought reasoning that leaks into output.
-            # DeepSeek/OpenCode models often include their reasoning in the response.
-            import re
-            marker_pat = (
-                r'(?:^|\n)\s*(?:'
-                r'Response\s+Generation\s*:|'
-                r'Response\s+strategy\s*:|'
-                r'Final\s+Response\s*:|'
-                r'Final\s+Answer\s*:|'
-                r'Output\s*:|'
-                r'Answer\s*:'
-                r')\s*\n*'
-            )
-            split_result = re.split(marker_pat, clean, flags=re.IGNORECASE)
-            if len(split_result) > 1:
-                clean = split_result[-1].strip()
-            else:
-                # No marker — strip reasoning patterns aggressively
-                # DeepSeek format: "Thinking. 1. **Analyze...**" then bullet analysis
-                lines = clean.split('\n')
-                kept = []
-                found_final = False
-                for line in lines:
-                    s = line.strip()
-                    # Skip empty lines before we find content
-                    if not s:
-                        if not found_final:
-                            continue
-                        kept.append(line)
-                        continue
-                    # Detect reasoning/analysis lines to skip
-                    if not found_final:
-                        # "Thinking." or "Thinking" alone
-                        if re.match(r'^Thinking\.?\s*$', s, re.IGNORECASE):
-                            continue
-                        # Numbered analysis: "1. **Thing:**" or "1.  **Thing:**"
-                        if re.match(r'^\d+\.\s+\*\*', s):
-                            continue
-                        # Bullet points in reasoning: "*   Thing:" or "- Thing:"
-                        if re.match(r'^[\*\-]\s{2,}\w+', s):
-                            continue
-                        # "Let's ..." reasoning patterns
-                        if re.match(r"^(Let(?:'s)?\s|I\s(?:should|need|can|will|must|think)|"
-                                    r"My\s|The\s(user|assistant|prompt|model)|"
-                                    r"Wait[,;]|Actually[,;]|Ah[,;]|"
-                                    r"Response\s+strategy|Strategy[:;])",
-                                    s, re.IGNORECASE):
-                            continue
-                        # This is actual response content
-                        found_final = True
-                    kept.append(line)
-
-                if found_final:
-                    clean = '\n'.join(kept).strip()
-                else:
-                    # Nothing matched as reasoning — keep everything
-                    clean = '\n'.join(l for l in lines if l.strip()).strip()
+            clean = self._clean_content(content)
 
             return {
                 "content": clean or "",
@@ -187,6 +182,63 @@ class ChatHandler:
         except Exception as e:
             logger.error("ChatHandler error: %s", e, exc_info=True)
             return {"content": "", "error": str(e)}
+
+    def chat_stream(self, message: str, history: list[dict] | None = None):
+        """Generator that yields streaming events during UIL processing.
+
+        Yields dicts with keys: type (reasoning, text, tool, tool_result, done), data
+
+        Runs UIL processing in a background thread, yielding events as they occur.
+        """
+        if self._uil is None:
+            yield {"type": "error", "data": "UIL Brain not initialized"}
+            return
+
+        import queue
+        import threading
+
+        event_queue: queue.Queue = queue.Queue()
+        result_container: list[ExecutionResult] = []
+        had_text_events = [False]
+
+        def _run():
+            try:
+                uil_history = list(history or [])
+
+                def _on_event(event):
+                    if event["type"] == "text":
+                        had_text_events[0] = True
+                    event_queue.put(event)
+
+                result, _routing = self._uil.process(
+                    user_input=message,
+                    messages=uil_history,
+                    cfg=self._cfg,
+                    on_event=_on_event,
+                )
+                result_container.append(result)
+                event_queue.put(None)  # sentinel
+            except Exception as e:
+                logger.error("chat_stream error: %s", e, exc_info=True)
+                event_queue.put({"type": "error", "data": str(e)})
+                event_queue.put(None)
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+
+        while True:
+            event = event_queue.get()
+            if event is None:
+                break
+            yield event
+
+        # Yield final cleaned text if no streaming text was emitted
+        if result_container and not had_text_events[0]:
+            content = getattr(result_container[0], "summary", "") or ""
+            clean = self._clean_content(content)
+            if clean:
+                yield {"type": "text", "data": clean}
+        yield {"type": "done", "data": None}
 
     @property
     def info(self) -> dict:

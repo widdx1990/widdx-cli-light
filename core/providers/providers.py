@@ -73,8 +73,15 @@ class Provider:
 
     def stream(self, messages: list, tool_defs: list, temperature: float = 0.7):
         """Generator that yields events for live streaming.
-        Default: single done event (no streaming)."""
+        Calls chat() and yields the final result as a single event.
+        Subclasses override this for true token-by-token streaming."""
         content, tool_calls = self.chat(messages, tool_defs, temperature)
+        if content:
+            yield {"type": "content", "data": content}
+        for tc in (tool_calls or []):
+            tc_name = tc.name if hasattr(tc, 'name') else str(tc)
+            tc_args = tc.args if hasattr(tc, 'args') else {}
+            yield {"type": "tool_call", "data": {"name": tc_name, "args": tc_args}}
         yield {"type": "done", "data": (content, tool_calls)}
 
     # ── Shared streaming helpers (used by subclasses) ──────────────

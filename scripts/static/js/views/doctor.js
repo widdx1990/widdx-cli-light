@@ -3,11 +3,10 @@
 
 async function showDoctorView(area) {
   setActivity('Running', 'health checks');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83E\uDDBA System Health</h3>'
-    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Diagnostics and system checks</p>'
-    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;margin-bottom:12px" onclick="showDoctorView(document.getElementById(\'messagesArea\'))">\uD83D\uDD04 Re-run Checks</button>'
-    + '<div id="doctor-results">Running checks...</div></div></div>';
+  area.innerHTML = TEMPLATES.view('fa-stethoscope', 'System Health', 'Diagnostics and system checks',
+    '<div style="margin-bottom:12px"><button class="send-btn" onclick="showDoctorView(document.getElementById(\'messagesArea\'))" style="width:auto;padding:6px 16px;border-radius:6px"><i class="fa-solid fa-stethoscope"></i> Run Checks</button></div>'
+    + '<div id="doctor-results">Running checks...</div>'
+  );
   try {
     const r = await fetch('/api/doctor');
     const checks = await r.json();

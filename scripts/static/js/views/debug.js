@@ -3,10 +3,10 @@
 
 async function showDebugView(area) {
   setActivity('Loading', 'debug');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83D\uDC1B Debug Information</h3>'
-    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;margin-bottom:12px" onclick="showDebugView(document.getElementById(\'messagesArea\'))">\uD83D\uDD04 Refresh</button>'
-    + '<div id="debug-content">Loading...</div></div></div>';
+  area.innerHTML = TEMPLATES.view('fa-bug', 'Debug Information', 'Low-level system diagnostics',
+    '<div style="margin-bottom:12px"><button class="send-btn" onclick="showDebugView(document.getElementById(\'messagesArea\'))" style="width:auto;padding:6px 16px;border-radius:6px"><i class="fa-solid fa-rotate"></i> Refresh</button></div>'
+    + '<div id="debug-content">Loading...</div>'
+  );
   try {
     const r = await fetch('/api/debug');
     const d = await r.json();

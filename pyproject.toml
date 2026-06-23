@@ -1,6 +1,6 @@
 [project]
 name = "widdx-nexus"
-version = "3.0.0"
+version = "3.1.0"
 description = "WIDDX Nexus — Terminal AI Workspace | By MUHAMMAD MUSLIH (widdx.com)"
 readme = "README.md"
 requires-python = ">=3.10"

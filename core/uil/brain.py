@@ -16,7 +16,7 @@ Pure orchestration — delegates everything.
 
 import time
 import logging
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger("widdx.uil.brain")
 
@@ -104,6 +104,7 @@ class UnifiedIntelligenceLayer:
                 cfg: dict | None = None,
                 state: dict | None = None,
                 project_card: Any | None = None,
+                on_event: Callable | None = None,
                 ) -> tuple[ExecutionResult, RoutingDecision]:
         """Full UIL pipeline: analyze → route → plan → execute → feedback.
 
@@ -147,12 +148,27 @@ class UnifiedIntelligenceLayer:
                     classification.task_type.value, classification.confidence,
                 )
                 if adapted.task_type != classification.task_type:
-                    logger.warning(
-                        "Engine DISAGREE: intelligence=%s analyzer=%s → using analyzer",
-                        adapted.task_type.value, classification.task_type.value,
-                    )
-                # Future: when confidence is high enough, use engine result
-                # For now: old analyzer always wins (safe default)
+                    if adapted.confidence >= 0.6:
+                        logger.info(
+                            "IntelligenceEngine wins (confidence=%.2f): %s → %s",
+                            adapted.confidence,
+                            classification.task_type.value,
+                            adapted.task_type.value,
+                        )
+                        classification = adapted
+                    elif adapted.confidence >= 0.4 and classification.confidence < 0.3:
+                        logger.info(
+                            "IntelligenceEngine overrides low-confidence analyzer: %s (%.2f) → %s (%.2f)",
+                            classification.task_type.value, classification.confidence,
+                            adapted.task_type.value, adapted.confidence,
+                        )
+                        classification = adapted
+                    else:
+                        logger.warning(
+                            "Engine DISAGREE: intelligence=%s(%.2f) analyzer=%s(%.2f) → using analyzer",
+                            adapted.task_type.value, adapted.confidence,
+                            classification.task_type.value, classification.confidence,
+                        )
             except Exception as e:
                 logger.debug("IntelligenceEngine unavailable: %s", e)
 
@@ -256,7 +272,14 @@ class UnifiedIntelligenceLayer:
             )
 
         try:
-            raw = executor(ctx, enriched_input, messages)
+            if on_event:
+                try:
+                    raw = executor(ctx, enriched_input, messages, on_event=on_event)
+                except TypeError:
+                    # Executor doesn't support streaming — fall back to synchronous
+                    raw = executor(ctx, enriched_input, messages)
+            else:
+                raw = executor(ctx, enriched_input, messages)
         except Exception as exc:
             err_msg = str(exc)
             raw = ExecutionResult(
@@ -331,10 +354,17 @@ class UnifiedIntelligenceLayer:
                 adapted_val = adapt_validation(val_report)
                 if adapted_val.passed_all != verification_report.passed_all:
                     logger.warning(
-                        "Validation DISAGREE: new=%s old=%s",
+                        "Validation DISAGREE: new=%s old=%s → merging findings",
                         "PASS" if adapted_val.passed_all else "FAIL",
                         "PASS" if verification_report.passed_all else "FAIL",
                     )
+                # Merge validation findings into verification report
+                for f in adapted_val.findings:
+                    if f.severity == VerificationSeverity.CRITICAL:
+                        verification_report.findings.insert(0, f)
+                    else:
+                        verification_report.findings.append(f)
+                verification_report.recompute()
             except Exception as e:
                 logger.debug("ValidationEngine unavailable: %s", e)
 

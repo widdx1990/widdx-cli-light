@@ -347,6 +347,13 @@ class VerificationReport:
             self.passed_all = False
         return f
 
+    def recompute(self):
+        """Recompute passed_all from current findings after external mutations."""
+        self.passed_all = not any(
+            f.severity in (VerificationSeverity.CRITICAL, VerificationSeverity.ERROR) and not f.passed
+            for f in self.findings
+        )
+
     def summarize(self) -> str:
         """One-line summary of verification results."""
         total = len(self.findings)

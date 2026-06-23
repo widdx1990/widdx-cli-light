@@ -15,7 +15,7 @@ Every public executor in this module:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..uil.contract import (
     ExecutionMode,
@@ -68,6 +68,54 @@ def _count_success_fail(steps: list) -> tuple[int, int]:
 
 
 # ---------------------------------------------------------------------------
+# Streaming event helpers
+# ---------------------------------------------------------------------------
+
+def _make_on_event_provider(provider, on_event):
+    """Wrap a provider so stream() events are forwarded to on_event."""
+    orig_stream = provider.__class__.stream
+
+    def wrapped_stream(self, messages, tool_defs, temperature):
+        for event in orig_stream(self, messages, tool_defs, temperature):
+            if event["type"] == "content":
+                if on_event:
+                    on_event({"type": "text", "data": event["data"]})
+            elif event["type"] == "reasoning":
+                if on_event:
+                    on_event({"type": "reasoning", "data": event["data"]})
+            elif event["type"] == "tool_call":
+                if on_event:
+                    on_event({"type": "tool", "data": event["data"]})
+            yield event
+
+    provider.stream = wrapped_stream.__get__(provider, type(provider))
+    return provider
+
+
+def _run_with_stream_events(provider, tool_defs, temperature, msgs, on_event):
+    """Run provider.stream() forwarding events via on_event, return (content, tool_calls)."""
+    content_chunks = []
+    tool_calls = []
+    for event in provider.stream(msgs, tool_defs, temperature):
+        if event["type"] == "content":
+            content_chunks.append(event["data"])
+            if on_event:
+                on_event({"type": "text", "data": event["data"]})
+        elif event["type"] == "reasoning":
+            if on_event:
+                on_event({"type": "reasoning", "data": event["data"]})
+        elif event["type"] == "tool_call":
+            tc = event["data"]
+            tool_calls.append(tc)
+            if on_event:
+                on_event({"type": "tool", "data": tc})
+        elif event["type"] == "done":
+            _, tc_list = event["data"]
+            tool_calls = tc_list or tool_calls
+    return "".join(content_chunks), tool_calls
+
+
+# ---------------------------------------------------------------------------
 # Executors — each maps one ExecutionMode
 # ---------------------------------------------------------------------------
 
@@ -75,6 +123,7 @@ def simple_chat_executor(
     ctx: ExecutionContext,
     user_input: str,
     messages: list[dict] | None = None,
+    on_event: Callable | None = None,
 ) -> ExecutionResult:
     """Execute a direct LLM chat turn, with optional plan injection.
 
@@ -86,6 +135,7 @@ def simple_chat_executor(
         ctx: Execution context carrying provider, tool_defs, cfg, state.
         user_input: Raw user message text.
         messages: Full conversation history (system + user + assistant).
+        on_event: Optional callback for streaming events (called during execution).
 
     Returns:
         ExecutionResult with ``summary`` set to the assistant's reply.
@@ -114,7 +164,11 @@ def simple_chat_executor(
             }
             msgs.append(plan_marker)
 
-        content, tool_calls = provider.chat(msgs, tool_defs, cfg.get("temperature", 0.7))
+        # Use streaming path if callback is provided
+        if on_event:
+            content, tool_calls = _run_with_stream_events(provider, tool_defs, cfg.get("temperature", 0.7), msgs, on_event)
+        else:
+            content, tool_calls = provider.chat(msgs, tool_defs, cfg.get("temperature", 0.7))
         state["tools_used"] = [tc.name if hasattr(tc, 'name') else str(tc) for tc in (tool_calls or [])]
         summary = content or ""
 

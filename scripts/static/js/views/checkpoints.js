@@ -3,11 +3,10 @@
 
 async function showCheckpointsView(area) {
   setActivity('Loading', 'checkpoints');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83D\uDCF8 Checkpoints</h3>'
-    + '<p style="color:var(--text-muted);font-size:12px;margin:4px 0 12px">Snapshot-based file saves (no Git required)</p>'
-    + '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px;margin-bottom:12px" onclick="createCheckpoint()">\uD83D\uDCF8 Create Checkpoint</button>'
-    + '<div id="checkpoint-list">Loading...</div></div></div>';
+  area.innerHTML = TEMPLATES.view('fa-camera-retro', 'Checkpoints', 'Snapshot-based file saves (no Git required)',
+    '<div style="margin-bottom:12px"><button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px" onclick="createCheckpoint()"><i class="fa-solid fa-camera"></i> Create Checkpoint</button></div>'
+    + '<div id="checkpoint-list">Loading...</div>'
+  );
   try {
     const r = await fetch('/api/checkpoints');
     const cps = await r.json();

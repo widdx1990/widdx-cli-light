@@ -93,8 +93,9 @@ async function showModelSetupView(area) {
       + '</div>';
   }).join('');
 
-  tabProviders += '<div style="display:flex;gap:10px;align-items:center;margin-top:4px">'
+  tabProviders += '<div style="display:flex;gap:10px;align-items:center;margin-top:4px;flex-wrap:wrap">'
     + '<button onclick="saveAllProviders()" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save All Providers</button>'
+    + '<button onclick="refreshProviderModels()" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border-main);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font-size:12px"><i class="fa-solid fa-rotate"></i> Refresh Models</button>'
     + '<span id="prov-status" style="font-size:var(--font-size-sm);color:var(--text-muted)"></span></div>';
 
   var tabNetwork = ''
@@ -530,6 +531,26 @@ window.loadGGUFSettings = function() {
       showToast(d.status === 'loaded' ? 'Model loaded' : (d.error || 'Failed'), d.status === 'loaded' ? 'success' : 'error');
       showModelSetupView(document.getElementById('messagesArea'));
     }).catch(function(e) { showToast(e.message, 'error'); });
+};
+
+window.refreshProviderModels = async function() {
+  var active = document.getElementById('ms-provider')?.value || 'opencode-zen';
+  try {
+    var r = await fetch('/api/settings/models?provider=' + encodeURIComponent(active));
+    var d = await r.json();
+    if (d.models && d.models.length) {
+      var sel = document.getElementById('prov-model-' + active.replace(/\s+/g, '-'));
+      if (sel) {
+        var current = sel.value;
+        sel.innerHTML = d.models.map(function(m) {
+          return '<option value="' + escapeHtml(m) + '"' + (m === current ? ' selected' : '') + '>' + escapeHtml(m) + '</option>';
+        }).join('');
+      }
+      showToast('Models refreshed: ' + d.models.length + ' available', 'success');
+    } else {
+      showToast('No models returned for ' + active, 'info');
+    }
+  } catch(e) { showToast(e.message, 'error'); }
 };
 
 window.unloadGGUFSettings = async function() {

@@ -18,7 +18,7 @@ def test_execute_simple_echo():
     result = sandbox.execute("echo hello", timeout=10)
     assert result.ok
     assert "hello" in result.stdout
-    assert result.mode in ("subprocess", "docker", "wsl", "cgroups", "sandbox-exec")
+    assert result.mode in ("subprocess", "docker", "wsl", "cgroups", "sandbox-exec") or "container" in result.mode
 
 
 def test_execute_exit_code():

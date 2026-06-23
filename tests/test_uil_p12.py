@@ -199,8 +199,8 @@ def test_brain_full_end_to_end():
     test_cases = [
         ("hello how are you",           ExecutionMode.SIMPLE_CHAT, 0),
         ("create a new flask app",      ExecutionMode.AUTONOMOUS, 6),
-        ("a complete web app",          ExecutionMode.EXPERT_TEAM, 13),
-        ("navigate to google.com",      ExecutionMode.SIMPLE_CHAT, 2),
+        ("a complete web app",          ExecutionMode.AUTONOMOUS, 0),
+        ("navigate to google.com",      ExecutionMode.AUTONOMOUS, 2),
         ("xylophone purples",           ExecutionMode.SIMPLE_CHAT, 13),
     ]
 

@@ -929,90 +929,62 @@ body:has(.sidebar.collapsed) .sidebar-floating-toggle i {
 .ai-btn:hover { color: var(--text-primary); background: var(--fill-hover); border-color: var(--border-light); }
 .ai-btn.active { color: var(--accent); }
 
-/* ── Thinking Block ──────────────────────────────────────────── */
-.think-block {
-  margin-bottom: 10px; border: 1px solid rgba(245,166,35,0.25);
-  border-radius: var(--radius-md); background: rgba(245,166,35,0.04);
-  overflow: hidden; transition: all var(--duration-fast);
+/* ── Thinking Strip (compact) ─────────────────────────────────── */
+.think-strip { margin-bottom: 8px; }
+.think-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer;
+  font-size: 12px; color: var(--text-tertiary); padding: 2px 0;
+  transition: color var(--duration-fast);
 }
-.think-head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; cursor: pointer; user-select: none;
-  font-size: 12px; font-weight: 500; color: #f5a623;
-  transition: background var(--duration-fast);
-}
-.think-head:hover { background: rgba(245,166,35,0.08); }
-.think-head i.fa-brain { font-size: 14px; }
-.think-preview {
-  color: var(--text-muted); font-size: 11px; font-weight: 400;
-  margin-left: auto; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; max-width: 200px;
-}
+.think-toggle:hover { color: var(--text-secondary); }
 .think-chevron {
-  font-size: 10px; transition: transform var(--duration-normal);
-  flex-shrink: 0;
+  font-size: 9px; transition: transform var(--duration-normal);
 }
-.think-body { max-height: 600px; overflow-y: auto; transition: max-height var(--duration-slow); }
-.think-block.collapsed .think-body { max-height: 0; }
-.think-block.collapsed .think-chevron { transform: rotate(-90deg); }
-.think-content { padding: 8px 12px 12px; }
+.think-label { font-weight: 400; }
+.think-body { display: none; }
+.think-body.open { display: block; }
+.think-content {
+  margin-top: 6px; padding: 10px 12px;
+  background: var(--bg-canvas); border: 1px solid var(--border-light);
+  border-radius: var(--radius-md); max-height: 400px; overflow-y: auto;
+}
 .think-content p {
-  margin: 0; font-size: 12px; line-height: 1.6;
+  margin: 0; font-size: 12px; line-height: 1.7;
   color: var(--text-muted); font-style: italic;
 }
 
-/* ── Tool Card (execution) ───────────────────────────────────── */
-.tool-card {
-  margin: 6px 0; border: 1px solid var(--border-main);
-  border-radius: var(--radius-md); background: var(--bg-canvas);
-  overflow: hidden; position: relative;
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-.tool-card.running { border-left: 3px solid var(--accent); }
-.tool-card.success { border-left: 3px solid var(--success); }
-.tool-card.failed  { border-left: 3px solid var(--error); }
-.tool-card-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; cursor: pointer; user-select: none;
-  transition: background var(--duration-fast);
-}
-.tool-card-head:hover { background: var(--fill-hover); }
-.tool-card-status { flex-shrink: 0; width: 18px; text-align: center; }
-.tool-card-status i.fa-spinner { color: var(--accent); font-size: 14px; }
-.tool-card-status i.fa-circle-check { color: var(--success); }
-.tool-card-status i.fa-circle-xmark { color: var(--error); }
-.tool-card-head .tool-card-icon { font-size: 14px; color: var(--text-tertiary); flex-shrink: 0; }
-.tool-card-head .tool-card-name { font-size: 13px; font-weight: 500; color: var(--text-primary); flex: 1; }
-.tool-card-badge {
-  font-size: 10px; color: var(--text-muted); font-weight: 500;
-  font-family: var(--font-mono);
-}
-.tool-card-chevron {
-  font-size: 10px; color: var(--text-tertiary); flex-shrink: 0;
-  transition: transform var(--duration-normal);
-}
-.tool-card.expanded .tool-card-chevron { transform: rotate(180deg); }
-.tool-card-params {
-  max-height: 0; overflow: hidden; transition: max-height var(--duration-slow);
-  background: var(--bg-elevated); border-top: 1px solid var(--border-light);
-}
-.tool-card.expanded .tool-card-params { max-height: 300px; overflow-y: auto; }
-.tool-card-params code {
-  display: block; padding: 10px 14px;
-  font-family: var(--font-mono); font-size: 11px;
-  color: var(--text-secondary); white-space: pre-wrap;
-  word-break: break-all;
-}
-.tool-result {
-  padding: 8px 14px; border-top: 1px solid var(--border-light);
-  font-family: var(--font-mono); font-size: 11px;
-  color: var(--text-secondary); max-height: 180px; overflow-y: auto;
-  white-space: pre-wrap; word-break: break-all;
+/* ── Tool Pills (compact) ────────────────────────────────────── */
+.tool-pills { margin-bottom: 8px; }
+.tool-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px 3px 8px; margin: 2px 4px 2px 0;
+  border-radius: 999px; font-size: 11px; line-height: 1.4;
+  border: 1px solid var(--border-light);
   background: var(--bg-canvas);
+  transition: all var(--duration-fast);
+}
+.tool-pill.running {
+  border-color: var(--accent-dim); background: var(--accent-dim);
+  color: var(--accent);
+}
+.tool-pill.success { border-color: var(--success-dim, rgba(34,197,94,0.15)); color: var(--success); }
+.tool-pill.failed  { border-color: var(--error-dim, rgba(239,68,68,0.15)); color: var(--error); }
+.tool-pill-status { display: inline-flex; align-items: center; width: 12px; justify-content: center; }
+.tp-spinner {
+  display: inline-block; width: 10px; height: 10px;
+  border: 1.5px solid var(--accent); border-top-color: transparent;
+  border-radius: 50%; animation: tp-spin 0.6s linear infinite;
+}
+@keyframes tp-spin { to { transform: rotate(360deg); } }
+.tool-pill-name { font-weight: 500; }
+.tool-pill-args {
+  font-weight: 400; opacity: 0.65; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* ── Response Block ──────────────────────────────────────────── */
-.response-block { margin-top: 2px; }
+.response-block { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-light); }
 .response-content {
   color: var(--text-primary); font-size: var(--font-size-base);
   line-height: 1.7; word-wrap: break-word; overflow-wrap: break-word;

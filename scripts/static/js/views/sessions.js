@@ -3,10 +3,10 @@
 
 async function showSessionsView(area) {
   setActivity('Loading', 'sessions');
-  area.innerHTML = '<div class="ai-content"><div class="ai-text">'
-    + '<h3>\uD83D\uDCBE Saved Sessions</h3>'
-    + '<div style="margin:8px 0"><input id="session-search" style="width:100%;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:8px 12px;font-size:13px" placeholder="Search sessions..." oninput="searchSessions(this.value)"></div>'
-    + '<div id="session-list">Loading...</div></div></div>';
+  area.innerHTML = TEMPLATES.view('fa-clock-rotate-left', 'Saved Sessions', 'Persistent conversation history',
+    '<div style="margin-bottom:12px"><input id="session-search" style="width:100%;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:8px 12px;font-size:13px;box-sizing:border-box" placeholder="Search sessions..." oninput="searchSessions(this.value)"></div>'
+    + '<div id="session-list">Loading...</div>'
+  );
   await refreshSessionList();
   setActivity('Ready', '\u2014');
 }

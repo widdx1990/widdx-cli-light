@@ -407,6 +407,12 @@ function execPaletteAction(action) {
     case 'view-permissions': if (typeof showView === 'function') showView('permissions'); break;
     case 'view-plugins': if (typeof showView === 'function') showView('plugins'); break;
     case 'view-workflows': if (typeof showView === 'function') showView('workflows'); break;
+    case 'view-proxy': if (typeof showView === 'function') showView('proxy'); break;
+    case 'view-gguf': if (typeof showView === 'function') showView('gguf'); break;
+    case 'view-manifest': if (typeof showView === 'function') showView('manifest'); break;
+    case 'view-tokenbudget': if (typeof showView === 'function') showView('tokenbudget'); break;
+    case 'view-autocommit': if (typeof showView === 'function') showView('autocommit'); break;
+    case 'view-apikeys': if (typeof showView === 'function') showView('apikeys'); break;
     case 'clear-chat': clearConversation(); break;
     case 'export': if (typeof showToast === 'function') showToast('Exporting conversation…', 'info'); break;
     case 'shortcuts': if (typeof showToast === 'function') showToast('Ctrl+B Sidebar · Ctrl+J Panel · Ctrl+K Command · Ctrl+N New · Esc Close', 'info'); break;

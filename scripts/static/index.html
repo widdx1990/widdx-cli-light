@@ -95,10 +95,10 @@
         </div>
         <div class="chat-header-spacer"></div>
         <div class="chat-header-actions">
-          <button class="header-btn" id="starBtn" data-i18n="header_star" data-i18n-attr="title" title="Star this chat" onclick="toggleStar()">
+          <button class="header-btn" id="starBtn" data-i18n="header_star" data-i18n-attr="title" title="Star this chat" onclick="this.classList.toggle('active')">
             <i class="fa-solid fa-star"></i>
           </button>
-          <button class="header-btn" data-i18n="header_share" data-i18n-attr="title" title="Copy chat link" onclick="shareChat()">
+          <button class="header-btn" data-i18n="header_share" data-i18n-attr="title" title="Export conversation" onclick="var txt=(typeof S!=='undefined'&&S.messages)?S.messages.map(function(m){return '['+m.role+'] '+(m.content||'')}).join('\n\n---\n\n'):'';navigator.clipboard.writeText(txt).then(function(){showToast('Copied to clipboard!','success')})">
             <i class="fa-solid fa-share-nodes"></i>
           </button>
           <button class="header-btn" data-i18n="header_commands" data-i18n-attr="title" title="Commands (Ctrl+K)" onclick="openCommandPalette()">
@@ -206,6 +206,7 @@
         <div class="right-panel-tab" onclick="switchTab(this, 'terminal')"><i class="fa-solid fa-terminal"></i> <span data-i18n="tab_terminal">Terminal</span></div>
         <div class="right-panel-tab" onclick="switchTab(this, 'browser')"><i class="fa-solid fa-globe"></i> <span data-i18n="tab_browser">Browser</span></div>
         <div class="right-panel-tab" onclick="switchTab(this, 'files')"><i class="fa-solid fa-folder"></i> <span data-i18n="tab_files">Files</span></div>
+        <div class="right-panel-tab" onclick="switchTab(this, 'screenshot')"><i class="fa-solid fa-camera"></i> <span>Screenshot</span></div>
       </div>
       <div class="right-panel-body" id="panelBody">
         <div class="panel-desktop-view">
@@ -253,6 +254,20 @@
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gateway')"><i class="fa-solid fa-tower-broadcast"></i> <span data-i18n="cmd_gateway">Gateway</span></div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-tasks')"><i class="fa-solid fa-diagram-project"></i> <span data-i18n="cmd_delegation">Delegation</span></div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-activity')"><i class="fa-solid fa-chart-simple"></i> <span data-i18n="cmd_activity">Activity</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-mcp')"><i class="fa-solid fa-plug"></i> <span>MCP Servers</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-git')"><i class="fa-solid fa-code-branch"></i> <span>Git</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-checkpoints')"><i class="fa-solid fa-camera-retro"></i> <span>Checkpoints</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-doctor')"><i class="fa-solid fa-stethoscope"></i> <span>Doctor</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-debug')"><i class="fa-solid fa-bug"></i> <span>Debug</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-permissions')"><i class="fa-solid fa-shield"></i> <span>Permissions</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-plugins')"><i class="fa-solid fa-puzzle-piece"></i> <span>Plugins</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-workflows')"><i class="fa-solid fa-diagram-project"></i> <span>Workflows</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-proxy')"><i class="fa-solid fa-globe"></i> <span>Proxy Settings</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gguf')"><i class="fa-solid fa-microchip"></i> <span>GGUF Models</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-manifest')"><i class="fa-solid fa-file-invoice"></i> <span>Manifest</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-tokenbudget')"><i class="fa-solid fa-coins"></i> <span>Token Budget</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-autocommit')"><i class="fa-solid fa-arrows-rotate"></i> <span>Auto-Commit</span></div>
+      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-apikeys')"><i class="fa-solid fa-key"></i> <span>API Keys</span></div>
       <div class="cmd-palette-section" data-i18n="cmd_conversation">Conversation</div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('clear-chat')"><i class="fa-solid fa-eraser"></i> <span data-i18n="cmd_clear">Clear Conversation</span></div>
       <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('export')"><i class="fa-solid fa-file-export"></i> <span data-i18n="cmd_export">Export</span></div>

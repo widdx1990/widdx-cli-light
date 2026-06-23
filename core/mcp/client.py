@@ -16,6 +16,84 @@ import threading
 import time
 
 
+def _setup_windows_job(proc) -> bool:
+    """Assign a Windows subprocess to a Job Object with resource limits.
+    
+    Uses ctypes to create a job with 512MB memory, 5min CPU, and
+    kill-on-close limits. Returns True if successful.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+        
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        
+        CREATE_SUSPENDED = 0x00000004
+        JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
+        JOB_OBJECT_LIMIT_JOB_TIME = 0x00000004
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+        JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
+        
+        # Create job object
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            return False
+        
+        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+                ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("ChildProcessCount", wintypes.DWORD),
+                ("MaxMemoryLimit", ctypes.c_size_t),
+            ]
+        
+        class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ("IoInfo", ctypes.c_ulonglong * 3),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+        
+        # 5 min CPU in 100ns ticks
+        five_min_ns = -5 * 60 * 10_000_000
+        
+        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = (
+            JOB_OBJECT_LIMIT_JOB_TIME |
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
+            JOB_OBJECT_LIMIT_ACTIVE_PROCESS |
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY
+        )
+        info.BasicLimitInformation.PerJobUserTimeLimit = wintypes.LARGE_INTEGER(five_min_ns)
+        info.BasicLimitInformation.ActiveProcessLimit = 1
+        info.ProcessMemoryLimit = 512 * 1024 * 1024  # 512 MB
+        info.JobMemoryLimit = 512 * 1024 * 1024
+        
+        JobObjectExtendedLimitInformation = 9
+        kernel32.SetInformationJobObject(
+            job, JobObjectExtendedLimitInformation,
+            ctypes.byref(info), ctypes.sizeof(info)
+        )
+        
+        # Assign process (must be created suspended)
+        pid = proc.pid if hasattr(proc, 'pid') else proc._proc.pid if hasattr(proc, '_proc') else 0
+        if pid and not kernel32.AssignProcessToJobObject(job, ctypes.wintypes.HANDLE(
+                ctypes.windll.kernel32.OpenProcess(0x40000, False, pid))):
+            return False
+        
+        return True
+    except Exception:
+        return False
+
+
 def _mcp_resource_limits():
     """Apply resource limits to MCP subprocess (Unix only).
     Limits: 512MB memory, 300s CPU, 256 open files.
@@ -200,6 +278,9 @@ class MCPServerConnection:
                         preexec_fn=_mcp_resource_limits if os.name != 'nt' else None,
                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
                     )
+                    # Windows: assign to job object for resource limits
+                    if os.name == 'nt' and self._proc and self._proc.pid:
+                        _setup_windows_job(self._proc)
             except Exception as e:
                 last_err = f"Launch failed: {e}"
                 if attempt < attempts - 1:

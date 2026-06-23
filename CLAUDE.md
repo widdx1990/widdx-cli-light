@@ -8,7 +8,7 @@
 
 **WIDDX Nexus** is a **Terminal AI Operating System** — a multi-provider, multi-agent, multi-channel AI workspace that wraps any LLM with tools, memory, scheduling, sandboxing, and delegation to turn even weak/free models into powerful autonomous engineering assistants.
 
-- **Version:** 3.0.0
+- **Version:** 3.1.0
 - **Author:** MUHAMMAD MUSLIH ([widdx.com](https://widdx.com)) — Made in Palestine 🇵🇸
 - **License:** MIT
 - **Python:** ≥3.10
