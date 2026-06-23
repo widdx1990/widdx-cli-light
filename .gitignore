@@ -62,3 +62,9 @@ TASKS_PHASE*.md
 _run_tests.py
 skill.md
 *.backup
+
+# Scan / audit reports (local only)
+scan_report/
+
+# Debug scripts
+_debug_brain.py

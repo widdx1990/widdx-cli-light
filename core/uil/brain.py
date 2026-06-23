@@ -540,7 +540,11 @@ class UnifiedIntelligenceLayer:
         return result, decision
 
     def set_tool_defs(self, tool_defs: list[dict]):
-        """Update the tool definitions (called when tools change)."""
+        """Update the internal tool definitions list.
+
+        Called externally when the available tool set changes
+        (e.g. after loading/unloading skills or MCP servers).
+        """
         self._tool_defs = tool_defs
 
     # ------------------------------------------------------------------

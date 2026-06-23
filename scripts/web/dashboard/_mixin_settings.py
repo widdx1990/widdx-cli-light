@@ -1,0 +1,114 @@
+"""Dashboard mixin — settings."""
+from __future__ import annotations
+import logging
+
+logger = logging.getLogger("widdx.web.dashboard")
+
+import threading
+
+
+class SettingsMixin:
+    def get_settings(self) -> dict:
+        """Return full settings with available providers and models."""
+        cfg = {}
+        try:
+            from core.config.settings import load as load_cfg
+            cfg = load_cfg()
+        except Exception:
+            pass
+
+        provider_cfg = cfg.get("provider", {})
+        current_provider = provider_cfg.get("name") or cfg.get("default_provider", "opencode-zen")
+
+        # Build provider list
+        providers = []
+        for meta in self.PROVIDERS_META:
+            models = self._fetch_models(meta["id"])
+            providers.append({
+                "id": meta["id"],
+                "name": meta["name"],
+                "icon": meta["icon"],
+                "default_base": meta["default_base"],
+                "models": models,
+            })
+
+        return {
+            "provider": {
+                "name": current_provider,
+                "model": provider_cfg.get("model", ""),
+                "base_url": provider_cfg.get("base_url", ""),
+                "api_key": "",  # Never expose the actual key
+                "has_key": bool(provider_cfg.get("api_key")),
+            },
+            "cli_theme": cfg.get("cli_theme", "dark"),
+            "system_prompt": cfg.get("system_prompt", ""),
+            "temperature": cfg.get("temperature", 0.7),
+            "max_turns": cfg.get("max_turns", 10),
+            "available_providers": providers,
+            "config_path": str(cfg.get("_path", "")),
+        }
+
+
+    def update_settings(self, data: dict) -> dict:
+        """Update config with new settings."""
+        try:
+            from core.config.settings import load as load_cfg, save as save_cfg
+            cfg = load_cfg()
+
+            provider = data.get("provider", {})
+            if "name" in provider:
+                cfg.setdefault("provider", {})["name"] = provider["name"]
+            if "model" in provider:
+                cfg.setdefault("provider", {})["model"] = provider["model"]
+            if "base_url" in provider and provider["base_url"]:
+                cfg.setdefault("provider", {})["base_url"] = provider["base_url"]
+            if "api_key" in provider and provider["api_key"]:
+                cfg.setdefault("provider", {})["api_key"] = provider["api_key"]
+
+            if "system_prompt" in data:
+                cfg["system_prompt"] = data["system_prompt"]
+            if "temperature" in data:
+                cfg["temperature"] = float(data["temperature"])
+            if "max_turns" in data:
+                cfg["max_turns"] = int(data["max_turns"])
+            if "cli_theme" in data:
+                cfg["cli_theme"] = str(data["cli_theme"]).lower()
+
+            save_cfg(cfg)
+            return {"status": "ok", "message": "Settings saved"}
+        except Exception as e:
+            logger.error("Settings save error: %s", e)
+            return {"status": "error", "message": str(e)}
+
+
+    def _fetch_models(self, provider_id: str) -> list[str]:
+        """Fetch available models for a provider with timeout."""
+        try:
+            from core.providers.providers import get_available_models
+            import threading
+            result = []
+            thread = threading.Thread(target=lambda: result.extend(get_available_models(provider_id)))
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                logger.warning("Model fetch timeout for %s", provider_id)
+                return []
+            return result[:50] if result else []
+        except Exception:
+            return []
+
+
+    def get_provider_models(self, provider_id: str) -> dict:
+        """Get models for a specific provider (for live refresh)."""
+        import threading
+        result = []
+        thread = threading.Thread(target=lambda: result.extend(self._fetch_models(provider_id)))
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=8.0)
+        return {"provider": provider_id, "models": result[:50] if result else []}
+
+    # ── Sandbox Computer ──
+
+

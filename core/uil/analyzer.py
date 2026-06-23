@@ -114,9 +114,11 @@ class LLMClassifier:
         self._cache_ttl = 60.0  # cache classification for 60 seconds
 
     def _cache_key(self, text: str) -> str:
+        """Generate a deterministic cache key from user input."""
         return str(hash(text.lower().strip()))
 
     def _get_cached(self, text: str) -> str | None:
+        """Retrieve a cached classification result if still within TTL."""
         key = self._cache_key(text)
         entry = self._cache.get(key)
         if entry and (time.time() - entry[0]) < self._cache_ttl:
@@ -124,6 +126,7 @@ class LLMClassifier:
         return None
 
     def _set_cached(self, text: str, result: str):
+        """Store a classification result in cache with current timestamp."""
         key = self._cache_key(text)
         self._cache[key] = (time.time(), result)
 
@@ -254,6 +257,12 @@ class TaskAnalyzer:
     """
 
     def __init__(self, provider=None):
+        """Initialize the TaskAnalyzer with an optional LLM provider.
+
+        Args:
+            provider: Optional provider instance for LLM-based classification.
+                      If None, falls back to keyword matching only.
+        """
         self.provider = provider
         self._llm = LLMClassifier(provider=provider)
 

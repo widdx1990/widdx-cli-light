@@ -203,6 +203,14 @@ class DecisionRouter:
         self, task_type: TaskType, domain: Domain,
         all_tool_defs: list[dict],
     ) -> tuple[list[dict], list[DecisionStep]]:
+        """Filter available tools based on task type and domain.
+
+        Applies deterministic tool groups per task type, adds domain-specific
+        modifiers, and preserves skill tools and use_skill tool.
+
+        Returns:
+            Tuple of (filtered_tool_defs, decision_steps_with_reasoning).
+        """
         steps: list[DecisionStep] = []
         allowed_patterns = _TOOL_GROUPS.get(task_type, None)
 
@@ -293,6 +301,7 @@ class DecisionRouter:
 
     @staticmethod
     def _max_turns_for(mode: ExecutionMode) -> int:
+        """Return maximum conversation turns appropriate for the execution mode."""
         return {
             ExecutionMode.SIMPLE_CHAT: 5,
             ExecutionMode.AUTONOMOUS: 15,
@@ -302,6 +311,7 @@ class DecisionRouter:
 
     @staticmethod
     def _estimate_cost(mode: ExecutionMode) -> float:
+        """Return estimated dollar cost for a single execution turn in this mode."""
         return {
             ExecutionMode.SIMPLE_CHAT: 0.002,
             ExecutionMode.AUTONOMOUS: 0.010,

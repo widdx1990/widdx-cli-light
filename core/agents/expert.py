@@ -167,6 +167,15 @@ class ExpertAgent:
 
     def __init__(self, profile: ExpertProfile, provider, tool_defs: list,
                  cfg: dict, state: dict):
+        """Initialize an ExpertAgent with its specialization profile.
+
+        Args:
+            profile: The expert's role definition (name, prompt template, etc.).
+            provider: LLM provider instance for generating responses.
+            tool_defs: List of available tool definitions.
+            cfg: Global configuration dictionary.
+            state: Mutable state dict updated during execution (cost, turns, etc.).
+        """
         self.profile = profile
         self.provider = provider
         self.tool_defs = tool_defs
@@ -224,6 +233,11 @@ class ExpertAgent:
         return f"⚠️ {self.profile.name} failed after {max_attempts} attempts: {last_error}"
 
     def __repr__(self):
+        """Return a string representation showing the expert profile name.
+
+        Returns:
+            String like ``ExpertAgent(widdx-coder)``.
+        """
         return f"ExpertAgent({self.profile.name})"
 
 
@@ -243,6 +257,14 @@ class ExpertTeam:
                         "cli tool", "scaffold", "مشروع", "تطبيق كامل"}
 
     def __init__(self, provider, tool_defs: list, cfg: dict, state: dict):
+        """Initialize an ExpertTeam with shared provider, tools, and state.
+
+        Args:
+            provider: LLM provider instance used by all experts.
+            tool_defs: List of available tool definitions passed to each expert.
+            cfg: Global configuration dictionary.
+            state: Mutable state dict updated during execution.
+        """
         self.provider = provider
         self.tool_defs = tool_defs
         self.cfg = cfg
@@ -366,6 +388,16 @@ class ExpertTeam:
         return "\n---\n".join(parts)
 
     def _run(self, profile_key: str, task: str, context: str = "") -> str:
+        """Create an expert agent and run it with the given profile.
+
+        Args:
+            profile_key: Key into ``EXPERT_PROFILES`` (e.g. "coder", "reviewer").
+            task: The instruction to pass to the expert.
+            context: Accumulated output from previous experts.
+
+        Returns:
+            The expert's result text.
+        """
         profile = EXPERT_PROFILES[profile_key]
         agent = ExpertAgent(profile, self.provider, self.tool_defs,
                             self.cfg, self.state)
@@ -405,6 +437,13 @@ class ExpertTeam:
         return count >= 2
 
     def _print_phase(self, num, name, action):
+        """Print a panel indicating the start of a new expert phase.
+
+        Args:
+            num: Phase number or symbol (e.g. "1", "2", ">").
+            name: Expert name (e.g. "widdx-coder").
+            action: Short description of what the expert is doing.
+        """
         console.print()
         console.print(Panel(
             Text("[%s] %s — %s..." % (num, name, action), style="bold #f5a623"),
@@ -414,6 +453,12 @@ class ExpertTeam:
         ))
 
     def _print_phase_done(self, action, message):
+        """Print a panel indicating the completion of an expert phase.
+
+        Args:
+            action: Short action label (e.g. "Research+Code", "Review").
+            message: A status message describing the outcome.
+        """
         console.print()
         console.print(Panel(
             Text("  %s: %s" % (action, message), style="bold #00c896"),

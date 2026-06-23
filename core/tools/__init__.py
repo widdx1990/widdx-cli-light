@@ -26,113 +26,8 @@ _EXTRA_FILE_TOOLS: list[dict] = []
 _DYNAMIC_TOOLS: list[dict] = []
 
 # ── Dangerous command patterns (security) ─────────────────
-_DANGEROUS_PATTERNS: list[tuple[str, str]] = [
-    # (regex pattern, description of risk)
-
-    # ── Destructive file operations ────
-    (r'\brm\s+-rf\b', "recursive force delete (rm -rf)"),
-    (r'\bRemove-Item\s+-Recurse\s+-Force\b', "recursive force delete"),
-    (r'\bdel\s+/[fq]\s', "force delete system files"),
-    (r'\brm\s+.*/\s*(-rf)?\s*(--no-preserve-root)?\b', "dangerous recursive delete"),
-    (r'\bmv\s+.*\s+/dev/null\b', "move file to null device"),
-
-    # ── Disk / filesystem ────
-    (r'>\s*/dev/sd[a-z]', "raw disk write"),
-    (r'\bdd\s+if=', "raw disk copy (dd)"),
-    (r'\bmkfs\.\w+\b', "filesystem format"),
-    (r'\bFormat-Volume\b', "PowerShell volume format"),
-    (r'\bmkswap\b', "swap partition format"),
-    (r'\bfdisk\s+/dev/sd\b', "disk partition modification"),
-
-    # ── Git safety ────
-    (r'\bgit\s+push\s+--force\b', "force push to remote"),
-    (r'\bgit\s+reset\s+--hard\b', "hard git reset"),
-
-    # ── Permissions / system integrity ────
-    (r'\bchmod\s+777\b', "world-writable permissions"),
-    (r'\bchown\s+\d+\s+/\s', "change root ownership"),
-    (r'\bicacls\s+.*\/grant\s+Everyone', "grant Everyone permissions"),
-    (r'\bSet-ExecutionPolicy\b', "change execution policy"),
-
-    # ── System control ────
-    (r'\bRestart-Computer\b', "system restart"),
-    (r'\bStop-Computer\b', "system shutdown"),
-    (r'\bshutdown\s+[-/]', "system shutdown/restart"),
-    (r'\breboot\b', "system reboot"),
-    (r'\bpoweroff\b', "system poweroff"),
-    (r'\bStop-Process\s+-Name\s+(winlogon|lsass|csrss|smss|services)', "critical process kill"),
-    (r'\bsc\s+stop\b', "stop Windows service"),
-    (r'\bRemove-Item\s+.*\\Windows\\', "delete Windows system files"),
-    (r'\bkill\s+-9\s+1\b', "kill init/PID 1"),
-
-    # ── Remote code execution ────
-    (r'\bwget\b.*\|\s*(sh|bash|pwsh)', "pipe download to shell"),
-    (r'\bcurl\b.*\|\s*(sh|bash|pwsh)', "pipe download to shell"),
-    (r'\bInvoke-Expression\b.*(wget|curl|iwr)', "eval remote content"),
-    (r'\bInvoke-WebRequest\b.*\|.*\bInvoke-Expression\b', "download & execute PowerShell"),
-
-    # ── Data exfiltration ────
-    (r'\b(nc|ncat|netcat)\s+.*-e\s+', "netcat reverse shell"),
-    (r'\bbash\s+-i\s+>&\s+/dev/tcp/', "bash reverse shell"),
-    (r'\bpython\s+-c\s+.*socket.*connect\b', "Python reverse shell"),
-    (r'\b(whoami|id)\s.*\|.*(curl|wget)\b', "user info exfiltration"),
-
-    # ── Container escape / privilege ────
-    (r'\b(docker|podman)\s+run\s+--privileged\b', "privileged container run"),
-    (r'\b(docker|podman)\s+exec\s+-it\s+.*\s+--pid=host\b', "container PID namespace escape"),
-    (r'\bnsenter\s+--target\s+1\b', "namespace escape to init namespace"),
-
-    # ── Network tampering ────
-    (r'\biptables\s+-F\b', "flush iptables rules"),
-    (r'\broute\s+add\s+-net\s+0\.0\.0\.0\b', "route table manipulation"),
-    (r'\btcpkill\b', "kill TCP connections"),
-
-    # ── Bypass coverage: separate flags, long options, symbolic notation ────
-    (r'\brm\s+(-\w+\s+)*--?r(?:ecursive)?\b', "recursive delete (any flag form)"),
-    (r'\bgit\s+push\s+(-f|--force)\b', "force push (short or long flag)"),
-    (r'\bgit\s+push\s+.*--force-with-lease\b', "force push with lease"),
-    (r'\bchmod\s+\d*7\d*7\d*7\b', "world-writable (any octal variant)"),
-    (r'\bchmod\s+.*[ugo]\+[rwx]', "permissive symbolic chmod"),
-    (r'\bcurl\b.*\$\(', "curl with command substitution"),
-    (r'\bwget\b.*\$\(', "wget with command substitution"),
-    (r'\bbash\s+-c\s*".*\$\(.*curl', "bash -c with curl substitution"),
-    (r'\bbash\s+-c\s*\'.*\$\(.*curl', "bash -c with curl substitution (single quotes)"),
-    (r'\btee\s+/dev/[hs]d[a-z]\b', "tee to raw device"),
-    (r'\bdd\s+of=', "dd output to device (of= variant)"),
-    (r'\bRemove-Item\s+.*-Recurse\b', "PowerShell recursive delete (any order)"),
-    (r'\bmv\s+.*\s+/etc/',
-     "move to /etc/"),
-    (r'\bchown\s+-R\b', "recursive ownership change"),
-]
-
-# Patterns that are suspicious but not definitively malicious.
-# These trigger a WARNING rather than a BLOCK.
-_WARN_PATTERNS: list[tuple[str, str]] = [
-    (r'\bdocker\s+(run|exec)\b', "docker container execution — verify image source"),
-    (r'\bsudo\b', "superuser privileges requested"),
-    (r'\bpip\s+install\b', "package installation — verify package name"),
-    (r'\bnpm\s+install\s+-g\b', "global npm install — verify package name"),
-    (r'\bchmod\s+\+x\b', "making file executable"),
-    (r'\bsystemctl\s+(start|stop|restart|enable|disable)\b', "systemd service control"),
-    (r'\bsource\s+.*\|\s*\b', "sourcing piped content"),
-    (r'\beval\b', "eval usage — high risk of code injection"),
-]
-
-
-def _scan_dangerous(command: str) -> tuple[list[str], list[str]]:
-    """Scan a command for dangerous and suspicious patterns.
-
-    Returns (blocked_risks, warning_risks).
-    """
-    blocked = []
-    for pattern, risk_desc in _DANGEROUS_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
-            blocked.append(risk_desc)
-    warnings = []
-    for pattern, risk_desc in _WARN_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
-            warnings.append(risk_desc)
-    return blocked, warnings
+# Security patterns — imported from core.tools.security
+from core.tools.security import _DANGEROUS_PATTERNS, _WARN_PATTERNS, scan_dangerous as _scan_dangerous
 
 
 def register_dynamic(tool_defs: list[dict], tool_map: dict[str, callable]):
@@ -362,7 +257,7 @@ def _bash(command: str, description: str | None = None) -> str:
         prefix = "\u26a0\ufe0f WARNING \u2014 Suspicious patterns:\n" + "\n".join(f"  \u2022 {r}" for r in warnings_list) + "\n\n"
 
     try:
-        from .sandbox import SandboxExecutor
+        from core.sandbox import SandboxExecutor
         sb = SandboxExecutor(mode="auto")
         result = sb.execute(command, timeout=BASH_TIMEOUT)
         out = result.stdout[:MAX_STDOUT_CHARS]
@@ -1188,99 +1083,11 @@ register(
     _handle_edit_files,
 )
 
-
-# ── Browser / Computer Use tools ─────────────────────────────
-
-
-def _browser_navigate(url: str) -> str:
-    """Open a URL in the browser and return the page content (text).
-
-    Uses Playwright if available, otherwise falls back to HTTP fetch.
-    """
-    # Try Playwright MCP first (if connected)
-    try:
-        from core.mcp.client import get_mcp_manager
-        mgr = get_mcp_manager()
-        if mgr.has_tool("mcp__playwright__browser_navigate") or mgr.has_tool("mcp__playwright__navigate"):
-            tool_name = "mcp__playwright__browser_navigate" if mgr.has_tool("mcp__playwright__browser_navigate") else "mcp__playwright__navigate"
-            return mgr.call_tool(tool_name, {"url": url})
-    except Exception:
-        pass
-    # Fallback: HTTP fetch
-    return _web_fetch(url)
-
-
-def _browser_screenshot(url: str | None = None, selector: str | None = None) -> str:
-    """Take a screenshot of the current page or a specific URL.
-
-    Uses Playwright MCP if available.
-    """
-    try:
-        from core.mcp.client import get_mcp_manager
-        mgr = get_mcp_manager()
-        # Navigate first if URL provided
-        if url:
-            tool_name = "mcp__playwright__browser_navigate" if mgr.has_tool("mcp__playwright__browser_navigate") else "mcp__playwright__navigate"
-            mgr.call_tool(tool_name, {"url": url})
-        # Take screenshot
-        if mgr.has_tool("mcp__playwright__screenshot"):
-            args = {}
-            if selector:
-                args["selector"] = selector
-            return mgr.call_tool("mcp__playwright__screenshot", args)
-        return "Screenshot not available — Playwright MCP not connected"
-    except Exception as e:
-        return f"Screenshot error: {e}"
-
-
-def _browser_click(selector: str) -> str:
-    """Click an element on the current page by CSS selector."""
-    try:
-        from core.mcp.client import get_mcp_manager
-        mgr = get_mcp_manager()
-        if mgr.has_tool("mcp__playwright__click"):
-            return mgr.call_tool("mcp__playwright__click", {"selector": selector})
-        return "Click not available — Playwright MCP not connected"
-    except Exception as e:
-        return f"Click error: {e}"
-
-
-def _browser_snapshot() -> str:
-    """Get the current page's accessibility snapshot (text-only)."""
-    try:
-        from core.mcp.client import get_mcp_manager
-        mgr = get_mcp_manager()
-        if mgr.has_tool("mcp__playwright__snapshot"):
-            return mgr.call_tool("mcp__playwright__snapshot", {})
-        return "Snapshot not available — Playwright MCP not connected"
-    except Exception as e:
-        return f"Snapshot error: {e}"
-
-
-def _browser_type(selector: str, text: str) -> str:
-    """Type text into an element identified by CSS selector."""
-    try:
-        from core.mcp.client import get_mcp_manager
-        mgr = get_mcp_manager()
-        if mgr.has_tool("mcp__playwright__fill") or mgr.has_tool("mcp__playwright__type"):
-            tool_name = "mcp__playwright__fill" if mgr.has_tool("mcp__playwright__fill") else "mcp__playwright__type"
-            return mgr.call_tool(tool_name, {"selector": selector, "text": text})
-        return "Type not available — Playwright MCP not connected"
-    except Exception as e:
-        return f"Type error: {e}"
-
-
-def _browser_press(key: str) -> str:
-    """Press a keyboard key (Enter, Escape, Tab, etc.)."""
-    try:
-        from core.mcp.client import get_mcp_manager
-        mgr = get_mcp_manager()
-        if mgr.has_tool("mcp__playwright__press"):
-            return mgr.call_tool("mcp__playwright__press", {"key": key})
-        return "Key press not available — Playwright MCP not connected"
-    except Exception as e:
-        return f"Key press error: {e}"
-
+# ── Browser tools (handlers in core.tools.browser) ────────
+from core.tools.browser import (
+    _browser_navigate, _browser_screenshot, _browser_click,
+    _browser_snapshot, _browser_type, _browser_press,
+)
 
 register(
     "browser_navigate",

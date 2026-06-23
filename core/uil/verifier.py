@@ -39,6 +39,7 @@ class Verifier:
     """Base verifier. Subclass for task-type-specific checks."""
 
     def __init__(self, name: str = "generic"):
+        """Initialize the base verifier with a name identifier."""
         self.name = name
 
     def verify(self, result: ExecutionResult,
@@ -137,6 +138,7 @@ class HtmlVerifier(Verifier):
     """Verifies HTML output for structure, CSS/JS binding, and i18n."""
 
     def __init__(self):
+        """Initialize the HTML verifier for web page output quality checks."""
         super().__init__(name="html")
 
     def verify(self, result: ExecutionResult,
@@ -504,6 +506,7 @@ class CodeVerifier(Verifier):
     """Verifies code output for syntax errors and common bugs."""
 
     def __init__(self):
+        """Initialize the code verifier for syntax and bug checking."""
         super().__init__(name="code")
 
     def verify(self, result: ExecutionResult,
@@ -532,7 +535,7 @@ class CodeVerifier(Verifier):
 
     def _check_syntax_indicators(self, code: str,
                                   report: VerificationReport) -> None:
-        """Simple syntax heuristics (not a full parser)."""
+        """Check brace and parenthesis balance as syntax heuristics."""
         # Check balanced braces
         opens = code.count('{')
         closes = code.count('}')
@@ -586,7 +589,7 @@ class CodeVerifier(Verifier):
 
     def _check_common_code_bugs(self, code: str,
                                  report: VerificationReport) -> None:
-        """Check for patterns known to cause runtime errors."""
+        """Check for common coding pitfalls: bare except, hardcoded secrets, debug leftovers."""
         # Check for undefined variables in Python (common WIDDX output)
         if 'import' not in code and 'def ' not in code and 'class ' not in code:
             if len(code) > 100 and 'print' in code:
@@ -638,7 +641,7 @@ class CodeVerifier(Verifier):
 
     def _check_logical_bugs(self, code: str,
                              report: VerificationReport) -> None:
-        """Check for common logical errors in generated code."""
+        """Detect potential logical errors: off-by-factor, missing return, redundant comparisons."""
         # Check: multiplication with 0.1 where 1.1 is expected (tax/discount)
         matches = re.findall(r'\*\s*0\.1[^0-9]', code)
         if matches:
@@ -695,6 +698,7 @@ class BashVerifier(Verifier):
     """Verifies bash command output for safety and correctness."""
 
     def __init__(self):
+        """Initialize the bash verifier for shell command safety checks."""
         super().__init__(name="bash")
 
     def verify(self, result: ExecutionResult,
@@ -714,7 +718,7 @@ class BashVerifier(Verifier):
 
     def _check_dangerous_patterns(self, cmds: str,
                                    report: VerificationReport) -> None:
-        """Flag dangerous command patterns."""
+        """Flag dangerous shell command patterns like rm -rf /, fork bombs, piped downloads."""
         dangerous = [
             (r'rm\s+-rf\s+/', 'rm -rf / — destructive root deletion'),
             (r'>\s*/dev/sda', 'Direct disk write — potential data loss'),
@@ -736,7 +740,7 @@ class BashVerifier(Verifier):
                 )
 
     def _check_syntax(self, cmds: str, report: VerificationReport) -> None:
-        """Check basic shell syntax."""
+        """Check basic shell syntax for unclosed quotes."""
         # Check unclosed quotes
         for qt in ["'", '"', '`']:
             count = cmds.count(qt)

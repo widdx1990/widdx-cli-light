@@ -337,18 +337,32 @@ def get_db():
 
 
 class SessionDB:
-    """Wrapper over Database class to match the Web UI dashboard requirements."""
+    """Unified session wrapper that delegates to SessionV2.
+
+    This class provides the ``save`` / ``load`` / ``delete`` interface
+    required by the Web UI Dashboard, while internally routing all
+    operations through ``SessionV2`` — unifying the two previously
+    separate session wrappers.
+
+    ``SessionDB`` remains importable from ``core.database`` for
+    backward compatibility; all new code should use ``SessionV2``
+    directly instead.
+    """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        """Initialize the SessionDB wrapper.
+        """Initialize the unified SessionDB wrapper.
 
-        Args:
-            db_path: Path to the SQLite database file.
+        Note:
+            ``db_path`` is accepted for backward compatibility but is
+            **ignored** — ``SessionV2`` uses the default project-level
+            database path from ``get_db()``. This is safe because all
+            callers in the codebase pass ``None``.
         """
-        self.db = Database(db_path=db_path)
 
     def save(self, name: str, messages: list[dict]) -> str:
         """Save a new session and its messages.
+
+        Delegates to :meth:`SessionV2.save_with_messages`.
 
         Args:
             name: Name of the session.
@@ -357,16 +371,13 @@ class SessionDB:
         Returns:
             The generated session ID.
         """
-        session_id = self.db.create_session(name)
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            tool_calls = msg.get("tool_calls")
-            self.db.add_message(session_id, role, content, tool_calls)
-        return session_id
+        from core.session_v2 import SessionV2
+        return SessionV2.save_with_messages(name, messages)
 
     def load(self, session_id: str) -> dict[str, Any] | None:
         """Load a session and its messages.
+
+        Delegates to :meth:`SessionV2.load_as_dict`.
 
         Args:
             session_id: The ID of the session to load.
@@ -375,31 +386,17 @@ class SessionDB:
             A dictionary containing session details and message history,
             or None if the session does not exist.
         """
-        session = self.db.get_session(session_id)
-        if not session:
-            return None
-        messages = self.db.get_messages(session_id)
-        return {
-            "id": session["id"],
-            "name": session["name"],
-            "branch": session["branch"],
-            "created": session["created_at"] * 1000,  # convert to ms for JS
-            "messages": [
-                {
-                    "role": m["role"],
-                    "content": m["content"],
-                    "tool_calls": m["tool_calls"],
-                    "timestamp": m["timestamp"],
-                }
-                for m in messages
-            ]
-        }
+        from core.session_v2 import SessionV2
+        return SessionV2.load_as_dict(session_id)
 
     def delete(self, session_id: str) -> None:
         """Delete a session.
 
+        Delegates to :meth:`SessionV2.delete`.
+
         Args:
             session_id: The ID of the session to delete.
         """
-        self.db.delete_session(session_id)
+        from core.session_v2 import SessionV2
+        SessionV2.delete(session_id)
 

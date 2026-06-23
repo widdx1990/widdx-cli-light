@@ -127,11 +127,34 @@ class AutonomousAgent:
         self.cost = 0.0
         self._on_event = on_event  # callable(event_dict) for live Web UI streaming
 
+    def _clean_event(self, event: dict) -> dict:
+        """Remove surrogate characters from event data."""
+        if not event:
+            return event
+        import re
+        _sur = re.compile(r'[\ud800-\udfff]')
+        cleaned = {}
+        for k, v in event.items():
+            if isinstance(v, str):
+                cleaned[k] = _sur.sub('\ufffd', v)
+            elif isinstance(v, dict):
+                cleaned[k] = self._clean_event(v)
+            elif isinstance(v, list):
+                cleaned[k] = [
+                    self._clean_event(i) if isinstance(i, dict)
+                    else _sur.sub('\ufffd', i) if isinstance(i, str)
+                    else i
+                    for i in v
+                ]
+            else:
+                cleaned[k] = v
+        return cleaned
+
     def _emit(self, event: dict):
         """Emit a streaming event to the Web UI if callback is set."""
         if self._on_event:
             try:
-                self._on_event(event)
+                self._on_event(self._clean_event(event))
             except Exception:
                 pass
 
@@ -291,6 +314,11 @@ class AutonomousAgent:
     # ── internal helpers ──────────────────────────────────────────────
 
     def _supports_streaming(self) -> bool:
+        """Check whether the current provider supports streaming.
+
+        Returns:
+            True if the provider has a ``stream()`` method.
+        """
         return hasattr(self.provider, "stream")
 
     def _streaming_call(self, messages: list, temperature: float) -> tuple:
@@ -417,9 +445,15 @@ class AutonomousAgent:
         return result
 
     def _auto_verify_build(self) -> str | None:
-        """Auto-install deps, syntax-check JS, and run build.
+        """Run automated build verification after agent execution.
 
-        Returns error string if build fails, None if OK.
+        Auto-installs dependencies, runs JavaScript syntax checks with
+        ``node --check`` on all ``.js`` files, and reports any syntax
+        errors found.
+
+        Returns:
+            A concatenated error string if any JS syntax check failed,
+            or ``None`` if everything passed.
         """
         from pathlib import Path
         import platform as _plat, subprocess as _sp

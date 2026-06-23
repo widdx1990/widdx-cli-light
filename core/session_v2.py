@@ -121,6 +121,66 @@ class SessionV2:
                 filtered.append(r)
         return filtered
 
+    @staticmethod
+    def save_with_messages(name: str, messages: list[dict]) -> str:
+        """Create a new session, persist all messages, and return the session ID.
+
+        This is a convenience wrapper used by the Web UI (Dashboard) for
+        batch session persistence. Messages are saved in order — each
+        dict must contain at least ``role`` and ``content`` keys, and
+        may optionally contain a ``tool_calls`` key.
+
+        Args:
+            name: Human-readable session name.
+            messages: List of message dicts with role, content [, tool_calls].
+
+        Returns:
+            The newly created session ID.
+        """
+        db = get_db()
+        session_id = db.create_session(name)
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls")
+            db.add_message(session_id, role, content, tool_calls)
+        return session_id
+
+    @staticmethod
+    def load_as_dict(session_id: str) -> dict | None:
+        """Load a session and its messages as a plain dict (Web UI format).
+
+        The returned dict uses millisecond timestamps for JavaScript
+        compatibility, mirroring the ``SessionDB.load()`` contract.
+
+        Args:
+            session_id: The session ID to load.
+
+        Returns:
+            Dict with keys ``id``, ``name``, ``branch``, ``created`` (ms),
+            ``messages`` or ``None`` if the session does not exist.
+        """
+        db = get_db()
+        session = db.get_session(session_id)
+        if not session:
+            return None
+        messages = db.get_messages(session_id)
+        return {
+            "id": session["id"],
+            "name": session["name"],
+            "branch": session["branch"],
+            "created": session["created_at"] * 1000,  # ms for JavaScript
+            "messages": [
+                {
+                    "role": m["role"],
+                    "content": m["content"],
+                    "tool_calls": m["tool_calls"],
+                    "timestamp": m["timestamp"],
+                }
+                for m in messages
+            ]
+        }
+
 
 _current_session = None
 
