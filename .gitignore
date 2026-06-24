@@ -60,7 +60,7 @@ TASKS_PHASE*.md
 
 # Temp test / debug files
 _run_tests.py
-skill.md
+/skill.md
 *.backup
 
 # Scan / audit reports (local only)
