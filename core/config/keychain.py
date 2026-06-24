@@ -22,15 +22,16 @@ _KEY_PROVIDERS: dict[str, str] = {}
 
 # Persistence file (in .gitignore via .widdx/*)
 def _key_file() -> Path:
-    """Get path to persisted API keys file (inside .widdx/)."""
-    # Try CWD/.widdx first (project-local), then ~/.widdx
-    cwd = Path.cwd().resolve()
-    for base in (cwd, Path.home()):
-        widdx_dir = base / ".widdx"
-        if widdx_dir.exists() or base == cwd:
-            widdx_dir.mkdir(exist_ok=True)
-            return widdx_dir / "apikeys.json"
-    return Path.home() / ".widdx" / "apikeys.json"
+    """Get path to persisted API keys file — ALWAYS in package root, never in CWD.
+
+    The API key stays in the main project folder and does NOT follow
+    the user to other directories. Uses the install location of this file.
+    """
+    # Use the directory where this module is installed (package root)
+    pkg_dir = Path(__file__).resolve().parent.parent.parent  # core/config/ → root
+    widdx_dir = pkg_dir / ".widdx"
+    widdx_dir.mkdir(exist_ok=True)
+    return widdx_dir / "apikeys.json"
 
 
 def _xor_obfuscate(text: str) -> str:
