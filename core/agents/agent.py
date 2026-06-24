@@ -388,6 +388,7 @@ class AutonomousAgent:
             if cached is not None:
                 print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
                 print_tool_msg(tc.name, f"(cached) {cached[:200]}")
+                self._emit({"type": "tool_result", "data": {"name": tc.name, "result": f"(cached) {cached[:200]}"}})
                 return cached
 
         # Track tool usage
@@ -397,12 +398,14 @@ class AutonomousAgent:
             self.state["tools_used"].append(tc.name)
 
         print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
+        self._emit({"type": "tool", "data": {"name": tc.name, "args": tc.args}})
 
         # Handle bash specially: snapshot time, run command, then validate new/modified files
         if tc.name == "bash":
             t0 = time.time()
             result = core_tools.execute_with_skills(tc.name, tc.args)
             print_tool_msg(tc.name, result[:1000])
+            self._emit({"type": "tool_result", "data": {"name": tc.name, "result": result[:500]}})
 
             normalized = (result or "").strip()
             if not normalized.startswith(("\ud83d\udeab", "❌", "⛔", "Error", "Failed")):
@@ -434,6 +437,7 @@ class AutonomousAgent:
         # Default execution path
         result = core_tools.execute_with_skills(tc.name, tc.args)
         print_tool_msg(tc.name, result[:1000])
+        self._emit({"type": "tool_result", "data": {"name": tc.name, "result": result[:500]}})
         # Cache successful read-only tool results
         if tc.name not in ("bash", "write", "edit") and not result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed")):
             from core.cache import tool_cache
@@ -496,8 +500,10 @@ class AutonomousAgent:
             return f"⚠️ Validation skipped: file not found {file_path}"
         validation_args = {"file_path": str(p)}
         print_tool_call("validate", json.dumps(validation_args, ensure_ascii=False))
+        self._emit({"type": "tool", "data": {"name": "validate", "args": validation_args}})
         result = core_tools.execute_with_skills("validate", validation_args)
         print_tool_msg("validate", result[:1000])
+        self._emit({"type": "tool_result", "data": {"name": "validate", "result": result[:500]}})
         return result
 
     def _build_prompt(self) -> str:
