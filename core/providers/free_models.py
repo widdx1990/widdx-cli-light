@@ -15,7 +15,7 @@ logger = _logging.getLogger("widdx.providers")
 
 _DEFAULT_FALLBACK_MODEL: str | None = None
 
-def set_fallback_model(model: str):
+def set_fallback_model(model: str) -> None:
     """Set the fallback model from config (called at startup)."""
     global _DEFAULT_FALLBACK_MODEL
     _DEFAULT_FALLBACK_MODEL = model

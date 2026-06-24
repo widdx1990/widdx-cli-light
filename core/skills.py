@@ -160,7 +160,8 @@ class SkillManager:
             return True
         return False
 
-    def deactivate(self):
+    def deactivate(self) -> None:
+        """Deactivate the currently active skill."""
         self._active = None
 
     def toggle(self, name: str) -> bool:
