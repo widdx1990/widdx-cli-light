@@ -6,7 +6,8 @@ import httpx
 
 from ..proxy import ZEN_BASE
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 # ---------------------------------------------------------------------------
 # Default fallback model (used when API calls fail — loaded from config first)

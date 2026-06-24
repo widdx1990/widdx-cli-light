@@ -6,7 +6,8 @@ import httpx
 
 from .base import Provider, ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 class OpenAICompatibleProvider(Provider):
     def chat(self, messages: list, tool_defs: list, temperature: float = 0.7):

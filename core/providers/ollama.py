@@ -6,7 +6,8 @@ import httpx
 
 from .base import Provider, ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS, _TOOL_CAPABLE_PATTERNS, _REASONING_PATTERNS
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 class OllamaProvider(Provider):
     # \u2500\u2500 Class-level capability cache \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500

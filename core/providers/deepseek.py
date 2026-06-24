@@ -7,7 +7,8 @@ import httpx
 from .openai_compatible import OpenAICompatibleProvider
 from .base import ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 class DeepSeekProvider(OpenAICompatibleProvider):
     """

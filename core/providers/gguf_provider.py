@@ -7,7 +7,8 @@ from pathlib import Path
 from .base import Provider, ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS
 from .gguf import read_gguf_metadata, list_imports
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 _LLAMA_CPP_AVAILABLE = False
 try:

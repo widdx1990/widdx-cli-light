@@ -9,7 +9,8 @@ from .base import ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS
 from .free_models import fetch_free_models
 from ..proxy import proxy_manager
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 class OpenCodeZenProvider(OpenAICompatibleProvider):
     """

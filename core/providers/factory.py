@@ -15,7 +15,8 @@ from .free_models import fetch_free_models, fetch_ollama_models, set_fallback_mo
 from ..config.keychain import get_key
 from ..proxy import proxy_manager, ZEN_BASE
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 def create_provider(cfg: dict) -> Provider:
     p = cfg.get("provider", {})

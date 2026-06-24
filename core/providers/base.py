@@ -13,7 +13,8 @@ import httpx
 from pathlib import Path
 from typing import Optional
 
-logger = __import__("logging").getLogger("widdx.providers")
+import logging as _logging
+logger = _logging.getLogger("widdx.providers")
 
 from ..proxy import proxy_manager, ZEN_BASE
 from ..config.keychain import get_key
@@ -57,13 +58,13 @@ class ToolCall:
 # ---------------------------------------------------------------------------
 
 class Provider:
-    def __init__(self, name: str, model: str, base_url: str, api_key: Optional[str] = None):
+    def __init__(self, name: str, model: str, base_url: str, api_key: Optional[str] = None) -> None:
         self.name = name
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
 
-    def build_tools_schema(self, tools: list) -> list:
+    def build_tools_schema(self, tools: list[dict]) -> list[dict]:
         result = []
         for t in tools:
             params = t.get("parameters", {})
