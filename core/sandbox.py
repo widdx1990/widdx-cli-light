@@ -282,8 +282,8 @@ class SandboxExecutor:
         plat = _get_platform()
 
         if plat == "windows":
-            if self._check_wsl():
-                return "wsl"
+            # Prefer subprocess on Windows — files go to real filesystem
+            # WSL creates files in Linux world (/tmp/) invisible to users
             if self._check_docker():
                 return "docker"
             return "subprocess"
