@@ -258,7 +258,11 @@ def _bash(command: str, description: str | None = None) -> str:
 
     try:
         from core.sandbox import SandboxExecutor
-        sb = SandboxExecutor(mode="auto")
+        import platform
+        # Use subprocess on Windows so files go to the real filesystem
+        # (WSL creates files in Linux world, invisible to Windows users)
+        sandbox_mode = "subprocess" if platform.system() == "Windows" else "auto"
+        sb = SandboxExecutor(mode=sandbox_mode)
         result = sb.execute(command, timeout=BASH_TIMEOUT)
         out = result.stdout[:MAX_STDOUT_CHARS]
         err = result.stderr[:MAX_STDERR_CHARS]
@@ -986,10 +990,11 @@ register(
 # ── Sandbox executor tool ──────────────────────────────────────────────────
 def _handle_sandbox_exec(command: str, timeout: int = 60, cwd: str = "") -> str:
     """Execute a command in a sandboxed subprocess."""
-    from core.sandbox import SandboxExecutor, ResourceLimits
-    limits = ResourceLimits(max_cpu_seconds=timeout)
-    sb = SandboxExecutor(mode="auto", limits=limits)
-    result = sb.execute(command, timeout=timeout, cwd=Path(cwd) if cwd else None)
+    import platform
+    from core.sandbox import SandboxExecutor
+    sandbox_mode = "subprocess" if platform.system() == "Windows" else "auto"
+    sb = SandboxExecutor(mode=sandbox_mode)
+    result = sb.execute(command, timeout=timeout)
     out = result.stdout[:3000] if result.stdout else ""
     err = result.stderr[:1000] if result.stderr else ""
     status = f"exit={result.exit_code}" + (" [TIMEOUT]" if result.was_timeout else "")
