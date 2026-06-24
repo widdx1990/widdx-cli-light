@@ -76,7 +76,7 @@ class ProxyManager:
         self._index: int = 0            # current rotation index
         self._last_refresh: float = 0
         self._refreshing: bool = False
-        self._no_proxy_mode: bool = False  # fallback: no proxy
+        self._no_proxy_mode: bool = True   # default: direct connection (more reliable)
 
     # ------------------------------------------------------------------ #
     # Public Interface
