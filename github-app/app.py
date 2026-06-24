@@ -40,7 +40,13 @@ except ImportError:
 # ── Config ────────────────────────────────────────────────────
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 WIDDX_API_URL = os.environ.get("WIDDX_API_URL", "http://localhost:8000")
-WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET")
+if not WEBHOOK_SECRET:
+    raise RuntimeError(
+        "GITHUB_WEBHOOK_SECRET environment variable is required.\n"
+        "Set it to your GitHub webhook secret token. Generate one at:\n"
+        "  GitHub → Settings → Webhooks → Add webhook → Secret"
+    )
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 logging.basicConfig(

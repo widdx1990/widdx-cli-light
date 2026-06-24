@@ -633,32 +633,14 @@ class SandboxExecutor:
                 mode="subprocess",
             )
         except FileNotFoundError:
-            if not needs_shell:
-                logger.debug("shell=False failed, retrying with shell=True: %.100s", command)
-                try:
-                    proc = subprocess.Popen(
-                        command,
-                        shell=True,
-                        cwd=str(self._cwd),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        env=merged_env,
-                        preexec_fn=self._apply_resource_limits if hasattr(os, 'setrlimit') else None,
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-                    )
-                    stdout, stderr = proc.communicate(timeout=timeout)
-                    return SandboxResult(
-                        stdout=stdout or "",
-                        stderr=stderr or "",
-                        exit_code=proc.returncode,
-                        mode="subprocess",
-                    )
-                except Exception as retry_err:
-                    logger.debug("Shell fallback also failed: %s", retry_err)
+            # CRIT-001 FIX: Never retry with shell=True — use explicit shell wrapper
+            logger.warning("Command not found (shell=False): %.100s", command)
             return SandboxResult(
-                stderr="Command not found",
+                stdout="",
+                stderr=(f"Command not found: {command[:200]}. "
+                        "Use 'bash -c' or 'cmd /c' explicitly if shell features are needed."),
                 exit_code=127,
+                was_timeout=False, was_killed=False,
                 mode="subprocess",
             )
 

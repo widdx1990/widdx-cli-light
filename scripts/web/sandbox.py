@@ -58,16 +58,17 @@ class SandboxHandler:
         }
 
     def _fallback_execute(self, command: str, timeout: int) -> Any:
-        """Fallback using subprocess directly."""
-        import subprocess
+        """Fallback using subprocess directly — security: uses shell=False with split."""
+        import subprocess, shlex
         try:
+            cmd_parts = shlex.split(command)
             proc = subprocess.run(
-                command, shell=True, capture_output=True, text=True, timeout=timeout
+                cmd_parts, shell=False, capture_output=True, text=True, timeout=timeout
             )
             return proc
-        except subprocess.TimeoutExpired:
+        except (ValueError, subprocess.TimeoutExpired):
             return type('obj', (object,), {
-                'stdout': '', 'stderr': 'Timeout', 'exit_code': -1, 'mode': 'fallback'
+                'stdout': '', 'stderr': 'Timeout or parse error', 'exit_code': -1, 'mode': 'fallback'
             })()
 
     def screenshot(self) -> dict:

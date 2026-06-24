@@ -47,7 +47,17 @@ from fastapi.staticfiles import StaticFiles
 logger = logging.getLogger("widdx.web")
 
 # ── App ─────────────────────────────────────────────────────
-app = FastAPI(title="WIDDX Nexus", version="3.0.0")
+app = FastAPI(title="WIDDX Nexus", version="3.2.0")
+
+# ── CORS ────────────────────────────────────────────────────
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Mount static files ──────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
