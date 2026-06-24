@@ -46,6 +46,41 @@ from fastapi.staticfiles import StaticFiles
 
 logger = logging.getLogger("widdx.web")
 
+# ── Log sanitization ─────────────────────────────────────────
+from core.utils import sanitize_log
+
+def _safe_log(msg: str, *args) -> None:
+    """Log a message with sensitive data redacted."""
+    safe_msg = sanitize_log(msg % args if args else msg)
+    logger.debug(safe_msg)
+
+# ── Pydantic models for input validation ────────────────────
+from pydantic import BaseModel, Field
+from typing import Optional as Opt
+
+class ChatPayload(BaseModel):
+    message: str = Field(..., min_length=1, max_length=100000)
+    history: list[dict] = Field(default_factory=list, max_length=1000)
+
+class SandboxPayload(BaseModel):
+    command: str = Field(..., min_length=1, max_length=10000)
+    timeout: int = Field(default=60, ge=1, le=600)
+
+class SettingsPayload(BaseModel):
+    provider: dict = Field(default_factory=dict)
+    system_prompt: Opt[str] = Field(default=None, max_length=50000)
+    temperature: Opt[float] = Field(default=None, ge=0, le=2)
+    max_turns: Opt[int] = Field(default=None, ge=1, le=100)
+    cli_theme: Opt[str] = Field(default=None, pattern=r'^(dark|light)$')
+
+class SessionPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    messages: list[dict] = Field(default_factory=list, max_length=1000)
+
+class MemoryPayload(BaseModel):
+    content: str = Field(..., min_length=1, max_length=50000)
+    tags: str = Field(default="", max_length=500)
+
 # ── App ─────────────────────────────────────────────────────
 app = FastAPI(title="WIDDX Nexus", version="3.2.0")
 
@@ -165,11 +200,10 @@ async def api_branches():
 
 
 @app.post("/api/chat")
-async def chat_message(request: Request):
+async def chat_message(payload: ChatPayload):
     """Send a chat message (non-blocking)."""
-    data = await request.json()
-    message = data.get("message", "")
-    history = data.get("history", [])
+    message = payload.message
+    history = payload.history
 
     chat = get_chat()
     loop = asyncio.get_running_loop()
@@ -178,11 +212,10 @@ async def chat_message(request: Request):
 
 
 @app.post("/api/sandbox/exec")
-async def sandbox_exec(request: Request):
+async def sandbox_exec(payload: SandboxPayload):
     """Execute a shell command in the sandbox."""
-    data = await request.json()
-    command = data.get("command", "")
-    timeout = data.get("timeout", 60)
+    command = payload.command
+    timeout = payload.timeout
 
     sandbox = get_sandbox()
     result = sandbox.execute(command, timeout)
@@ -318,8 +351,8 @@ async def api_settings():
 
 
 @app.post("/api/settings")
-async def api_settings_update(request: Request):
-    data = await request.json()
+async def api_settings_update(payload: SettingsPayload):
+    data = payload.model_dump(exclude_none=True)
     result = get_dashboard().update_settings(data)
     if result.get("status") == "ok":
         refresh_chat()
@@ -350,9 +383,8 @@ async def api_skills():
 # ── NEW: Session Save / Load / Export ─────────────────────
 
 @app.post("/api/sessions")
-async def api_session_save(request: Request):
-    data = await request.json()
-    return get_dashboard().session_save(data.get("name", "Untitled"), data.get("messages", []))
+async def api_session_save(payload: SessionPayload):
+    return get_dashboard().session_save(payload.name, payload.messages)
 
 
 @app.get("/api/sessions")
@@ -378,9 +410,8 @@ async def api_session_export(session_id: str):
 # ── NEW: Memory CRUD ──────────────────────────────────────
 
 @app.post("/api/memories")
-async def api_memory_create(request: Request):
-    data = await request.json()
-    return get_dashboard().memory_create(data.get("content", ""), data.get("tags", ""))
+async def api_memory_create(payload: MemoryPayload):
+    return get_dashboard().memory_create(payload.content, payload.tags)
 
 
 @app.get("/api/memories/search")

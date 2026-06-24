@@ -124,3 +124,26 @@ def sanitize_error(message: str) -> str:
                 break
 
     return sanitized.strip() or 'An unknown error occurred'
+
+
+def sanitize_log(msg: str) -> str:
+    """Redact API keys and tokens from log messages.
+
+    Detects patterns like sk-..., Bearer ..., and key=value with
+    known sensitive key names, replacing the value with [REDACTED].
+    """
+    import re as _re
+    sanitized = msg
+    # API keys (sk-..., sk-ant-..., etc.)
+    sanitized = _re.sub(r'sk-[a-zA-Z0-9_-]{20,}', '[REDACTED_KEY]', sanitized)
+    # Bearer tokens
+    sanitized = _re.sub(r'Bearer\s+[a-zA-Z0-9_\-\.]+', 'Bearer [REDACTED]', sanitized)
+    # key=secret patterns
+    for key_name in ('api_key', 'apikey', 'secret', 'token', 'password'):
+        sanitized = _re.sub(
+            rf'{key_name}["\s:=]+[a-zA-Z0-9_\-\.]{{8,}}',
+            f'{key_name}=[REDACTED]',
+            sanitized,
+            flags=_re.IGNORECASE,
+        )
+    return sanitized
