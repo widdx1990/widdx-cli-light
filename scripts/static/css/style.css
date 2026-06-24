@@ -2216,4 +2216,12 @@ html[dir="rtl"] .toast {
     left: 0;
     right: auto;
   }
-}
+}
+
+
+.skill-chip { display:inline-block; padding:4px 10px; margin:2px; background:var(--fill-active); color:var(--accent); border-radius:999px; font-size:11px; cursor:pointer; transition:all .15s; }
+.skill-chip:hover { background:var(--accent-dim); transform:scale(1.05); }
+#skill-suggestions { padding:6px 12px; display:none; }
+.cancel-btn { position:absolute; right:60px; bottom:16px; width:32px; height:32px; border-radius:50%; border:1px solid var(--error); background:transparent; color:var(--error); cursor:pointer; font-size:14px; display:none; z-index:5; transition:all .15s; }
+.cancel-btn:hover { background:var(--error); color:#fff; }
+.cancel-btn.visible { display:block; }

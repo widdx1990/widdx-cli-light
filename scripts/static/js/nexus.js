@@ -111,6 +111,8 @@ const TEMPLATES = {
 const S = {
   messages: [],
   model: 'Loading…',
+  tokens: 0,
+  cost: 0.0,
   activity: 'Ready',
   tool: '—',
   view: 'chat',
@@ -229,6 +231,7 @@ async function sendViaREST(text) {
     showTyping(false);
     if (d.error) addMsg('system', 'Error: ' + d.error);
     else if (d.content) addMsg('assistant', d.content);
+    if (d.suggested_skills && d.suggested_skills.length) showSkillSuggestions(d.suggested_skills);
     setActivity('Ready', '—');
   } catch(e) {
     showTyping(false);
@@ -241,6 +244,7 @@ async function sendViaREST(text) {
 
 async function sendViaWS(text) {
   S.streaming = true;
+  document.getElementById('cancelBtn').classList.add('visible');
   const hist = S.messages.filter(m => m.role !== 'system').map(m => ({role: m.role, content: m.content}));
   S.ws.send(JSON.stringify({message: text, history: hist}));
 }
@@ -678,6 +682,26 @@ window.showTyping = function(on, label) {
     if (lbl) lbl.textContent = label;
   }
 };
+
+function cancelAgent() {
+  if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+    S.ws.send(JSON.stringify({cancel: true}));
+  }
+  showTyping(false);
+  setActivity('Cancelled', '—');
+  showToast('Task cancelled', 'info');
+}
+
+
+function showSkillSuggestions(skills) {
+  var container = document.getElementById('skill-suggestions');
+  if (!container) return;
+  var html = skills.map(function(s) {
+    return '<span class="skill-chip" onclick="document.getElementById('msgInput').value='/skill ' + s.name + '';document.getElementById('msgInput').focus()" title="' + escapeHtml(s.description || '') + '">' + (s.icon || '') + ' ' + escapeHtml(s.name) + '</span>';
+  }).join('');
+  container.innerHTML = html;
+  container.style.display = 'block';
+}
 
 function scrollBottom() {
   const area = document.getElementById('messagesArea');
