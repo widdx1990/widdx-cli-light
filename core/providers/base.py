@@ -9,6 +9,7 @@ Includes fallback logic: if one provider fails, the router tries the next.
 """
 
 import json, time, uuid, threading
+from abc import ABC, abstractmethod
 import httpx
 from pathlib import Path
 from typing import Optional
@@ -57,7 +58,7 @@ class ToolCall:
 # Base Provider
 # ---------------------------------------------------------------------------
 
-class Provider:
+class Provider(ABC):
     def __init__(self, name: str, model: str, base_url: str, api_key: Optional[str] = None) -> None:
         self.name = name
         self.model = model
@@ -89,8 +90,10 @@ class Provider:
             })
         return result
 
+    @abstractmethod
     def chat(self, messages: list, tool_defs: list, temperature: float = 0.7):
-        raise NotImplementedError
+        """Send a chat completion request. Must be implemented by subclasses."""
+        ...
 
     def stream(self, messages: list, tool_defs: list, temperature: float = 0.7):
         """Generator that yields events for live streaming.

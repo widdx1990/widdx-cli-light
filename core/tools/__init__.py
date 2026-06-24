@@ -1089,52 +1089,60 @@ register(
 )
 
 # ── Browser tools (handlers in core.tools.browser) ────────
-from core.tools.browser import (
-    _browser_navigate, _browser_screenshot, _browser_click,
-    _browser_snapshot, _browser_type, _browser_press,
-)
+# Wrapped in try/except: if Playwright MCP is unavailable, only browser
+# tools are missing — not ALL tools (FIX-014: safe import isolation)
+try:
+    from core.tools.browser import (
+        _browser_navigate, _browser_screenshot, _browser_click,
+        _browser_snapshot, _browser_type, _browser_press,
+    )
+    _BROWSER_TOOLS_OK = True
+except Exception as e:
+    logger.warning("Browser tools unavailable (Playwright MCP not installed): %s", e)
+    _BROWSER_TOOLS_OK = False
 
-register(
-    "browser_navigate",
-    "Open a URL in the browser. Returns the page text content. Supports JavaScript-rendered pages via Playwright.",
-    {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to navigate to"}}, "required": ["url"]},
-    _browser_navigate,
-)
+if _BROWSER_TOOLS_OK:
+    register(
+        "browser_navigate",
+        "Open a URL in the browser. Returns the page text content. Supports JavaScript-rendered pages via Playwright.",
+        {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to navigate to"}}, "required": ["url"]},
+        _browser_navigate,
+    )
 
-register(
-    "browser_screenshot",
-    "Take a screenshot of the current page or a specific URL. Returns a base64-encoded image.",
-    {"type": "object", "properties": {"url": {"type": "string", "description": "Optional URL to navigate to first"}, "selector": {"type": "string", "description": "Optional CSS selector to capture a specific element"}}},
-    _browser_screenshot,
-)
+    register(
+        "browser_screenshot",
+        "Take a screenshot of the current page or a specific URL. Returns a base64-encoded image.",
+        {"type": "object", "properties": {"url": {"type": "string", "description": "Optional URL to navigate to first"}, "selector": {"type": "string", "description": "Optional CSS selector to capture a specific element"}}},
+        _browser_screenshot,
+    )
 
-register(
-    "browser_click",
-    "Click an element on the page by CSS selector.",
-    {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector of the element to click"}}, "required": ["selector"]},
-    _browser_click,
-)
+    register(
+        "browser_click",
+        "Click an element on the page by CSS selector.",
+        {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector of the element to click"}}, "required": ["selector"]},
+        _browser_click,
+    )
 
-register(
-    "browser_snapshot",
-    "Get the current page's accessibility snapshot (text-only structure of the page).",
-    {"type": "object", "properties": {}},
-    _browser_snapshot,
-)
+    register(
+        "browser_snapshot",
+        "Get the current page's accessibility snapshot (text-only structure of the page).",
+        {"type": "object", "properties": {}},
+        _browser_snapshot,
+    )
 
-register(
-    "browser_type",
-    "Type text into an input field on the page.",
-    {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector of the input field"}, "text": {"type": "string", "description": "Text to type"}}, "required": ["selector", "text"]},
-    _browser_type,
-)
+    register(
+        "browser_type",
+        "Type text into an input field on the page.",
+        {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector of the input field"}, "text": {"type": "string", "description": "Text to type"}}, "required": ["selector", "text"]},
+        _browser_type,
+    )
 
-register(
-    "browser_press",
-    "Press a keyboard key (e.g., Enter, Escape, Tab, ArrowDown).",
-    {"type": "object", "properties": {"key": {"type": "string", "description": "Key to press"}}, "required": ["key"]},
-    _browser_press,
-)
+    register(
+        "browser_press",
+        "Press a keyboard key (e.g., Enter, Escape, Tab, ArrowDown).",
+        {"type": "object", "properties": {"key": {"type": "string", "description": "Key to press"}}, "required": ["key"]},
+        _browser_press,
+    )
 
 
 _SAFE_DIR: str | None = None
