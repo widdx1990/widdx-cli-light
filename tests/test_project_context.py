@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.project_context import get_project_context
-from core.project_structure import get_structure_analyzer
+from core.project.scanner import ProjectScanner
 
 
 def test_project_context():
@@ -49,20 +49,20 @@ def test_project_structure():
     print()
     
     try:
-        analyzer = get_structure_analyzer()
+        scanner = ProjectScanner()
         print("✅ Structure analyzer initialized!")
         
-        structure = analyzer.analyze()
+        structure = scanner.analyze()
         print(f"✅ Structure analyzed! Root: {structure.name}")
         print()
         
-        summary = analyzer.get_structure_summary()
+        summary = scanner.get_structure_summary()
         print("📁 Project Structure:")
         print("-" * 60)
         print(summary)
         print()
         
-        extensions = analyzer.get_file_extensions()
+        extensions = scanner.get_file_extensions()
         print(f"📊 File extensions found:")
         for ext, count in sorted(extensions.items(), key=lambda x: -x[1]):
             print(f"  .{ext}: {count} files")
@@ -85,11 +85,11 @@ def test_file_search():
     print()
     
     try:
-        analyzer = get_structure_analyzer()
+        scanner = ProjectScanner()
         
         search_patterns = ["py", "readme", "json"]
         for pattern in search_patterns:
-            results = analyzer.search_files(pattern)
+            results = scanner.search_files(pattern)
             print(f"🔍 Searching for '{pattern}': {len(results)} results")
             if results:
                 for i, path in enumerate(results[:5], 1):

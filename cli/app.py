@@ -191,10 +191,22 @@ class CLIApp:
                 self.messages.extend(saved_msgs)
                 show_system_msg(f"Session restored: {len(saved_msgs)} messages")
 
-        # Project context
-        ctx = self.scanner.build_context_block()
-        if ctx:
-            self.messages.insert(1, {"role": "system", "content": ctx, "_project_context": True})
+        # Project context — use both scanner (files) + context manager (git, env)
+        ctx_parts = []
+        scanner_ctx = self.scanner.build_context_block()
+        if scanner_ctx:
+            ctx_parts.append(scanner_ctx)
+        try:
+            from core.project_context import get_project_context as _get_pctx
+            pctx = _get_pctx()
+            rich_ctx = pctx.get_context_summary()
+            if rich_ctx:
+                ctx_parts.append(rich_ctx)
+        except Exception:
+            pass
+        if ctx_parts:
+            full_ctx = "\n\n".join(ctx_parts)
+            self.messages.insert(1, {"role": "system", "content": full_ctx, "_project_context": True})
             show_system_msg("Project context loaded")
 
         # Memory

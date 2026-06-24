@@ -91,3 +91,36 @@ def get_last_turn(messages: list) -> dict | None:
     if last_user and last_assistant:
         return {"user": last_user, "assistant": last_assistant}
     return None
+
+
+def sanitize_error(message: str) -> str:
+    """Remove sensitive paths and internal details from error messages.
+
+    Strips absolute Windows paths, Unix paths, and stack traces
+    so user-facing error messages don't leak filesystem layout.
+    """
+    import os as _os
+    sanitized = message
+
+    # Replace absolute Windows paths (C:\Users\...\project\file.py)
+    sanitized = re.sub(r'[A-Za-z]:\\[^\s,;:"]+', '[PATH]', sanitized)
+    # Replace absolute Unix paths (/home/user/project/file.py)
+    sanitized = re.sub(r'/[^\s,;:"]+/[^\s,;:"]+\.py', '[PATH]', sanitized)
+    # Replace env var values (sensitive)
+    for var in ('WIDDX_API_KEY', 'DEEPSEEK_API_KEY', 'GITHUB_TOKEN',
+                'GITHUB_WEBHOOK_SECRET'):
+        val = _os.environ.get(var, '')
+        if val and len(val) > 4:
+            sanitized = sanitized.replace(val, '[REDACTED]')
+
+    # Strip tracebacks (keep just the error message)
+    if 'Traceback (most recent call last):' in sanitized:
+        sanitized = sanitized.split('Traceback (most recent call last):')[0]
+        # Try to find the actual error at the end
+        for line in reversed(message.splitlines()):
+            line = line.strip()
+            if line and not line.startswith('File ') and not line.startswith('  '):
+                sanitized = sanitized.strip() + '\nError: ' + line
+                break
+
+    return sanitized.strip() or 'An unknown error occurred'

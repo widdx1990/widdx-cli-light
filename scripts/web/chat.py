@@ -194,7 +194,8 @@ class ChatHandler:
             }
         except Exception as e:
             logger.error("ChatHandler error: %s", e, exc_info=True)
-            return {"content": "", "error": str(e)}
+            from core.utils import sanitize_error
+            return {"content": "", "error": sanitize_error(str(e))}
 
     def chat_stream(self, message: str, history: list[dict] | None = None):
         """Generator that yields streaming events during UIL processing.
@@ -233,7 +234,8 @@ class ChatHandler:
                 event_queue.put(None)  # sentinel
             except Exception as e:
                 logger.error("chat_stream error: %s", e, exc_info=True)
-                event_queue.put({"type": "error", "data": str(e)})
+                from core.utils import sanitize_error
+                event_queue.put({"type": "error", "data": sanitize_error(str(e))})
                 event_queue.put(None)
 
         t = threading.Thread(target=_run, daemon=True)
