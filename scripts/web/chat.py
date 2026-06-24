@@ -141,6 +141,23 @@ class ChatHandler:
             # Convert history to UIL format
             uil_history = list(history or [])
 
+            # ── Inject working directory context ──────────────────
+            from pathlib import Path
+            cwd = str(Path.cwd().resolve())
+            cwd_msg = {
+                "role": "system",
+                "content": (
+                    f"<working_directory>\n"
+                    f"  You are working in: {cwd}\n"
+                    f"  ALL files you create MUST go in this directory.\n"
+                    f"  Use relative paths. This is the project root.\n"
+                    f"  Do NOT use /tmp, /workspace, or any Linux paths.\n"
+                    f"</working_directory>"
+                ),
+                "_cwd_context": True,
+            }
+            uil_history.insert(0, cwd_msg)
+
             # ── Auto-suggest relevant skills ──────────────────────
             suggested_skills = []
             try:
