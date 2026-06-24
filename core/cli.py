@@ -13,11 +13,11 @@ except ImportError:
         sys.path.insert(0, _root)
     from core._path import ensure_project_root
 
-from scripts.web_app import main as _run
-
 def run():
-    """Main CLI entry point."""
-    _run()
+    """Main CLI entry point — terminal interface."""
+    from cli.app import CLIApp
+    app = CLIApp()
+    app.run()
 
 if __name__ == "__main__":
     run()
