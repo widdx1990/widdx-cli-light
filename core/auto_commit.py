@@ -8,6 +8,10 @@ Usage:
 
     acm = AutoCommitManager()
     acm.watch()
+"""
+import logging
+
+logger = logging.getLogger("widdx.auto_commit")
     # ... agent runs ...
     if success:
         acm.commit_if_success("add login feature")

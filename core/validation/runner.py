@@ -146,13 +146,15 @@ class CodeRunner:
         Returns:
             RunResult with success, stdout, stderr, timing.
         """
+        import shlex
         timeout = timeout or 60
         with tempfile.TemporaryDirectory(prefix="widdx_val_") as tmpdir:
             t0 = time.perf_counter()
             try:
+                cmd_parts = shlex.split(command)
                 proc = subprocess.Popen(
-                    command,
-                    shell=True,
+                    cmd_parts,
+                    shell=False,
                     cwd=tmpdir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,

@@ -27,7 +27,7 @@ try:
     from fastapi import FastAPI, HTTPException, Query, Depends
     from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
     from fastapi.middleware.cors import CORSMiddleware
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
 except ImportError:
     print("❌ FastAPI required. Install: pip install fastapi uvicorn")
     sys.exit(1)
@@ -39,10 +39,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 
 _API_KEY: str = os.environ.get("WIDDX_API_KEY", "")
 if not _API_KEY:
-    _API_KEY = secrets.token_urlsafe(32)
-    logger.info("No WIDDX_API_KEY set. Generated ephemeral key for this session:")
-    logger.info("  API Key: %s...", _API_KEY[:8] if _API_KEY else "none")
-    logger.info("  Use header: Authorization: Bearer %s", _API_KEY)
+    logger.warning(
+        "WIDDX_API_KEY environment variable is not set.\n"
+        "  The API server will REJECT all requests (401 Unauthorized).\n"
+        "  Set the key: $env:WIDDX_API_KEY=\"your-secret-key\"   (PowerShell)\n"
+        "  Or:        export WIDDX_API_KEY=\"your-secret-key\"    (Bash)\n"
+        "  Then restart the server."
+    )
 
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -116,7 +119,7 @@ state = AppState()
 
 # ── Pydantic Models ──────────────────────────────────────────
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=100000, description="Chat message (max 100K chars)")
     stream: bool = False
 
 class ChatResponse(BaseModel):

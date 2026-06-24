@@ -202,10 +202,10 @@ Return JSON only:
 # ── Webhook Handler ───────────────────────────────────────────
 
 def verify_webhook(payload: bytes, signature: str) -> bool:
-    """Verify GitHub webhook signature."""
+    """Verify GitHub webhook signature using HMAC-SHA256."""
     if not WEBHOOK_SECRET:
-        logger.warning("No webhook secret configured — skipping verification")
-        return True
+        logger.error("No webhook secret configured — rejecting request")
+        return False
     expected = "sha256=" + hmac.new(
         WEBHOOK_SECRET.encode(), payload, hashlib.sha256
     ).hexdigest()

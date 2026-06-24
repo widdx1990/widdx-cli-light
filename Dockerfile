@@ -33,6 +33,11 @@ COPY . /app/
 # Install the package
 RUN pip install --no-cache-dir -e .
 
+# ── Non-root user (security hardening) ────────────────────
+RUN useradd --create-home --shell /bin/bash widdx \
+    && chown -R widdx:widdx /app /workspace 2>/dev/null || true
+USER widdx
+
 # Set up entrypoint
 ENV WIDDX_HOME=/workspace
 WORKDIR /workspace

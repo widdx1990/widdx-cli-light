@@ -193,11 +193,13 @@ class ContainerManager:
     def _execute_subprocess(self, command: str, profile: IsolationProfile,
                             timeout: int) -> ContainerResult:
         """Fallback: execute with subprocess + resource limits."""
+        import shlex
         try:
             t0 = time.perf_counter()
+            cmd_parts = shlex.split(command)
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                cmd_parts,
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
