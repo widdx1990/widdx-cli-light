@@ -19,6 +19,12 @@ import logging as _logging
 logger = _logging.getLogger("widdx.providers")
 
 def create_provider(cfg: dict) -> Provider:
+    """Create a provider instance from configuration dict.
+
+    Reads provider name, model, base_url from cfg. API keys resolved via
+    keychain (env vars) with config fallback. Supports ollama, gguf,
+    opencode-zen, deepseek, and openai-compatible providers.
+    """
     p = cfg.get("provider", {})
     # Load from config with dynamic fallbacks
     name = p.get("name") or cfg.get("default_provider", "opencode-zen")
