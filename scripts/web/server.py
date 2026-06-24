@@ -214,8 +214,14 @@ async def chat_message(payload: ChatPayload):
 
     chat = get_chat()
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, chat.chat, message, history)
-    return result
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, chat.chat, message, history),
+            timeout=600.0
+        )
+        return result
+    except asyncio.TimeoutError:
+        return {"content": "", "error": "Request timed out after 10 minutes. Please try a simpler request."}
 
 
 @app.post("/api/sandbox/exec")
@@ -727,14 +733,16 @@ async def websocket_chat(websocket: WebSocket):
 
             try:
                 while True:
-                    event = await asyncio.wait_for(event_queue.get(), timeout=300.0)
+                    event = await asyncio.wait_for(event_queue.get(), timeout=600.0)
                     if event["type"] == "done":
-                        # Forward done to frontend so it resets streaming state
                         await websocket.send_json({"type": "done", "data": ""})
                         break
                     await websocket.send_json(event)
             except asyncio.TimeoutError:
-                await websocket.send_json({"type": "error", "data": "Response timed out"})
+                await websocket.send_json({
+                    "type": "error",
+                    "data": "Response timed out after 10 minutes. The task may be too complex. Try a simpler request or check provider connectivity."
+                })
                 await websocket.send_json({"type": "done", "data": ""})
             finally:
                 if not stream_task.done():
