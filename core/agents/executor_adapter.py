@@ -280,6 +280,7 @@ def expert_team_executor(
     ctx: ExecutionContext,
     user_input: str,
     messages: list[dict] | None = None,
+    on_event: Any = None,
 ) -> ExecutionResult:
     """Execute a task using ``ExpertTeam`` (multi-agent pipeline).
 

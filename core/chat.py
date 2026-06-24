@@ -57,9 +57,11 @@ class DisplayManager:
         ))
 
     def tool_msg(self, name: str, content: str):
-        """Display a tool result."""
+        """Display a tool result (surrogates cleaned for Rich compatibility)."""
+        from core.providers.base import _clean_surrogates
+        safe = _clean_surrogates(str(content))[:500]
         self.console.print(Panel(
-            Text(str(content)[:500], style="gray50"),
+            Text(safe, style="gray50"),
             title=f"[dim]{name}[/]", border_style="gray50", padding=(0, 1),
         ))
 
