@@ -141,6 +141,18 @@ class ChatHandler:
             # Convert history to UIL format
             uil_history = list(history or [])
 
+            # ── Auto-suggest relevant skills ──────────────────────
+            suggested_skills = []
+            try:
+                from core.skills import skill_manager
+                suggestions = skill_manager.suggest_skills(message)
+                suggested_skills = [
+                    {"name": s.name, "icon": s.icon, "description": s.description[:80]}
+                    for s in suggestions[:3]
+                ]
+            except Exception:
+                pass
+
             # Process through UIL Brain (pass cfg for engine feature flags)
             result, _routing = self._uil.process(
                 user_input=message,
@@ -178,6 +190,7 @@ class ChatHandler:
                 "content": clean or "",
                 "tools": tools_result,
                 "error": None,
+                "suggested_skills": suggested_skills,
             }
         except Exception as e:
             logger.error("ChatHandler error: %s", e, exc_info=True)

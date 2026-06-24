@@ -206,24 +206,93 @@ class SkillManager:
 
     def suggest_skills(self, user_input: str) -> list[Skill]:
         """Suggest relevant skills based on user input using keyword matching."""
-        user_input = user_input.lower()
-        suggestions = []
+        user_input_lower = user_input.lower()
+        suggestions: list[Skill] = []
 
-        # Keyword mappings for each skill
-        keyword_maps = {
-            "code-review": ["review", "code review", "audit", "check code", "bug", "security", "style"],
-            "document": ["document", "write docs", "document code", "docs", "documentation"],
-            "explain-code": ["explain", "explain code", "how does this work", "understand"],
-            "fix-bug": ["fix bug", "debug", "fix error", "problem", "issue", "broken"],
-            "generate-tests": ["test", "tests", "generate tests", "write tests", "unit test"],
-            "refactor": ["refactor", "improve code", "clean up", "reorganize", "restructure"],
-            "tui-builder": ["tui", "terminal ui", "textual", "build interface", "ui"],
+        # Keyword mappings — comprehensive coverage for all skills
+        keyword_maps: dict[str, list[str]] = {
+            "graphic-designer": [
+                "design", "صمم", "تصميم", "بطاقة", "card", "poster", "بوستر",
+                "certificate", "شهادة", "invitation", "دعوة", "svg", "illustration",
+                "graphic", "جرافيك", "print", "طباعة", "a4", "graduation", "تخرج",
+                "social media post", "منشور", "banner", "بانر", "layout", "رسم",
+            ],
+            "app-builder": [
+                "build app", "create app", "scaffold", "new project", "fullstack",
+                "full stack", "full-stack", "production app", "build a", "scaffold a",
+                "انشاء تطبيق", "بناء تطبيق", "مشروع جديد",
+            ],
+            "react-builder": [
+                "react", "next.js", "nextjs", "vite", "jsx", "tsx", "component",
+                "tailwind", "zustand", "redux", "react router",
+            ],
+            "vue-builder": [
+                "vue", "nuxt", "pinia", "vue router", "composition api",
+            ],
+            "express-builder": [
+                "express", "node.js", "nodejs", "nestjs", "api", "prisma",
+                "backend", "typescript", "middleware", "endpoint",
+            ],
+            "laravel-builder": [
+                "laravel", "php", "eloquent", "blade", "livewire", "breeze",
+            ],
+            "django-builder": [
+                "django", "fastapi", "drf", "sqlalchemy", "python web", "flask",
+            ],
+            "flutter-builder": [
+                "flutter", "react native", "expo", "mobile app", "ios", "android",
+                "dart", "widget", "تطبيق جوال",
+            ],
+            "code-review": [
+                "review", "code review", "audit", "check code", "bug",
+                "security", "style", "مراجعة", "تدقيق",
+            ],
+            "fix-bug": [
+                "fix bug", "debug", "fix error", "problem", "issue", "broken",
+                "doesn't work", "not working", "error", "تصليح", "اصلاح", "مشكلة",
+            ],
+            "refactor": [
+                "refactor", "improve code", "clean up", "reorganize", "restructure",
+                "simplify", "optimize", "تحسين",
+            ],
+            "generate-tests": [
+                "test", "tests", "generate tests", "write tests", "unit test",
+                "pytest", "jest", "اختبارات",
+            ],
+            "document": [
+                "document", "write docs", "documentation", "readme", "api docs",
+                "jsdoc", "docstring", "توثيق",
+            ],
+            "explain-code": [
+                "explain", "explain code", "how does this work", "understand",
+                "what does", "شرح", "كيف يعمل",
+            ],
+            "tui-builder": [
+                "tui", "terminal ui", "textual", "build interface", "terminal app",
+                "واجهة طرفية",
+            ],
+            "cinematic-experience": [
+                "cinematic", "animation", "3d", "webgl", "motion", "parallax",
+                "immersive", "scroll", "experience", "تفاعلي", "حركة",
+            ],
+            "textual-master": [
+                "textual css", "tcss", "textual widget", "textual screen",
+            ],
         }
 
         for skill in self._skills.values():
             keywords = keyword_maps.get(skill.name, [])
-            # Also check if skill name or description contains input terms
-            if skill.name.lower() in user_input or any(kw in user_input for kw in keywords):
+            # Check skill name match
+            if skill.name.lower() in user_input_lower:
+                suggestions.append(skill)
+                continue
+            # Check keywords
+            if any(kw in user_input_lower for kw in keywords):
+                suggestions.append(skill)
+                continue
+            # Check description words (partial match)
+            desc_words = skill.description.lower().split()
+            if any(w in user_input_lower for w in desc_words if len(w) > 3):
                 suggestions.append(skill)
 
         return suggestions
