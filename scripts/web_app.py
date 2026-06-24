@@ -77,7 +77,20 @@ def main():
     if port != 8000:
         print(f"⚠ Port 8000 in use — using port {port}")
 
-    from scripts.web.server import run as _run
+    # ── Check dependencies before importing ──
+    try:
+        from scripts.web.server import run as _run
+    except ImportError as e:
+        missing = str(e)
+        print(f"\n❌ Missing dependency: {missing}")
+        print(f"   Install: pip install widdx-nexus[api]")
+        print(f"   Or:      pip install fastapi uvicorn\n")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Server import failed: {e}")
+        print(f"   Check that Python SSL module is available.")
+        print(f"   Try: python -c \"import ssl; print(ssl.OPENSSL_VERSION)\"\n")
+        sys.exit(1)
 
     # Enable diagnostics
     try:

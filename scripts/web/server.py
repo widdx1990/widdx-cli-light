@@ -39,10 +39,17 @@ STATIC_DIR.mkdir(exist_ok=True)
 (STATIC_DIR / "css").mkdir(exist_ok=True)
 (STATIC_DIR / "js").mkdir(exist_ok=True)
 
-# ── FastAPI imports ─────────────────────────────────────────
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+# ── FastAPI imports (checked) ──────────────────────────────
+try:
+    from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+    from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+    from fastapi.staticfiles import StaticFiles
+except ImportError as e:
+    import sys
+    print(f"\n❌ FastAPI not installed: {e}")
+    print(f"   Install: pip install widdx-nexus[api]")
+    print(f"   Or:      pip install fastapi uvicorn\n")
+    sys.exit(1)
 
 logger = logging.getLogger("widdx.web")
 

@@ -15,9 +15,20 @@ except ImportError:
 
 def run():
     """Main CLI entry point — terminal interface."""
-    from cli.app import CLIApp
-    app = CLIApp()
-    app.run()
+    try:
+        from cli.app import CLIApp
+        app = CLIApp()
+        app.run()
+    except ImportError as e:
+        print(f"\n❌ Failed to start CLI: {e}")
+        print(f"   Install: pip install widdx-nexus")
+        print(f"   Required: rich, httpx, prompt_toolkit, pygments, python-bidi\n")
+        raise
+    except KeyboardInterrupt:
+        print("\n👋 Goodbye!")
+    except Exception as e:
+        print(f"\n❌ CLI error: {e}")
+        raise
 
 if __name__ == "__main__":
     run()
