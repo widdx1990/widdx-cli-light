@@ -1,318 +1,317 @@
-# Project Map — WIDDX Nexus
+# WIDDX Nexus — Complete Project Map
 
-## Identity
+> Forensic analysis of every file and directory. Version: 3.0.0+
+> Author: MUHAMMAD MUSLIH (widdx.com) 🇵🇸
 
-| Field | Value |
-|---|---|
-| **Package Name** | `widdx-nexus` |
-| **Version** | `3.1.0` (pyproject.toml) — inconsistent with runtime strings |
-| **Author** | MUHAMMAD MUSLIH — widdx.com |
-| **License** | MIT |
-| **Python** | ≥ 3.10 |
-| **Repo** | https://github.com/widdx1990/widdx-nexus |
+## Root Level
 
----
+| File | Purpose |
+|------|---------|
+| `main.py` | Entry point — delegates to `scripts/main.py` → `scripts/web_app.py` |
+| `api_server.py` | Standalone entry for API server (delegates to `scripts/api_server.py`) |
+| `run_textual.py` | Standalone entry for TUI (delegates to `scripts/run_textual.py`) |
+| `pyproject.toml` | Python project metadata, dependencies, build config |
+| `package.json` | Node.js package info (for VSCode extension build) |
+| `config.json` | Runtime configuration (provider, model, settings) |
+| `_debug_brain.py` | Debug script for UIL Brain `_resolve_executor` (monkey-patch) |
+| `Dockerfile` | Docker containerization for deployment |
+| `.gitignore` | Git ignore patterns |
+| `.gitattributes` | Git line-ending normalization rules |
+| `install.bat` / `install.ps1` | Windows installation scripts |
+| `uninstall.bat` / `uninstall.ps1` | Windows uninstallation scripts |
+| `run-web.bat` | Windows quick-launch for Web UI |
+| `LICENSE` | MIT License |
 
-## Purpose
+## `core/` — Core Engine (the heart of WIDDX)
 
-WIDDX Nexus is a terminal-based AI engineering workspace that provides:
-- A **CLI** (plain terminal chat with streaming)
-- A **TUI** (Textual-based full-screen interactive app)
-- A **Web UI** (FastAPI + WebSocket + vanilla JS SPA)
-- A **REST API server** (authenticated, rate-limited)
-- A **VS Code extension** (sidebar chat panel)
-- A **GitHub App** (PR review webhook handler)
-- A **Gateway** layer (Telegram + Discord bots)
-- An **MCP client** (Model Context Protocol server orchestration)
+### Top-Level Modules
 
-The cognitive core is the **Unified Intelligence Layer (UIL)** — a pipeline that classifies user input, routes it to the appropriate executor (simple chat, agent loop, code review, etc.), plans steps, verifies output, and records outcomes.
+| File | Purpose | Key Classes/Functions |
+|------|---------|----------------------|
+| `__init__.py` | Package init, exports key modules | — |
+| `__main__.py` | `python -m core` launcher → Web UI | `run()` |
+| `_path.py` | Central sys.path management | `ensure_project_root()` |
+| `chat.py` | Conversation loop, tool dispatch, streaming | `DisplayManager`, `run_chat_turn()`, `run_stream_turn()`, `run_agent_turn()`, `process_tool_calls()` |
+| `commands.py` | Slash command handlers (shared CLI/TUI) | `handle_model()`, `handle_provider()`, `handle_mcp()`, `handle_gguf()`, `handle_doctor()`, `handle_export()`, `handle_version()`, `handle_permissions()` |
+| `tools/` | Tool definitions package | See subsection below |
+| `memory.py` | Persistent fact storage (markdown files) | `MemoryStore` |
+| `memory_learner.py` | Auto-extract facts from conversations via LLM | `MemoryLearner` |
+| `session_v2.py` | SQLite session storage (with JSON compat) | `SessionV2`, `create_new_session()`, `load_session()` |
+| `database.py` | SQLite database manager | `Database`, `SessionDB` |
+| `skills.py` | Skill management (markdown-based plugins) | `SkillManager`, `Skill`, `skill_manager` singleton |
+| `workflow.py` | Workflow engine (multi-step pipelines) | `WorkflowEngine` |
+| `config/__init__.py` | Config package init | — |
+| `config/settings.py` | Load/save config.json | `load()`, `save()`, `get_config_path()` |
+| `config/keychain.py` | API key management (env vars) | `prompt_key()`, `get_key()`, `forget_key()`, `has_key()` |
+| `sandbox.py` | Command execution (sandboxed subprocess) | `SandboxExecutor`, `SandboxResult` |
+| `guard.py` | Command safety checking | `CommandGuard`, `GuardResult` |
+| `proxy.py` | Free proxy manager for OpenCode Zen | `ProxyManager`, `proxy_manager` singleton |
+| `cache.py` | Response and tool result caching | `CacheStore`, `ResponseCache`, `ToolResultCache` |
+| `diagnostics.py` | Silent error collection and auditing | `ErrorCollector`, `error_collector`, `audit_silent_errors()` |
+| `delegation.py` | Sub-agent spawning and management | `DelegationManager`, `SubAgent` |
+| `background.py` | Background task execution | `BackgroundTaskManager`, `BackgroundTask`, `background` singleton |
+| `checkpoint.py` | Session checkpoint/restore | `CheckpointManager` |
+| `auto_commit.py` | Auto git-commit after agent success | `AutoCommitManager`, `auto_committer` |
+| `auto_setup.py` | Auto-dependency install + project learning | `detect_project_deps()`, `learn_project()`, `setup_project()` |
+| `utils.py` | Shared utilities (frontmatter, slugs) | `parse_frontmatter()`, `strip_frontmatter()`, `to_slug()`, `get_last_turn()` |
+| `ui_visual.py` | Shared Rich rendering helpers | `Theme`, `render_user_message()`, `render_assistant_message()`, `console`, `header_bar()` |
+| `token_budget.py` | Token/cost budget enforcement | `TokenBudget`, `BudgetExceededError`, `get_budget()` |
+| `project_tracker.py` | Persistent project plan/docs (.widdx/) | `ensure_docs()`, `build_context_block()`, `update_doc()` |
+| `project_context.py` | Project context aggregation (deprecated) | `ProjectContextManager`, `get_project_context()` |
+| `project_structure.py` | Project tree analyzer (deprecated → scanner) | `ProjectStructureAnalyzer` |
+| `suggester.py` | Proactive project suggestions | `ProjectSuggester`, `Suggestion` |
+| `self_reflection.py` | LLM self-reflection on last turn | `reflect_on_last_turn()`, `extract_lessons()` |
+| `self_improve.py` | Error pattern learning + prompt optimization | `ErrorPatternLearner`, `get_improver()` |
+| `repo_mapper.py` | Repository dependency graph + context selector | `RepoMapper`, `FileNode` |
+| `rag.py` | RAG pipeline (sentence-transformers + TF-IDF) | `RAGStore`, `rag_store` |
+| `vector_memory.py` | Vector-based memory search | `VectorMemory` |
+| `session_search.py` | Session content search | Session search functions |
+| `linter.py` | Auto-lint after agent edits | `LinterRunner`, `LintResult`, `linter` |
+| `multi_editor.py` | Atomic multi-file edits with rollback | `MultiFileEditor`, `MultiEditResult` |
+| `diff_engine.py` | Unified diff generation and application | `DiffEngine`, `DiffResult` |
+| `plugin_loader.py` | Skills hot-reload via file watching | `SkillHotReloader`, `PluginWatcher`, `PluginLoader` |
+| `permissions.py` | Tool permission system (permissive/strict/silent) | `PermissionManager`, `PermissionLevel`, `get_permission_manager()` |
+| `vision.py` | Multi-modal image understanding | `describe_image()`, `VisionMode`, `process_user_input_with_vision()` |
+| `voice.py` | Text-to-Speech (edge-tts) | `TTSEngine`, `tts` singleton |
+| `web_launcher.py` | Web UI launcher helper | Web launch utilities |
+| `activity.py` | Activity event tracking for dashboard | `ActivityStore`, `ActivityEvent` |
 
----
+### `core/providers/` — LLM Provider System
 
-## Top-Level Directory Structure
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `providers.py` | Provider factory + model listing | `create_provider()`, `get_available_models()`, `estimate_turn_cost()`, `fetch_free_models()`, `fetch_ollama_models()` |
+| `base.py` | Base provider class | `BaseProvider` |
+| `opencode_zen.py` | OpenCode Zen free tier provider | `OpenCodeZenProvider` |
+| `deepseek.py` | DeepSeek API provider | `DeepSeekProvider` |
+| `openai_compatible.py` | OpenAI-compatible API adapter | `OpenAICompatibleProvider` |
+| `ollama.py` | Ollama local model provider | `OllamaProvider` |
+| `gguf.py` | GGUF model import/conversion | `import_gguf()`, `list_imports()`, `read_gguf_metadata()` |
+| `gguf_provider.py` | GGUF runtime provider | `GGUFProvider` |
+| `factory.py` | Provider factory | Factory functions |
+| `free_models.py` | Free model discovery | Free model listing |
 
-```
-chat-tool/                          ← Project root
-├── .claude/                        ← Claude Code settings (gitignored)
-│   └── settings.local.json
-├── .github/
-│   └── workflows/
-│       └── ci.yml                  ← GitHub Actions CI (test + lint + build)
-├── .gitignore
-├── .gitattributes
-├── build/                          ← Build artifact (should be gitignored — IS listed)
-│   └── lib/                        ← Old stale source copies (pre-refactor)
-├── cli/                            ← Plain-terminal CLI frontend
-│   ├── __init__.py
-│   ├── app.py                      ← CLIApp class — main readline loop
-│   ├── commands.py                 ← Slash-command handler
-│   ├── display.py                  ← Rich display helpers
-│   ├── input.py                    ← Prompt_toolkit input handler
-│   └── theme.py                    ← Terminal color theme
-├── core/                           ← Business logic / AI engine
-│   ├── __init__.py                 ← Public re-export surface
-│   ├── __main__.py                 ← `python -m core` → web_app
-│   ├── _path.py                    ← sys.path resolver
-│   ├── activity.py                 ← Activity/event log store
-│   ├── agents/
-│   │   ├── __init__.py
-│   │   ├── agent.py                ← AutonomousAgent (tool-calling loop)
-│   │   ├── executor_adapter.py     ← Maps ExecutionMode → executor callables
-│   │   └── expert.py              ← Expert agent (specialized system prompts)
-│   ├── auto_commit.py             ← Auto-commit after code changes
-│   ├── auto_setup.py              ← First-run environment detection
-│   ├── background.py              ← BackgroundTaskManager (threads)
-│   ├── cache.py                   ← Semantic response cache
-│   ├── chat.py                    ← Core chat loop (sync streaming)
-│   ├── checkpoint.py              ← Session checkpoint / restore
-│   ├── cli.py                     ← `widdx` entry point → CLIApp
-│   ├── commands.py                ← Core command dispatch (heavy)
-│   ├── config/
-│   │   ├── __init__.py
-│   │   ├── settings.py            ← JSON config loader/saver
-│   │   └── keychain.py            ← XOR-obfuscated API key storage
-│   ├── cron/
-│   │   ├── __init__.py
-│   │   ├── job.py                 ← CronJob dataclass
-│   │   ├── parser.py              ← Cron expression parser
-│   │   ├── scheduler.py           ← CronScheduler (thread-based)
-│   │   └── store.py               ← Cron job persistence (JSON)
-│   ├── database.py                ← SQLite ORM (sessions, messages, memories)
-│   ├── delegation.py              ← DelegationManager (sub-agents)
-│   ├── diagnostics.py             ← Error collector / diagnostics
-│   ├── diff_engine.py             ← Unified diff generation
-│   ├── engine_adapters.py         ← Bridge: new engines ↔ UIL contracts
-│   ├── engine_arbiter.py          ← Resolves old vs new engine disagreements
-│   ├── engine_trust.py            ← Trust accumulator for engine selection
-│   ├── gateway/
-│   │   ├── __init__.py            ← GatewayCore, Platform, Message, Reply
-│   │   ├── discord.py             ← Discord bot adapter
-│   │   └── telegram.py            ← Telegram bot adapter
-│   ├── guard.py                   ← Permission guard / safety checks
-│   ├── intelligence/              ← Local (no-LLM) decision engine
-│   │   ├── __init__.py
-│   │   ├── classifier.py          ← TF-IDF + keyword classifier
-│   │   ├── decision_engine.py     ← Learned routing decisions
-│   │   ├── embeddings.py          ← Local TF-IDF embeddings
-│   │   ├── learner.py             ← Pattern learner from history
-│   │   ├── patterns.py            ← 25+ software project patterns
-│   │   └── planner.py             ← Pattern-aware task planner
-│   ├── isolation/                 ← Container-based process isolation
-│   │   ├── __init__.py
-│   │   ├── container.py           ← ContainerManager (Docker/podman)
-│   │   ├── policy.py              ← IsolationPolicy rules
-│   │   └── profiles.py            ← Pre-defined isolation profiles
-│   ├── linter.py                  ← Code linter wrapper
-│   ├── mcp/
-│   │   ├── __init__.py
-│   │   └── client.py              ← MCPClientManager (stdio process spawn)
-│   ├── memory.py                  ← MemoryStore (file + index)
-│   ├── memory_learner.py          ← Auto-extract memory from conversations
-│   ├── multi_editor.py            ← Batch multi-file editor
-│   ├── permissions.py             ← Permission matrix
-│   ├── plugin_loader.py           ← Dynamic plugin system + hot reload
-│   ├── project/
-│   │   ├── __init__.py
-│   │   ├── git.py                 ← Git operations wrapper
-│   │   ├── manifest.py            ← Project manifest (MANIFEST.json)
-│   │   ├── scanner.py             ← Project file scanner
-│   │   └── state.py               ← Session/branch state persistence
-│   ├── project_context.py         ← Project context builder for prompts
-│   ├── project_structure.py       ← Project structure formatter
-│   ├── project_tracker.py         ← Project tracking / goals
-│   ├── providers/
-│   │   ├── __init__.py            ← Re-exports from providers.py
-│   │   ├── providers.py           ← Backward-compat re-export facade
-│   │   ├── base.py                ← Provider ABC + ToolCall
-│   │   ├── ollama.py              ← OllamaProvider
-│   │   ├── openai_compatible.py   ← OpenAICompatibleProvider
-│   │   ├── opencode_zen.py        ← OpenCodeZenProvider
-│   │   ├── deepseek.py            ← DeepSeekProvider
-│   │   ├── free_models.py         ← Free model discovery + cost estimation
-│   │   ├── gguf.py                ← GGUF file utilities (scan, import)
-│   │   ├── gguf_provider.py       ← GGUFDirectProvider (llama-cpp)
-│   │   └── factory.py             ← create_provider() factory
-│   ├── proxy.py                   ← HTTP proxy manager
-│   ├── py.typed                   ← PEP 561 marker
-│   ├── rag.py                     ← Retrieval-augmented generation
-│   ├── repo_mapper.py             ← Repository map builder
-│   ├── sandbox.py                 ← SandboxExecutor (WSL/Docker/process)
-│   ├── self_improve.py            ← Self-improvement / meta-learning
-│   ├── self_reflection.py         ← Post-execution self-reflection
-│   ├── session_search.py          ← Full-text session search
-│   ├── session_v2.py              ← Session v2 model
-│   ├── skills.py                  ← SkillManager (loads skills/ directory)
-│   ├── suggester.py               ← Command suggestion engine
-│   ├── token_budget.py            ← Token budget tracker
-│   ├── tools/
-│   │   ├── __init__.py            ← All built-in tools (1275 lines)
-│   │   ├── browser.py             ← Browser/screenshot tool
-│   │   └── security.py            ← Dangerous pattern scanner
-│   ├── uil/                       ← Unified Intelligence Layer
-│   │   ├── __init__.py
-│   │   ├── analyzer.py            ← TaskAnalyzer (classification)
-│   │   ├── brain.py               ← UnifiedIntelligenceLayer (orchestrator)
-│   │   ├── contract.py            ← All UIL data contracts (Enums, dataclasses)
-│   │   ├── executors.py           ← Simple executor implementations
-│   │   ├── knowledge.py           ← KnowledgeBase (outcome recording)
-│   │   ├── planner.py             ← TaskPlanner (cognitive enhancer)
-│   │   ├── router.py              ← DecisionRouter (mode selection)
-│   │   └── verifier.py            ← Post-execution quality verifier
-│   ├── ui_visual.py               ← Rich visual renderers for CLI/TUI
-│   ├── utils.py                   ← Misc utilities
-│   ├── validation/
-│   │   ├── __init__.py
-│   │   ├── reporter.py            ← Validation report generator
-│   │   └── runner.py              ← Validation runner (linters/tests)
-│   ├── vector_memory.py           ← Embedding-based vector memory
-│   ├── vision.py                  ← Image description (Ollama/pipeline/fallback)
-│   ├── voice.py                   ← TTS engine (edge-tts)
-│   ├── web_launcher.py            ← Web UI launcher helper
-│   └── workflow.py                ← Workflow executor
-├── github-app/
-│   ├── app.py                     ← GitHub webhook handler (Flask/httpx)
-│   └── README.md
-├── scripts/
-│   ├── __init__.py
-│   ├── api_server.py              ← FastAPI REST API (authenticated)
-│   ├── main.py                    ← CLI launcher
-│   ├── run_textual.py             ← TUI launcher
-│   ├── static/                    ← Web UI static assets
-│   │   ├── index.html             ← Main SPA page (RTL/i18n)
-│   │   ├── css/
-│   │   │   └── style.css          ← Full design system (87 KB)
-│   │   └── js/
-│   │       ├── lang.js            ← i18n engine (en/ar)
-│   │       ├── nexus.js           ← Main app logic + WebSocket (47 KB)
-│   │       ├── ui.js              ← Theme, sidebar, markdown parser (27 KB)
-│   │       └── views/             ← View modules (one per dashboard section)
-│   │           ├── activity.js
-│   │           ├── apikeys.js
-│   │           ├── autocommit.js
-│   │           ├── checkpoints.js
-│   │           ├── cron.js
-│   │           ├── dashboard.js
-│   │           ├── debug.js
-│   │           ├── delegation.js
-│   │           ├── doctor.js
-│   │           ├── gateway.js
-│   │           ├── gguf.js
-│   │           ├── git.js
-│   │           ├── manifest.js
-│   │           ├── mcp.js
-│   │           ├── memory.js
-│   │           ├── permissions.js
-│   │           ├── plugins.js
-│   │           ├── proxy.js
-│   │           ├── sessions.js
-│   │           ├── settings.js    ← (37 KB — largest view)
-│   │           ├── skills.js
-│   │           ├── tokenbudget.js
-│   │           └── workflows.js
-│   ├── web/
-│   │   ├── __init__.py
-│   │   ├── server.py              ← FastAPI WebSocket server (72 routes)
-│   │   ├── chat.py                ← ChatHandler (UIL pipeline wrapper)
-│   │   ├── sandbox.py             ← SandboxHandler
-│   │   ├── web_app.py             ← Alias (also at scripts/web_app.py)
-│   │   └── dashboard/
-│   │       ├── __init__.py        ← Dashboard composite class
-│   │       ├── _mixin_core.py
-│   │       ├── _mixin_devops.py
-│   │       ├── _mixin_gateway.py
-│   │       ├── _mixin_scheduler.py
-│   │       ├── _mixin_settings.py
-│   │       └── _mixin_storage.py
-│   └── web_app.py                 ← `widdx-web` entry point (port-finder)
-├── skills/                        ← Prompt-based skill definitions
-│   ├── app-builder/skill.md
-│   ├── cinematic-experience/skill.md
-│   ├── code-review/skill.md
-│   ├── django-builder/skill.md
-│   ├── document/skill.md
-│   ├── explain-code/skill.md
-│   ├── express-builder/skill.md
-│   ├── fix-bug/skill.md
-│   ├── flutter-builder/skill.md
-│   ├── generate-tests/skill.md
-│   ├── graphic-designer/skill.md
-│   ├── laravel-builder/skill.md
-│   ├── react-builder/skill.md
-│   ├── refactor/skill.md
-│   ├── textual-master/skill.md
-│   ├── tui-builder/skill.md
-│   └── vue-builder/skill.md
-├── tests/                         ← 41 test files (pytest)
-├── tui/                           ← Textual TUI frontend
-│   ├── __init__.py
-│   ├── __main__.py
-│   ├── app.py                     ← WIDDXTUI App (Textual)
-│   ├── app.tcss                   ← Textual CSS stylesheet
-│   ├── chat_engine.py             ← Async chat worker for TUI
-│   ├── commands.py                ← TUI command handler
-│   ├── state.py                   ← TUI state object
-│   ├── theme_util.py              ← Theme applicator
-│   ├── screens/
-│   │   ├── __init__.py
-│   │   ├── detail.py
-│   │   ├── help.py
-│   │   ├── memory_crud.py
-│   │   ├── session_crud.py
-│   │   ├── settings.py
-│   │   ├── tool_detail.py
-│   │   └── ubuntu_grid.py
-│   └── widgets/
-│       ├── __init__.py
-│       ├── diff_viewer.py
-│       └── header.py
-├── vscode-extension/              ← VS Code extension (TypeScript)
-│   ├── src/
-│   │   ├── extension.ts           ← Activation + commands
-│   │   ├── panel.ts               ← WebviewView panel (chat UI)
-│   │   └── client.ts              ← WiddxClient (HTTP + WebSocket)
-│   ├── out/                       ← Compiled JS (committed)
-│   ├── package.json
-│   └── tsconfig.json
-├── config.json                    ← Default config (shipped with package)
-├── pyproject.toml                 ← Package metadata + build config
-├── Dockerfile
-├── main.py                        ← Root redirect → scripts/main.py
-├── api_server.py                  ← Root redirect → scripts/api_server.py
-├── run_textual.py                 ← Root redirect → scripts/run_textual.py
-├── _debug_brain.py                ← Debug script (should NOT be in repo)
-├── _run_tests.py                  ← Debug test runner (should NOT be in repo)
-├── widdx-tui.log                  ← Runtime log (should NOT be in repo)
-└── skill.md                       ← Root-level skill file (dead/misplaced)
-```
+### `core/uil/` — Unified Intelligence Layer (Brain Pipeline)
 
----
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Exports `UnifiedIntelligenceLayer`, `ExecutionMode` |
+| `contract.py` | Data contracts — ALL types for the pipeline | `TaskType` (13 types), `ExecutionMode` (4 modes), `Domain`, `ClassificationResult`, `RoutingDecision`, `Plan`, `TaskStep`, `ExecutionResult`, `VerificationReport`, `VerificationFinding`, `VerificationSeverity`, `DecisionStep` |
+| `analyzer.py` | Task classification (LLM + keyword fallback) | `TaskAnalyzer`, `LLMClassifier`, `_apply_project_context()` |
+| `router.py` | Execution mode routing (static mapping) | `DecisionRouter`, `_MODE_MAP` |
+| `planner.py` | Task decomposition (3 decomposers + minimal) | `TaskPlanner`, `_DECOMPOSERS` |
+| `executors.py` | Direct tool execution | `run_direct_tool()` |
+| `verifier.py` | Output verification (regex-based) | `HtmlVerifier`, `CodeVerifier`, `BashVerifier`, `GenericVerifier`, `get_verifier()` |
+| `knowledge.py` | Execution knowledge base (JSON storage) | `KnowledgeBase` |
+| `brain.py` | The UIL Brain — orchestrates full pipeline | `UnifiedIntelligenceLayer.process()` — Analyze → Route → Plan → Execute → Verify → Feedback → Knowledge |
 
-## Entry Points
+### `core/agents/` — Agent System
 
-| Command | Module | Function |
-|---|---|---|
-| `widdx` | `core.cli` | `run()` |
-| `widdx-tui` | `tui.app` | `run_tui()` |
-| `widdx-api` | `scripts.api_server` | `main()` |
-| `widdx-web` | `scripts.web_app` | `main()` |
-| `python -m core` | `core.__main__` | redirects to `scripts.web_app` |
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `agent.py` | Autonomous agent (LLM→tool loop) | `AutonomousAgent`, `AgentStep` |
+| `executor_adapter.py` | Executor bridge: UIL contract → real execution | `EXECUTOR_MAP` (4 executors), `ExecutionContext` |
+| `expert.py` | Expert team (multi-expert sequential) | `ExpertTeam`, `ExpertAgent`, `ExpertProfile` |
 
----
+### `core/intelligence/` — Local Intelligence Engine (v4.0)
 
-## Tech Stack
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Exports all intelligence components |
+| `classifier.py` | LLM-free task classifier (TF-IDF + keywords, 200+ examples) | `LocalClassifier`, `classify_input()`, `ClassificationResult` |
+| `decision_engine.py` | Learned routing decision tree | `DecisionEngine`, `DecisionStats`, `DEFAULT_MODE_MAP` |
+| `patterns.py` | 25+ software project patterns knowledge base | `SoftwarePattern`, `PatternStep`, `PATTERNS`, `find_patterns()` |
+| `planner.py` | Pattern-aware task decomposition | `PatternAwarePlanner`, `Plan`, `PlanStep`, `create_plan()` |
+| `learner.py` | Extracts new patterns from execution history | `PatternLearner`, `get_learner()` |
+| `embeddings.py` | TF-IDF local embeddings (zero external deps) | `TFIDFEmbedder`, `SentenceEmbedder`, `EmbeddingStore` |
 
-| Layer | Technology |
-|---|---|
-| Language | Python 3.10+ |
-| TUI | Textual ≥ 1.0 |
-| CLI | prompt_toolkit ≥ 3.0 + rich ≥ 13.0 |
-| Web server | FastAPI + uvicorn + WebSocket |
-| HTTP client | httpx ≥ 0.25 |
-| Database | SQLite (via stdlib `sqlite3`) |
-| AI Providers | Ollama, OpenAI-compatible, DeepSeek, GGUF (llama-cpp) |
-| MCP | stdio-based process spawn |
-| Gateway | python-telegram-bot, discord.py |
-| Voice | edge-tts |
-| VS Code extension | TypeScript |
-| CI | GitHub Actions |
-| Build | setuptools (pyproject.toml) |
+### `core/isolation/` — Process Isolation Engine (v4.0)
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Exports isolation components |
+| `profiles.py` | Execution environment profiles (python/bash/browser/mcp/trusted) | `IsolationProfile`, `PROFILES`, `resolve_profile()` |
+| `container.py` | Docker/podman container manager with fallback | `ContainerManager`, `ContainerResult` |
+| `policy.py` | Permission-level-based execution policy | `IsolationPolicy`, `get_policy()` |
+
+### `core/validation/` — Validation Engine (v4.0)
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Exports validation components |
+| `runner.py` | Safe code execution harness (actually runs code) | `CodeRunner`, `RunResult`, `run_code()` |
+| `reporter.py` | Multi-signal quality reports | `ValidationReporter`, `ValidationReport`, `Finding`, `validate_result()` |
+
+### `core/project/` — Project Management
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `state.py` | Session save/load, project config, indexing | `save_session()`, `load_session()`, `build_index()` |
+| `scanner.py` | Project structure scanner | `ProjectScanner`, `ProjectCard` |
+| `git.py` | Git operations (commit, undo, branch) | `is_git_repo()`, `auto_commit()`, `undo_last_commit()` |
+| `manifest.py` | MANIFEST.json generation | `generate_manifest()` |
+
+### `core/cron/` — Cron Scheduler
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `job.py` | Cron job data model | `CronJob`, `JobStatus` |
+| `parser.py` | Natural language → cron expression | `parse_schedule()`, `next_run()` |
+| `scheduler.py` | Job scheduler with background thread | `CronScheduler` |
+| `store.py` | Job persistence (JSON) | `JobStore` |
+
+### `core/gateway/` — Multi-Platform Gateway
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Core gateway + Message/Reply types | `GatewayCore`, `Platform`, `Message`, `Reply` |
+| `telegram.py` | Telegram bot adapter | `TelegramAdapter` |
+| `discord.py` | Discord bot adapter | `DiscordAdapter` |
+
+### `core/tools/` — Tool Definitions
+
+| File | Purpose | Key Classes/Functions |
+|------|---------|----------------------|
+| `__init__.py` | Tool registry and execution | `TOOL_DEFINITIONS`, `execute_with_skills()`, `ToolCall` |
+| `browser.py` | Browser automation (Playwright MCP + HTTP fallback) | `_browser_navigate()`, `_browser_screenshot()`, `_browser_click()`, `_browser_type()`, `_browser_press()`, `_browser_snapshot()` |
+| `security.py` | Dangerous command pattern detection | `scan_dangerous()`, `_DANGEROUS_PATTERNS`, `_WARN_PATTERNS` |
+
+### `core/mcp/` — Model Context Protocol
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `client.py` | MCP server discovery + tool integration | `MCPManager`, `MCPServerConnection`, `discover_mcp_servers()` |
+
+## `cli/` — Command-Line Interface
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `app.py` | Main CLI app (loop, startup, UIL integration) | `CLIApp`, `run()` |
+| `commands.py` | Slash command processing | `CLICommands` — 30+ commands |
+| `display.py` | Rich rendering (thin wrapper on ui_visual) | `show_header()`, `show_user_msg()`, `show_ai_msg()`, `show_system_msg()` |
+| `input.py` | prompt_toolkit input (history, autocomplete) | `CLIInput` |
+| `theme.py` | Theme constants (re-exports from ui_visual) | Color/style constants |
+
+## `tui/` — Terminal User Interface (Textual)
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `__main__.py` | `python -m tui` entry point |
+| `app.py` | Main TUI app + MainScreen + event handlers | `WIDDXTUI`, `MainScreen`, `ViewPanel` |
+| `app.tcss` | Textual CSS stylesheet | Visual styling |
+| `chat_engine.py` | Chat execution engine (streaming, tools, agents) | `ChatEngine`, message types (`ResultMsg`, `ErrorMsg`, `StreamEndMsg`, etc.) |
+| `commands.py` | TUI slash command handler | `CommandHandler` — 30+ commands |
+| `state.py` | Central TUI state management | `TUIState` |
+| `theme_util.py` | Theme utilities | `apply_app_theme()`, `PROVIDER_OPTIONS` |
+| `screens/help.py` | Help screen | `HelpScreen` |
+| `screens/settings.py` | Settings screen (provider, model, GGUF) | `SettingsScreen`, `ProviderTab`, `GGUFTab` |
+| `screens/session_crud.py` | Session management screens | `SessionListScreen`, `SessionPickerScreen`, `SessionRenameScreen`, `SessionDeleteScreen` |
+| `screens/memory_crud.py` | Memory management screens | `MemoryListScreen`, `MemoryEditScreen`, `MemoryPickerScreen`, `MemoryDeleteScreen` |
+| `screens/detail.py` | Text detail modal | `TextDetailScreen` |
+| `screens/tool_detail.py` | Tool detail modal | `ToolDetailScreen` |
+| `screens/ubuntu_grid.py` | Ubuntu-style app grid launcher | `UbuntuGrid` |
+| `widgets/header.py` | Top header widget (provider, branch, cost) | `HeaderWidget` |
+| `widgets/diff_viewer.py` | Diff viewer widget | Diff display |
+
+## `scripts/` — Scripts and Web UI
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `main.py` | Main script entry → web_app.py |
+| `web_app.py` | Web UI launcher |
+| `api_server.py` | FastAPI REST API server (older version) | `AppState`, `ChatRequest`, `ChatResponse`, `RateLimiter` |
+| `run_textual.py` | TUI launcher |
+| `install.bat` / `install.ps1` | Installation scripts |
+
+### `scripts/web/` — Web UI Backend
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `server.py` | FastAPI app + WebSocket + all REST endpoints | 50+ API routes |
+| `chat.py` | Chat handler (UIL Brain pipeline) | `ChatHandler`, `chat()`, `chat_stream()` |
+| `sandbox.py` | Sandbox handler (terminal, browser, files) | `SandboxHandler` |
+| `dashboard/__init__.py` | Dashboard aggregator (mixin pattern) | `Dashboard` (composes 6 mixins) |
+| `dashboard/_mixin_core.py` | System info, computer operations | `CoreDashboardMixin` |
+| `dashboard/_mixin_scheduler.py` | Cron, background tasks, agents | `SchedulerMixin` |
+| `dashboard/_mixin_storage.py` | Sessions, memory, activity, skills | `StorageMixin` |
+| `dashboard/_mixin_gateway.py` | Gateway, MCP, proxy, permissions | `GatewayMixin` |
+| `dashboard/_mixin_settings.py` | Provider settings, models, config | `SettingsMixin` |
+| `dashboard/_mixin_devops.py` | Git, checkpoints, plugins, workflows, GGUF | `DevOpsMixin` |
+| `.widdx/knowledge.json` | Knowledge base data file | Persisted learning |
+
+### `scripts/static/` — Frontend Assets
+
+| File | Purpose |
+|------|---------|
+| `index.html` | Main Web UI page (RTL/Arabic i18n) |
+| `css/style.css` | Full design system (dark/light, RTL) |
+| `js/nexus.js` | Main app logic, WebSocket, all views |
+| `js/ui.js` | Theme, sidebar, markdown parser, command palette |
+| `js/lang.js` | i18n engine (English/Arabic) |
+| `js/views/*.js` | 22 view modules (dashboard, settings, git, etc.) |
+
+## `tests/` — Test Suite
+
+| File | Purpose |
+|------|---------|
+| `conftest.py` | Pytest config, KnowledgeBase cleanup |
+| `test_e2e.py` | End-to-end: import chain, provider, tools, memory, sessions |
+| `test_engines_e2e.py` | Engine integration: classifier, planner, validation, isolation, adapters, feature flags, trust |
+| `test_benchmark.py` | Routing accuracy benchmark (29 cases) |
+| `test_api_server.py` | API server integration (13 tests) |
+| `test_executor_adapter.py` | Executor adapter (19 tests) |
+| `test_verifier.py` | Verifier tests (33 tests) |
+| `test_uil_knowledge.py` | UIL knowledge base (8 tests) |
+| `test_uil_p12.py` | UIL Phase 1.2 (11 tests) |
+| `test_uil_p13.py` | UIL Phase 1.3 (8 tests) |
+| `test_uil_p15.py` | UIL Phase 1.5 (6 tests) |
+| `test_uil_planner.py` | Planner tests (12 tests) |
+| `test_cache.py` | Cache tests (19 tests) |
+| `test_providers.py` | Provider tests (13 tests) |
+| `test_sandbox.py` | Sandbox tests |
+| `test_guard.py` | Command guard tests |
+| `test_tui.py` | TUI headless tests (30 tests) |
+| `test_check_cli.py` / `test_cli_all.py` | CLI validation tests |
+| `test_cron_*.py` | Cron system tests (4 files) |
+| `test_background.py` | Background task tests |
+| `test_delegation.py` | Sub-agent tests |
+| `test_checkpoint.py` | Checkpoint tests |
+| `test_diff_engine.py` | Diff engine tests |
+| `test_linter.py` | Linter tests |
+| `test_multi_editor.py` | Multi-editor tests |
+| `test_plugin_loader.py` | Plugin loader tests |
+| `test_project_context.py` / `test_project_validate.py` | Project tests |
+| `test_rag.py` / `test_repo_mapper.py` / `test_vector_memory.py` | Memory/search tests |
+| `test_session_search.py` | Session search tests |
+| `test_token_budget.py` | Token budget tests |
+| `test_features.py` | Integration tests (git, config, load, summary, index) |
+| `test_auto_commit.py` | Auto-commit tests |
+| `run_integration_test.py` | Integration test runner |
+
+## `github-app/` — GitHub App
+
+| File | Purpose |
+|------|---------|
+| `app.py` | GitHub webhook handler + PR analysis |
+| `README.md` | Setup instructions |
+
+## `vscode-extension/` — VSCode Extension
+
+| File | Purpose |
+|------|---------|
+| `package.json` | Extension manifest (commands, activation events) |
+| `src/extension.ts` | Main extension entry |
+| `src/client.ts` | WebSocket client |
+| `src/panel.ts` | WebView panel provider |
+| `out/` | Compiled JavaScript |
+| `media/style.css` | WebView styles |
+| `tsconfig.json` | TypeScript configuration |

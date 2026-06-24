@@ -1,114 +1,75 @@
-# WIDDX Nexus — Dead Code & Unused Files Analysis
+# WIDDX Nexus — Dead Code Analysis
 
-> Identification of dead code, unused files, unreachable imports, and orphaned modules.
+## Confirmed Dead Code
 
-## Dead/Unused Modules
+### 1. `core/project_structure.py` — DEPRECATED
+- **Severity**: Low
+- **Status**: Emits `DeprecationWarning` on import
+- **Reason**: Superseded by `core/project/scanner.py`
+- **Impact**: `ProjectStructureAnalyzer` is only used in tests
+- **Action**: Safe to remove after updating tests
 
-### Completely Unreachable from Production Code
+### 2. `core/project_context.py` — DEPRECATED  
+- **Severity**: Low
+- **Status**: Not imported by any production code
+- **Used only in**: `tests/test_project_context.py`
+- **Impact**: `ProjectContextManager` and `get_project_context()` are unused
+- **Action**: Safe to remove after updating tests
 
-| File | Lines | Reason | Status |
-|------|-------|--------|--------|
-| `core/auto_commit.py` | 137 | Only imported in `tests/test_auto_commit.py` | **DEAD in production** |
-| `core/project_context.py` | 286 | Only imported in `tests/test_project_context.py` | **DEAD in production** |
-| `core/project_structure.py` | 184 | Only imported in `tests/test_project_context.py` | **DEAD in production** |
-| `core/self_reflection.py` | ~200 | Not imported anywhere | **DEAD** |
-| `core/web_launcher.py` | ~50 | Not imported anywhere | **DEAD** |
-| `core/_path.py` | ~30 | Only used by scripts/web/ | **LOW priority** |
-| `_debug_brain.py` | ~30 | Debug script, not part of package | **DEBUG artifact** |
-| `_run_tests.py` | ~80 | Manual test runner, not part of test suite | **DEBUG artifact** |
+### 3. `core/auto_commit.py` — PARTIALLY DEAD
+- **Severity**: Medium
+- **Status**: `AutoCommitManager` is instantiated but `staged_diff()` has a bug (references undefined `logger`)
+- **Used in**: `tests/test_auto_commit.py` only
+- **Impact**: Auto-commit functionality exists but is not integrated into the main pipeline
+- **Action**: Either integrate into main flow or mark as deprecated
 
-### Orphaned Test Files (tests with no matching production code)
+### 4. `core/web_launcher.py` — MINIMAL
+- **Severity**: Low
+- **Status**: Single function, thin wrapper
+- **Impact**: Negligible
+- **Action**: Keep for backward compatibility
 
-| Test File | Tests What | Production Code Exists? |
-|-----------|-----------|------------------------|
-| `test_project_context.py` | `project_context.py`, `project_structure.py` | Yes, but both are dead code |
-| `test_project_validate.py` | `tools._project_validate()` | Yes, in tools/__init__.py |
-| `test_auto_commit.py` | `auto_commit.py` | Yes, but module is dead code |
-| `test_benchmark.py` | `BenchmarkRunner` (test-only class) | No (test-only) |
+### 5. `scripts/api_server.py` (root) — REDUNDANT
+- **Severity**: Low
+- **Status**: Root-level file that just imports from `scripts.api_server`
+- **Impact**: Duplicate entry point
+- **Action**: Keep for backward compatibility
 
-## Unused Functions & Classes
+### 6. Root-level wrapper files
+- `main.py` → delegates to `scripts/main.py`
+- `api_server.py` → delegates to `scripts/api_server.py`  
+- `run_textual.py` → delegates to `scripts/run_textual.py`
+- **Status**: Entry point shims, not dead code but thin wrappers
 
-### In `core/` modules
+## Unused Functions/Methods
 
-| Function/Class | File | Reason Unused |
-|---------------|------|--------------|
-| `AutoCommitManager` | `auto_commit.py` | Never instantiated in production |
-| `ProjectContextManager` | `project_context.py` | Only used in tests |
-| `ProjectStructureAnalyzer` | `project_structure.py` | Only used in tests |
-| `ErrorPatternLearner.get_recurring_errors()` | `self_improve.py` | Called but results never displayed |
-| `self_improve.get_improver()` | `self_improve.py` | Singleton created but never used by any consumer |
-| `WorkflowEngine.pipeline()` | `workflow.py` | Defined but never called by any code path |
-| `WorkflowEngine.create()` | `workflow.py` | Defined but workflows aren't used by AI |
-| `WorkflowEngine.run()` | `workflow.py` | Defined but never triggered from main flow |
-| `BackgroundTaskManager.clean_old()` | `background.py` | Defined but never called (cleanup never triggered) |
-| `get_extra_file_tools()` | `tools/__init__.py` | Called but `_EXTRA_FILE_TOOLS` is always empty |
-| `set_extra_file_tools()` | `tools/__init__.py` | Never called by any code |
-| `get_bash_tool_def()` | `tools/__init__.py` | Never called |
-| `get_write_tool_def()` | `tools/__init__.py` | Never called |
-| `get_read_tool_def()` | `tools/__init__.py` | Never called |
+| Function | File | Issue |
+|----------|------|-------|
+| `AutoCommitManager.staged_diff()` | auto_commit.py | References undefined `logger` — will crash |
+| `ProjectStructureAnalyzer.get_file_extensions()` | project_structure.py | Deprecated, no callers |
+| `ProjectStructureAnalyzer.search_files()` | project_structure.py | Deprecated, no callers |
+| `ProjectContextManager.get_file_content()` | project_context.py | Deprecated, no callers |
+| `ProjectContextManager.refresh()` | project_context.py | Deprecated, no callers |
 
-### In `core/intelligence/` (v4 engine, partially wired)
+## Unused Imports (Potential)
 
-| Function/Class | File | Status |
-|---------------|------|--------|
-| `PatternLearner` | `learner.py` | Created but never called from main flow |
-| `PatternAwarePlanner` | `planner.py` | Created but only used by `get_planner()` singleton |
-| `SoftwarePattern` | `patterns.py` | Defined but patterns never matched in production |
-| `PatternStep` | `patterns.py` | Defined but unused |
-| `get_pattern()` | `patterns.py` | Defined but never called |
-| `get_planner()` | `planner.py` | Singleton created but never used |
-| `get_learner()` | `learner.py` | Singleton created but never used |
-| `get_decision_engine()` | `decision_engine.py` | Singleton created but never used |
+Based on code analysis, these imports may be unused in their files:
+- `core/chat.py`: `from datetime import datetime` — used in `_ts()` 
+- `core/commands.py`: Some imports only used in specific branches
 
-### In `core/isolation/` (feature-flagged, partially dead)
+## Dead Test Files
 
-| Function/Class | File | Status |
-|---------------|------|--------|
-| `ContainerManager` | `container.py` | Only used if engine flag enabled |
-| `IsolationPolicy` | `policy.py` | Only used if engine flag enabled |
-| `IsolationProfile` | `profiles.py` | Only used if engine flag enabled |
+| Test File | Issue |
+|-----------|-------|
+| `tests/test_project_context.py` | Tests deprecated module |
+| `tests/test_project_validate.py` | Tests deprecated module |
 
-### In `core/validation/` (v4 engine, partially wired)
+## Summary
 
-| Function/Class | File | Status |
-|---------------|------|--------|
-| `CodeRunner` | `runner.py` | Used only by brain.py when engine enabled |
-| `ValidationReporter` | `reporter.py` | Used only by brain.py when engine enabled |
-| `get_runner()` | `runner.py` | Singleton created but only called from brain.py |
-| `get_reporter()` | `reporter.py` | Singleton created but only called from brain.py |
-
-## Unused Imports (potential dead references)
-
-| File | Unused Import | Reason |
-|------|--------------|--------|
-| `core/__init__.py` | `VisionMode` | Exported but never imported by consumers |
-| `core/__init__.py` | `describe_image` | Exported but never imported by consumers |
-| `core/__init__.py` | `process_user_input_with_vision` | Exported but never imported by consumers |
-| `core/__init__.py` | `execute_with_skills` | Exported from core but imported directly from core.tools |
-
-## Dead Configuration
-
-| Config Key | File | Status |
-|-----------|------|--------|
-| `mcp_servers[5]` (sqlite) | `config.json` | Hardcoded absolute Windows path — breaks on other machines |
-
-## Unreferenced Files in File Tree
-
-| File | Purpose | Referenced? |
-|------|---------|-------------|
-| `vscode-extension/widdx-cortex-1.0.0.vsix` | Pre-built VS Code extension | No (artifact) |
-| `scripts/web/.widdx/knowledge.json` | Web dashboard knowledge cache | Runtime only |
-| `api_server.py` (root) | Alias for scripts/api_server.py | Entry point only |
-| `run_textual.py` (root) | Alias for scripts/run_textual.py | Entry point only |
-
-## Summary Statistics
-
-| Category | Count |
-|----------|-------|
-| Completely dead modules | 8 |
-| Orphaned test files | 4 |
-| Unused functions/methods | ~20 |
-| Unused singletons | 6 |
-| Feature-flagged dead code (engines) | ~15 classes/functions |
-| Unused exports | 3 |
-| Debug artifacts | 2 |
+| Category | Count | Severity |
+|----------|-------|----------|
+| Deprecated modules | 2 | Low |
+| Partially dead modules | 1 | Medium |
+| Redundant entry points | 3 | Low |
+| Unused functions | 5 | Low |
+| Dead test files | 2 | Low |

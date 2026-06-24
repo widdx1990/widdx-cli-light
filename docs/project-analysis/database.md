@@ -1,202 +1,341 @@
-# WIDDX Nexus — Database & Storage Reference
+# WIDDX Nexus — Database Schema
 
-> SQLite schema, file-based storage, and data persistence patterns.
+## Overview
 
-## Primary Database
+WIDDX uses a hybrid storage approach:
+1. **SQLite** — Sessions, search index (primary)
+2. **JSON files** — Configuration, knowledge, patterns, cron jobs, permissions
+3. **Markdown files** — Memory, skills, project docs
+4. **File system** — Project files, session exports
 
-**Location:** `<project>/.widdx/widdx.db` (SQLite)
-**Engine:** Python `sqlite3` stdlib (no ORM)
-**Connection:** One connection per operation (no connection pooling)
+## SQLite Database (core/database.py)
 
-### Schema
+**Location**: `.widdx/sessions.db` (per-project) or `~/.widdx/sessions.db` (global)
 
-#### `sessions` Table
+### Tables
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PRIMARY KEY | UUID |
-| `name` | TEXT | NOT NULL | Human-readable name |
-| `branch` | TEXT | DEFAULT 'main' | Git branch |
-| `created_at` | INTEGER | NOT NULL | Unix timestamp |
-| `updated_at` | INTEGER | NOT NULL | Unix timestamp |
-| `metadata` | TEXT | DEFAULT '{}' | JSON blob |
-
-**Indexes:** `idx_sessions_updated` on `updated_at DESC`
-
-#### `messages` Table
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PRIMARY KEY | UUID |
-| `session_id` | TEXT | NOT NULL, FK→sessions(id) CASCADE | Parent session |
-| `role` | TEXT | NOT NULL | 'system', 'user', 'assistant', 'tool' |
-| `content` | TEXT | NOT NULL | Message content |
-| `tool_calls` | TEXT | NULLABLE | JSON array of tool calls |
-| `timestamp` | INTEGER | NOT NULL | Unix timestamp |
-
-**Indexes:** `idx_messages_session_id`, `idx_messages_timestamp DESC`
-
-#### `memories` Table
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PRIMARY KEY | UUID |
-| `name` | TEXT | NOT NULL | Memory name |
-| `description` | TEXT | — | Short description |
-| `content` | TEXT | NOT NULL | Memory content |
-| `memory_type` | TEXT | DEFAULT 'general' | 'user', 'feedback', 'project', 'reference' |
-| `tags` | TEXT | DEFAULT '[]' | JSON array |
-| `created_at` | INTEGER | NOT NULL | Unix timestamp |
-| `updated_at` | INTEGER | NOT NULL | Unix timestamp |
-
-**Indexes:** `idx_memories_type` on `memory_type`
-
-#### `provider_stats` Table
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Row ID |
-| `provider_name` | TEXT | NOT NULL | Provider name |
-| `model_name` | TEXT | NOT NULL | Model name |
-| `success_count` | INTEGER | DEFAULT 0 | Successful calls |
-| `failure_count` | INTEGER | DEFAULT 0 | Failed calls |
-| `avg_response_time` | REAL | DEFAULT 0 | Average response time |
-| `last_used` | INTEGER | — | Last use timestamp |
-
-**Unique constraint:** `(provider_name, model_name)`
-**Upsert:** Uses `ON CONFLICT ... DO UPDATE` for atomic updates.
-
-### Database Access Pattern
-
-```python
-# Singleton pattern
-from core.database import get_db
-db = get_db()
-
-# Session operations
-session_id = db.create_session(name, branch)
-session = db.get_session(session_id)
-db.update_session(session_id, name=new_name)
-db.delete_session(session_id)
-
-# Message operations
-msg_id = db.add_message(session_id, role, content, tool_calls)
-messages = db.get_messages(session_id, limit=50)
-db.clear_messages(session_id)
-
-# Memory operations
-mem_id = db.add_memory(name, content, description, memory_type, tags)
-memory = db.get_memory(mem_id)
-db.delete_memory(mem_id)
-results = db.search_memories(query, limit=20)
+#### `sessions`
+```sql
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    branch TEXT DEFAULT 'main',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    metadata TEXT  -- JSON: {model, cost, turns, ...}
+);
 ```
 
-## File-Based Storage
+#### `messages`
+```sql
+CREATE TABLE messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,          -- 'user' | 'assistant' | 'system' | 'tool'
+    content TEXT,
+    tool_calls TEXT,             -- JSON array of tool call objects
+    tool_call_id TEXT,           -- For tool-role messages
+    name TEXT,                   -- Tool name for tool-role messages
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+```
 
-### Memory Store (markdown files)
+#### `checkpoints`
+```sql
+CREATE TABLE checkpoints (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    name TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    messages_snapshot TEXT,      -- JSON array of messages
+    metadata TEXT,               -- JSON: state snapshot
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+```
 
-**Location (global):** `~/.widdx/memory/`
-**Location (project):** `<project>/.widdx/memory/`
-**Index:** `MEMORY.md` in the parent directory
+#### `search_index`
+```sql
+CREATE TABLE search_index (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    content_hash TEXT,
+    tokens TEXT,                 -- Tokenized content for FTS
+    FOREIGN KEY (session_id) REFERENCES sessions(id),
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+);
+```
 
-**Format:**
+### Indexes
+```sql
+CREATE INDEX idx_messages_session ON messages(session_id);
+CREATE INDEX idx_messages_role ON messages(role);
+CREATE INDEX idx_messages_created ON messages(created_at);
+CREATE INDEX idx_checkpoints_session ON checkpoints(session_id);
+CREATE INDEX idx_search_session ON search_index(session_id);
+```
+
+## JSON Storage Files
+
+### `.widdx/session.json` — Current Session State
+```json
+{
+    "messages": [...],
+    "state": {
+        "model": "provider/model",
+        "cost": 0.0,
+        "turns": 0,
+        "tools_used": []
+    },
+    "branch": "main",
+    "timestamp": "2026-06-25T..."
+}
+```
+
+### `.widdx/config.json` — Project Configuration
+```json
+{
+    "provider": {
+        "name": "opencode-zen",
+        "model": "deepseek-v4-flash-free",
+        "base_url": "https://opencode.ai/zen/v1",
+        "api_key": "public"
+    },
+    "temperature": 0.7,
+    "max_turns": 10,
+    "cli_theme": "dark",
+    "auto_commit": true,
+    "system_prompt": null,
+    "engines": {
+        "intelligence": true,
+        "validation": true,
+        "isolation": true
+    },
+    "all_providers": {...},
+    "exclude_from_index": []
+}
+```
+
+### `.widdx/knowledge.json` — UIL Knowledge Base
+```json
+{
+    "entries": {
+        "task_type:features:mode": {
+            "successes": 5,
+            "failures": 1,
+            "avg_quality": 0.85,
+            "last_used": "2026-06-25T..."
+        }
+    }
+}
+```
+
+### `.widdx/decisions.json` — Decision Engine Learnings
+```json
+{
+    "overrides": {
+        "code_write:api+database:c3": "autonomous"
+    },
+    "stats": {
+        "code_write:api+database:c3": {
+            "task_type": "code_write",
+            "mode": "autonomous",
+            "successes": 5,
+            "failures": 1,
+            "total_quality": 4.2,
+            "last_used": "2026-06-25T..."
+        }
+    }
+}
+```
+
+### `.widdx/engine_trust.json` — Engine Trust Metrics
+```json
+{
+    "engines": {
+        "intelligence": {
+            "engine_name": "intelligence",
+            "total_comparisons": 100,
+            "agreements": 85,
+            "disagreements": 15,
+            "engine_won": 10,
+            "old_won": 5,
+            "ties": 0,
+            "trust_level": 0.92,
+            "auto_promoted": false,
+            "promoted_at": ""
+        }
+    }
+}
+```
+
+### `.widdx/patterns.json` — Learned Patterns
+```json
+{
+    "observations": [...],
+    "patterns": [
+        {
+            "name": "learned_code_write_api_database_python",
+            "category": "learned",
+            "task_types": ["code_write"],
+            "features": ["api", "database"],
+            "languages": ["python"],
+            "steps": [...],
+            "description": "Auto-learned from 5 successful executions",
+            "estimated_time": "varies",
+            "complexity": 2
+        }
+    ]
+}
+```
+
+### `.widdx/permissions.json` — Tool Permissions
+```json
+{
+    "level": "permissive",
+    "remembered": {
+        "bash": true,
+        "write": true,
+        "edit": false
+    }
+}
+```
+
+### `.widdx/cron_jobs.json` — Scheduled Jobs
+```json
+{
+    "jobs": [
+        {
+            "id": "abc123",
+            "schedule": "0 9 * * *",
+            "prompt": "Check project status",
+            "status": "active",
+            "next_run": "2026-06-26T09:00:00",
+            "last_run": null,
+            "run_count": 0
+        }
+    ]
+}
+```
+
+### `.widdx/repo_map.json` — Repository Map Cache
+```json
+{
+    "files": {
+        "core/chat.py": {
+            "path": "core/chat.py",
+            "size": 8500,
+            "mtime": 1719312000.0,
+            "ext": ".py",
+            "symbols": ["DisplayManager", "run_chat_turn", ...],
+            "imports": ["core", "tools", ...],
+            "exports": ["run_chat_turn", ...],
+            "keywords": ["chat", "display", ...]
+        }
+    },
+    "timestamp": 1719312000.0
+}
+```
+
+### `.widdx/self_improve/error_patterns.json`
+```json
+{
+    "duplicate variable": {
+        "type": "duplicate variable",
+        "count": 3,
+        "examples": [...],
+        "first_seen": 1719312000.0,
+        "last_seen": 1719398400.0
+    }
+}
+```
+
+### `.widdx/self_improve/fix_tracker.json`
+```json
+{
+    "duplicate variable": {
+        "error_type": "duplicate variable",
+        "fix": "grep for variable names before declaring",
+        "success": true,
+        "timestamp": 1719398400.0
+    }
+}
+```
+
+## Markdown Storage
+
+### Memory Facts (`~/.widdx/memory/` or `.widdx/memory/`)
+
+Each fact is a markdown file:
 ```markdown
 ---
-name: my-fact
-description: Short description
-metadata:
-  type: user
-  updated: 2026-06-24T00:00:00+00:00
+name: user-prefers-dark-theme
+type: user_preference
+timestamp: 2026-06-25T12:00:00
 ---
-The actual memory content here.
+
+The user prefers dark theme for all interfaces.
 ```
 
-**Conflict detection:** When overwriting, saves `.old.md` backup.
+### Skills (`skills/` directory)
 
-### Knowledge Store (JSON)
+Each skill is a folder with `skill.md`:
+```markdown
+---
+name: react-developer
+description: React development expertise
+icon: ⚛️
+---
 
-**Location:** `<project>/.widdx/knowledge.json`
-
-**Format:**
-```json
-{
-  "code_write": [
-    {
-      "task_type": "code_write",
-      "execution_mode": "autonomous",
-      "steps_planned": 2,
-      "steps_completed": 2,
-      "execution_time": 5.2,
-      "success": true,
-      "timestamp": 1719200000.0,
-      "verification_criticals": 0,
-      "verification_errors": 0
-    }
-  ]
-}
+You are a React development expert...
 ```
 
-**Access:**
-```python
-from core.uil.knowledge import KnowledgeBase
-kb = KnowledgeBase()
-kb.record(classification, result, decision)
-stats = kb.get_stats("code_write")
-mode = kb.suggest_mode("code_write")
+### Project Docs (`.widdx/`)
+
+- `PLAN.md` — Current implementation plan
+- `DESIGN.md` — Architecture decisions
+- `TASKS.md` — Task list with status
+- `ROADMAP.md` — Milestones and progress
+
+## File System Storage
+
+### Session Branches
+```
+.widdx/
+├── sessions/
+│   ├── main.json          # Default branch
+│   ├── feature-x.json     # Feature branch
+│   └── ...
+└── sessions.db            # SQLite (all branches)
 ```
 
-### Session Workspace
-
-**Location:** `~/.widdx/workspaces/<session_id>/`
-**Auto-cleanup:** After 24 hours (`SessionWorkspace.cleanup_old()`)
-
-### Workflow Storage
-
-**Location:** `<project>/.widdx/workflows/<wf_id>.json`
-
-**Format:**
-```json
-{
-  "id": "wf_abc123",
-  "name": "My Workflow",
-  "steps": [
-    {"type": "agent", "prompt": "Step 1 task"},
-    {"type": "parallel", "tasks": ["Task A", "Task B"]}
-  ],
-  "created_at": 1719200000.0
-}
+### Exports
+```
+.widdx/exports/
+├── chat_export_20260625_120000.md
+└── ...
 ```
 
-### Configuration
+### Voice Files
+```
+~/.widdx/voice/
+├── widdx_20260625_120000_123456.mp3
+└── ...
+```
 
-**Location (resolution order):**
-1. `<project>/.widdx/config.json` (project-local, writable)
-2. `<project>/config.json` (bare in CWD, writable)
-3. `<install_dir>/config.json` (bundled default, read-only)
+## Data Flow Summary
 
-**Secret stripping:** API keys are removed before writing to disk. Stored in:
-- Environment variables (current process)
-- Keychain (`core/config/keychain.py`) — obfuscated JSON fallback
-
-### Cache Store
-
-**Location:** In-memory only (LRU + TTL)
-**Cache types:**
-- `ResponseCache`: LLM response caching (keyed by content hash)
-- `ToolResultCache`: Tool result caching (keyed by tool name + args hash)
-- `invalidate_on_write()`: Clears read-only caches when files change
-
-### Activity Log
-
-**Location:** In-memory only (`ActivityStore`)
-**Event types:** tool_call, agent_spawn, message, system
-
-### Cron Jobs
-
-**Location:** `<project>/.widdx/cron_jobs.json`
-**Format:** JSON array of `CronJob` objects
-
-### Error Patterns
-
-**Location:** In-memory only (`ErrorPatternLearner`)
-**Pattern tracking:** Counts recurring errors by (category, message_hash)
+```
+User Input
+    │
+    ├──→ Session Storage (SQLite + JSON dual persistence)
+    ├──→ Memory Learning (markdown files, auto-extracted every 2 turns)
+    ├──→ Knowledge Base (JSON, records execution outcomes)
+    ├──→ Decision Engine (JSON, learns routing preferences)
+    ├──→ Trust Tracker (JSON, tracks engine reliability)
+    ├──→ Pattern Learner (JSON, extracts reusable patterns)
+    ├──→ Error Patterns (JSON, tracks recurring errors)
+    ├──→ Activity Log (in-memory, live WebSocket events)
+    └──→ Cron Jobs (JSON, scheduled task persistence)
+```

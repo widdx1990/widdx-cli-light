@@ -1,373 +1,222 @@
 # WIDDX Nexus — Issues Register
 
-> Complete catalog of all detected issues with severity, location, root cause, and affected files.
-
-## Issue Severity Scale
-
-| Severity | Impact | Urgency |
-|----------|--------|---------|
-| 🔴 CRITICAL | System broken, data loss, security breach | Fix immediately |
-| 🟠 HIGH | Major functionality impaired, significant risk | Fix within 1 week |
-| 🟡 MEDIUM | Workaround exists, moderate impact | Fix within 1 month |
-| 🟢 LOW | Minor inconvenience, cosmetic | Fix when convenient |
-| ⚪ INFO | Not a bug, but an observation | No action needed |
-
----
-
-## 🔴 CRITICAL Issues
-
-### CRIT-001: shell=True Fallback in Sandbox
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/sandbox.py:637-641` |
-| **Location** | `_execute_subprocess()` method |
-| **Root Cause** | When `shell=False` fails (FileNotFoundError), retries with `shell=True` — enabling shell injection |
-| **Affected Files** | `core/tools/__init__.py` (calls `_bash` → `_handle_sandbox_exec` → `SandboxExecutor`) |
-| **Suggested Fix** | Parse command with `shlex.split()` before Popen; only use `shell=True` as absolute last resort with additional validation |
-| **Risk Level** | **HIGH** — Any user-crafted command can escape sandbox |
-
-### CRIT-002: GitHub Webhook Fail-Open
-
-| Field | Value |
-|-------|-------|
-| **File** | `github-app/app.py:43` |
-| **Location** | `WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")` |
-| **Root Cause** | Empty string fallback means webhook accepts ALL requests without verification |
-| **Affected Files** | `github-app/app.py` (entire webhook handler) |
-| **Suggested Fix** | Make `WEBHOOK_SECRET` required in production; reject requests when unset |
-| **Risk Level** | **HIGH** — Unauthenticated webhook execution |
-
-### CRIT-003: shell=True in Web Sandbox
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/web/sandbox.py:65` |
-| **Location** | `SandboxHandler` class |
-| **Root Cause** | `subprocess.Popen(command, shell=True)` — direct command injection via web API |
-| **Affected Files** | `scripts/web/server.py` (exposes `/api/sandbox/exec` endpoint) |
-| **Suggested Fix** | Use `shlex.split()` + `shell=False`; validate against CommandGuard |
-| **Risk Level** | **HIGH** — Remote code execution via HTTP |
-
----
-
-## 🟠 HIGH Issues
-
-### HIGH-001: No Request Size Limit on Chat API
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/api_server.py:195` |
-| **Location** | `ChatRequest` Pydantic model |
-| **Root Cause** | `message: str` has no `max_length` constraint |
-| **Affected Files** | `scripts/api_server.py` (POST /api/chat) |
-| **Suggested Fix** | Add `message: str = Field(..., max_length=100000)` |
-| **Risk Level** | **MEDIUM** — Memory exhaustion via large payloads |
-
-### HIGH-002: No Input Validation on Web Chat
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/web/server.py:157` |
-| **Location** | `POST /api/chat` endpoint |
-| **Root Cause** | No rate limiting or input size validation on web chat endpoint |
-| **Affected Files** | `scripts/web/server.py` |
-| **Suggested Fix** | Add rate limiting + input size validation |
-| **Risk Level** | **MEDIUM** — Denial of service |
-
-### HIGH-003: MCP Server Subprocess Not Isolated
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/mcp/client.py:152` |
-| **Location** | `MCPServerConnection.__init__()` |
-| **Root Cause** | MCP servers spawn via `subprocess.Popen` with no sandbox or resource limits |
-| **Affected Files** | `core/mcp/client.py`, any code using MCP tools |
-| **Suggested Fix** | Run MCP servers in sandboxed subprocess with resource limits |
-| **Risk Level** | **MEDIUM** — Unrestricted subprocess execution |
-
-### HIGH-004: Skill Loader Executes Arbitrary Code
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/skills.py:58-73` |
-| **Location** | `_load_skill_tools()` function |
-| **Root Cause** | `importlib.util.exec_module()` runs Python from `skills/tools.py` without verification |
-| **Affected Files** | `core/skills.py`, `core/plugin_loader.py` |
-| **Suggested Fix** | Add hash verification, code signing, or at minimum a warning |
-| **Risk Level** | **MEDIUM** — Supply chain attack vector |
-
-### HIGH-005: Regex Bypass for Command Guard
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/tools/security.py` |
-| **Location** | `_DANGEROUS_PATTERNS` regex list |
-| **Root Cause** | Regex patterns can be bypassed with Unicode encoding, whitespace tricks, variable expansion, etc. |
-| **Affected Files** | `core/tools/__init__.py:306-312` (calls `_scan_dangerous`) |
-| **Suggested Fix** | Add multi-layer validation: regex + AST parsing + shell expansion simulation |
-| **Risk Level** | **MEDIUM** — Bypassable security controls |
-
-### HIGH-006: Docker Container Runs as Root
-
-| Field | Value |
-|-------|-------|
-| **File** | `Dockerfile` |
-| **Location** | Missing `USER` directive |
-| **Root Cause** | No non-root user defined — all container processes run as root |
-| **Affected Files** | `Dockerfile` |
-| **Suggested Fix** | Add `RUN useradd -m widdx && USER widdx` before COPY |
-| **Risk Level** | **LOW** — Container escape risk |
-
----
-
-## 🟡 MEDIUM Issues
-
-### MED-001: No CORS in Web Server
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/web/server.py` |
-| **Location** | FastAPI app configuration |
-| **Root Cause** | No CORS middleware — any origin can make requests |
-| **Affected Files** | `scripts/web/server.py` |
-| **Suggested Fix** | Add `CORSMiddleware` with localhost-only origins |
-| **Risk Level** | **LOW** — Cross-origin request forgery |
-
-### MED-002: No HTTPS Enforcement
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/api_server.py` |
-| **Location** | `uvicorn.run()` call |
-| **Root Cause** | HTTP only — no TLS configuration |
-| **Affected Files** | `scripts/api_server.py`, `scripts/web/server.py` |
-| **Suggested Fix** | Add SSL cert/key configuration options |
-| **Risk Level** | **LOW** — Cleartext transmission |
-
-### MED-003: SQLite Without WAL Mode
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/database.py` |
-| **Location** | `_get_conn()` method |
-| **Root Cause** | Default journal mode — concurrent writes may cause "database is locked" |
-| **Affected Files** | `core/database.py`, all code using database |
-| **Suggested Fix** | Set `PRAGMA journal_mode=WAL` on connection |
-| **Risk Level** | **LOW** — Concurrency issues |
-
-### MED-004: Hardcoded Windows Paths in Config
-
-| Field | Value |
-|-------|-------|
-| **File** | `config.json` |
-| **Location** | `mcp_servers` array |
-| **Root Cause** | Absolute `E:/deepseek/chat-tool/` paths — breaks on other machines |
-| **Affected Files** | `config.json` |
-| **Suggested Fix** | Use relative paths or `{PROJECT_ROOT}` placeholder |
-| **Risk Level** | **LOW** — Portability issue |
-
-### MED-005: No Connection Pooling for SQLite
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/database.py:25` |
-| **Location** | `_get_conn()` method |
-| **Root Cause** | Creates new connection per operation — ~1ms overhead each |
-| **Affected Files** | `core/database.py` |
-| **Suggested Fix** | Use connection pooling or persistent connection |
-| **Risk Level** | **LOW** — Performance overhead |
-
-### MED-006: In-Memory Rate Limiter
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/api_server.py:58` |
-| **Location** | `RateLimiter` class |
-| **Root Cause** | Rate limit state lost on restart; not distributed |
-| **Affected Files** | `scripts/api_server.py` |
-| **Suggested Fix** | Use Redis or database-backed rate limiter for production |
-| **Risk Level** | **LOW** — Rate limit bypass on restart |
-
-### MED-007: Knowledge Save on Every Execution
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/uil/knowledge.py:100` |
-| **Location** | `KnowledgeBase.record()` method |
-| **Root Cause** | `_save()` writes entire JSON file after every execution — no batching |
-| **Affected Files** | `core/uil/knowledge.py`, `core/uil/brain.py` (calls record) |
-| **Suggested Fix** | Batch writes every N records or use timer-based flush |
-| **Risk Level** | **LOW** — Performance overhead |
-
-### MED-008: ExpertTeam Sequential Execution
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/agents/expert.py:248` |
-| **Location** | `ExpertTeam.run()` method |
-| **Root Cause** | Experts run one at a time with string concatenation — no parallelism |
-| **Affected Files** | `core/agents/expert.py`, `core/agents/executor_adapter.py` |
-| **Suggested Fix** | Use threading for independent expert tasks |
-| **Risk Level** | **LOW** — Performance bottleneck |
-
-### MED-009: Tool Cache Over-Invalidation
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/cache.py` |
-| **Location** | `invalidate_on_write()` method |
-| **Root Cause** | Clears ALL read caches on any write — overly aggressive |
-| **Affected Files** | `core/cache.py`, `core/agents/agent.py` |
-| **Suggested Fix** | Invalidation by file path pattern instead of full clear |
-| **Risk Level** | **LOW** — Cache hit rate degradation |
-
-### MED-010: LLM Classification on Every Message
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/uil/analyzer.py:100-160` |
-| **Location** | `LLMClassifier.classify()` method |
-| **Root Cause** | Every message triggers LLM call for classification (500-2000ms overhead) |
-| **Affected Files** | `core/uil/brain.py` (calls analyzer.analyze) |
-| **Suggested Fix** | Use local classifier as primary; LLM as fallback for ambiguous cases |
-| **Risk Level** | **LOW** — Latency overhead |
-
----
-
-## 🟢 LOW Issues
-
-### LOW-001: No Content-Security-Policy Headers
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/web/server.py` |
-| **Root Cause** | Web UI served without CSP headers |
-| **Suggested Fix** | Add `Content-Security-Policy` header |
-| **Risk Level** | **INFO** — XSS risk in web UI |
-
-### LOW-002: Logger May Leak Sensitive Data
-
-| Field | Value |
-|-------|-------|
-| **File** | Various (`core/mcp/client.py`, `core/providers/*.py`) |
-| **Root Cause** | API keys, tokens may appear in DEBUG log output |
-| **Suggested Fix** | Sanitize log output; mask sensitive values |
-| **Risk Level** | **INFO** — Information disclosure |
-
-### LOW-003: WSL Fallback is Silent
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/sandbox.py:329` |
-| **Root Cause** | Falls back from WSL to subprocess without user notification |
-| **Suggested Fix** | Log warning visible to user |
-| **Risk Level** | **INFO** — User unaware of reduced isolation |
-
-### LOW-004: No Content-Length on Web Responses
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/web/server.py` |
-| **Root Cause** | Large responses may not have proper Content-Length |
-| **Suggested Fix** | Ensure all responses have proper headers |
-| **Risk Level** | **INFO** — Minor HTTP compliance |
-
-### LOW-005: SQLite Without Foreign Keys Enforcement
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/database.py` |
-| **Root Cause** | SQLite disables foreign keys by default; no `PRAGMA foreign_keys = ON` |
-| **Suggested Fix** | Enable foreign key enforcement on connection |
-| **Risk Level** | **INFO** — Data integrity |
-
-### LOW-006: API Key Auto-Generated Without Notification
-
-| Field | Value |
-|-------|-------|
-| **File** | `scripts/api_server.py:40-43` |
-| **Root Cause** | Generates ephemeral API key without clear user notification |
-| **Suggested Fix** | Add clear console output with instructions |
-| **Risk Level** | **INFO** — User confusion |
-
-### LOW-007: __import__ Anti-Pattern in Providers
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/providers/base.py:16` and 7 other provider files |
-| **Root Cause** | `logger = __import__("logging").getLogger(...)` — hides imports from static analysis |
-| **Suggested Fix** | Replace with standard `import logging` at top of file |
-| **Risk Level** | **INFO** — Code quality |
-
-### LOW-008: `except: pass` Blocks Removed But Pattern Still Found
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/diagnostics.py:167-169` |
-| **Root Cause** | Diagnostics module detects bare except patterns but the module itself is diagnostic-only |
-| **Suggested Fix** | No action needed — diagnostic module is working correctly |
-| **Risk Level** | **INFO** — False positive in analysis |
-
-### LOW-009: No Timeout on SQLite Operations
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/database.py` |
-| **Root Cause** | No timeout specified on `sqlite3.connect()` — could hang on lock |
-| **Suggested Fix** | Add `timeout=5` to `sqlite3.connect()` |
-| **Risk Level** | **INFO** — Potential hang |
-
-### LOW-010: ProjectScanner Not Cached
-
-| Field | Value |
-|-------|-------|
-| **File** | `core/project/scanner.py` |
-| **Root Cause** | Full directory scan on every instantiation — no caching |
-| **Suggested Fix** | Cache scan results with TTL |
-| **Risk Level** | **INFO** — Startup latency |
-
----
-
-## ⚪ INFO Observations
-
-### INFO-001: Dual Session Systems
-
-| Field | Value |
-|-------|-------|
-| **Observation** | Both `Database` class and `SessionV2` exist; `SessionDB` wraps `SessionV2` |
-| **Status** | Backward compatibility layer — working as intended |
-
-### INFO-002: Feature-Flagged Intelligence Engine
-
-| Field | Value |
-|-------|-------|
-| **Observation** | `core/intelligence/` and `core/validation/` are v4 engine features, gated behind `engine_enabled()` |
-| **Status** | Safe by default — only activates with explicit config flag |
-
-### INFO-003: Dead Module Cleanup
-
-| Field | Value |
-|-------|-------|
-| **Observation** | `auto_commit.py`, `project_context.py`, `project_structure.py` are dead code |
-| **Status** | Safe to remove — only referenced in tests |
-
-### INFO-004: Skill Tool Loading Security
-
-| Field | Value |
-|-------|-------|
-| **Observation** | `_load_skill_tools()` uses `exec_module()` — potential security concern |
-| **Status** | Mitigated by skills being local files (not remote) |
-
----
-
-## Summary
-
-| Severity | Count | Critical Path |
-|----------|-------|---------------|
-| 🔴 CRITICAL | 3 | Security (shell injection, webhook) |
-| 🟠 HIGH | 6 | Security + Input validation |
-| 🟡 MEDIUM | 10 | Performance + Concurrency |
-| 🟢 LOW | 10 | Code quality + Compliance |
-| ⚪ INFO | 4 | Architecture observations |
-| **Total** | **33** | |
+## Critical Issues (Severity: P0)
+
+### ISS-001: API Authentication Bypass via Empty Token
+- **Severity**: CRITICAL
+- **File**: `scripts/api_server.py`
+- **Location**: API key validation logic (line 40, 53-56)
+- **Root Cause**: When `WIDDX_API_KEY` env var is not set, `_API_KEY` defaults to `""`. Sending `Authorization: Bearer ` (empty token) passes `credentials.credentials != _API_KEY` check because both are `""`.
+- **Affected Files**: All API endpoints
+- **Suggested Fix**: Require non-empty `WIDDX_API_KEY` at startup; exit or reject all requests if not configured
+- **Risk Level**: HIGH — full system access without authentication
+
+### ISS-002: Command Injection via shell=True
+- **Severity**: CRITICAL
+- **Files**: `core/sandbox.py:641`, `core/isolation/container.py:200`, `core/validation/runner.py:155`
+- **Location**: subprocess.Popen calls with shell=True
+- **Root Cause**: Insufficient input sanitization before shell execution
+- **Affected Files**: All command execution paths
+- **Suggested Fix**: Use `shlex.split()` consistently, validate all command inputs
+- **Risk Level**: HIGH — arbitrary command execution
+
+~~### ISS-003: Undefined Variable in auto_commit.py~~ **FALSE POSITIVE**
+- ~~**Severity**: HIGH~~
+- ~~**File**: `core/auto_commit.py`~~
+- ~~**Location**: `staged_diff()` method references `logger`~~
+- ~~**Root Cause**: Missing import statement~~
+- **Verdict**: `import logging` (line 12) and `logger = logging.getLogger("widdx.auto_commit")` (line 14) are both present. Issue does not exist. Remove from fix plan.
+
+## High Issues (Severity: P1)
+
+### ISS-004: No Request Size Limits
+- **Severity**: HIGH
+- **File**: `scripts/api_server.py`
+- **Location**: POST `/api/chat` endpoint
+- **Root Cause**: No body size validation
+- **Affected Files**: All POST endpoints
+- **Suggested Fix**: Add request body size limit (max 1MB)
+- **Risk Level**: MEDIUM — memory exhaustion DoS
+
+### ISS-005: In-Memory Rate Limiter Not Persistent
+- **Severity**: HIGH
+- **File**: `scripts/web/server.py`
+- **Location**: `_ratelimit_store` dictionary
+- **Root Cause**: Rate limit state resets on server restart
+- **Affected Files**: Rate-limited endpoints
+- **Suggested Fix**: Use Redis or database-backed rate limiting
+- **Risk Level**: LOW-MEDIUM — temporary bypass
+
+### ISS-006: CORS Too Permissive in Development
+- **Severity**: HIGH
+- **File**: `scripts/api_server.py`
+- **Location**: CORS middleware configuration
+- **Root Cause**: Development-friendly defaults may be too open
+- **Affected Files**: All cross-origin requests
+- **Suggested Fix**: Restrict to specific origins in production
+- **Risk Level**: MEDIUM — cross-origin abuse
+
+### ISS-007: Docker Container Runs as Root
+- **Severity**: HIGH
+- **File**: `Dockerfile`
+- **Location**: No USER directive
+- **Root Cause**: Default Docker behavior
+- **Affected Files**: Containerized deployment
+- **Suggested Fix**: Add `USER nonroot` directive
+- **Risk Level**: MEDIUM — container escape impact
+
+~~### ISS-008: GitHub Webhook Without Secret Validation~~ **FALSE POSITIVE**
+- ~~**Severity**: HIGH~~
+- ~~**File**: `github-app/app.py`~~
+- ~~**Location**: Webhook handler~~
+- ~~**Root Cause**: Missing `WEBHOOK_SECRET` environment variable check~~
+- **Verdict**: `verify_webhook()` at line 204-212 properly validates HMAC-SHA256 signatures. `WEBHOOK_SECRET` is checked at startup (line 44) and in every webhook request (line 206-208). `hmac.compare_digest()` provides timing-safe comparison. Remove from fix plan.
+
+## Medium Issues (Severity: P2)
+
+### ISS-009: Permission Default Too Permissive
+- **Severity**: MEDIUM
+- **File**: `core/permissions.py`
+- **Location**: `PermissionLevel.PERMISSIVE` default
+- **Root Cause**: Backward compatibility decision
+- **Affected Files**: All tool executions
+- **Suggested Fix**: Consider defaulting to NORMAL level
+- **Risk Level**: LOW — accidental destructive operations
+
+### ISS-010: Skill Loader Executes Arbitrary Code
+- **Severity**: MEDIUM
+- **File**: `core/skills.py`
+- **Location**: Skill loading mechanism
+- **Root Cause**: Skills loaded via `exec_module()` can contain arbitrary Python
+- **Affected Files**: Skill system
+- **Suggested Fix**: Implement skill sandboxing or code signing
+- **Risk Level**: MEDIUM — supply chain attack vector
+
+### ISS-011: OAuth Token Storage in Plaintext
+- **Severity**: MEDIUM
+- **File**: `core/config/keychain.py`
+- **Location**: API key storage
+- **Root Cause**: Environment variables are plaintext
+- **Affected Files**: All provider integrations
+- **Suggested Fix**: Use OS keychain or encrypted storage
+- **Risk Level**: LOW — requires local access
+
+### ISS-012: MCP Filesystem Access Beyond Project
+- **Severity**: MEDIUM
+- **File**: `core/mcp/client.py`
+- **Location**: MCP server file access
+- **Root Cause**: Insufficient path restriction
+- **Affected Files**: MCP integrations
+- **Suggested Fix**: Enforce project directory restriction
+- **Risk Level**: LOW — requires MCP server compromise
+
+### ISS-013: No HTTPS Enforcement
+- **Severity**: MEDIUM
+- **File**: `scripts/web/server.py`
+- **Location**: Server startup
+- **Root Cause**: HTTP-only by default
+- **Affected Files**: Web UI deployment
+- **Suggested Fix**: Add HTTPS redirect or TLS configuration
+- **Risk Level**: LOW — requires network access
+
+### ISS-014: Error Messages May Leak Internals
+- **Severity**: MEDIUM
+- **Files**: Various exception handlers
+- **Location**: `except Exception as e` blocks
+- **Root Cause**: Exception messages may contain file paths or stack traces
+- **Affected Files**: All error handling paths
+- **Suggested Fix**: Sanitize error messages before returning to user
+- **Risk Level**: LOW — information disclosure
+
+### ISS-015: Deprecated Modules Still in Codebase
+- **Severity**: MEDIUM
+- **Files**: `core/project_structure.py`, `core/project_context.py`
+- **Location**: Module-level deprecation warnings
+- **Root Cause**: Backward compatibility
+- **Affected Files**: Tests only
+- **Suggested Fix**: Remove after updating tests
+- **Risk Level**: LOW — code maintenance
+
+## Low Issues (Severity: P3)
+
+### ISS-016: Inconsistent Error Handling Patterns
+- **Severity**: LOW
+- **Files**: Various
+- **Location**: Exception handling blocks
+- **Root Cause**: Mixed patterns (bare except, except Exception, except SpecificError)
+- **Affected Files**: Throughout codebase
+- **Suggested Fix**: Standardize error handling patterns
+- **Risk Level**: LOW — code quality
+
+### ISS-017: Missing Type Hints in Some Modules
+- **Severity**: LOW
+- **Files**: Various older modules
+- **Location**: Function signatures
+- **Root Cause**: Incomplete type annotation
+- **Affected Files**: core/memory.py, core/session_v2.py, etc.
+- **Suggested Fix**: Add type hints incrementally
+- **Risk Level**: LOW — code quality
+
+### ISS-018: Debug Script Uses Fragile Monkey-Patch
+- **Severity**: LOW
+- **File**: `_debug_brain.py`
+- **Location**: Monkey-patches `UnifiedIntelligenceLayer._resolve_executor`
+- **Root Cause**: Overrides staticmethod at runtime with debug wrapper
+- **Affected Files**: UIL Brain routing logic
+- **Suggested Fix**: Replace monkey-patch with proper debug hook or logging configuration
+- **Risk Level**: LOW — developer-only utility
+
+### ISS-019: Inconsistent Naming Conventions
+- **Severity**: LOW
+- **Files**: Various
+- **Location**: Function and variable names
+- **Root Cause**: Mixed naming styles (snake_case, camelCase in some places)
+- **Affected Files**: Throughout codebase
+- **Suggested Fix**: Standardize on snake_case for Python
+- **Risk Level**: LOW — code readability
+
+### ISS-020: No Input Validation on Some Endpoints
+- **Severity**: LOW
+- **File**: `scripts/web/server.py`
+- **Location**: Several GET endpoints
+- **Root Cause**: Trust client-provided query parameters
+- **Affected Files**: Query parameter handling
+- **Suggested Fix**: Add input validation for all parameters
+- **Risk Level**: LOW — edge case exploits
+
+### ISS-021: Logging Sensitive Data
+- **Severity**: LOW
+- **Files**: Various logging statements
+- **Location**: Logger calls with user input
+- **Root Cause**: Insufficient log sanitization
+- **Affected Files**: All logging paths
+- **Suggested Fix**: Sanitize sensitive data before logging
+- **Risk Level**: LOW — credential exposure in logs
+
+### ISS-022: Missing Graceful Shutdown
+- **Severity**: LOW
+- **Files**: Various background threads
+- **Location**: Thread cleanup on exit
+- **Root Cause**: No shutdown hook registration
+- **Affected Files**: All daemon threads
+- **Suggested Fix**: Add signal handlers for graceful shutdown
+- **Risk Level**: LOW — resource cleanup
+
+### ISS-023: No Database Migrations
+- **Severity**: LOW
+- **File**: `core/database.py`
+- **Location**: Schema creation
+- **Root Cause**: Schema changes may break existing data
+- **Affected Files**: SQLite database
+- **Suggested Fix**: Implement migration system
+- **Risk Level**: LOW — data loss on schema changes
+
+## Summary by Severity
+
+| Severity | Count | Priority |
+|----------|-------|----------|
+| CRITICAL (P0) | 2 | Fix immediately |
+| HIGH (P1) | 4 | Fix before release |
+| MEDIUM (P2) | 7 | Fix in next sprint |
+| LOW (P3) | 8 | Fix when convenient |
+| **Total** | **21** | |

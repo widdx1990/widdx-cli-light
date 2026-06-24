@@ -1,296 +1,178 @@
 # WIDDX Nexus — Fix Plan
 
-> Prioritized remediation plan for all detected issues, organized by urgency and effort.
+## Priority 1: Critical Security Fixes (Week 1)
 
-## Priority Matrix
+### FIX-001: Strengthen API Authentication
+- **Issue**: ISS-001 (API Auth Bypass via Empty Token)
+- **Effort**: 2 hours
+- **Files**: `scripts/api_server.py`
+- **Changes**:
+  1. Fail startup if `WIDDX_API_KEY` is empty/unset
+  2. Reject requests with empty bearer token
+  3. Return 401 for all missing/invalid auth
+- **Testing**: Manual test with/without env var, test empty token
 
-```
-                    LOW EFFORT          HIGH EFFORT
-                 ┌──────────────────┬──────────────────┐
-   HIGH IMPACT   │ 🔥 P1: Quick     │ 🟠 P2: Strategic  │
-                 │    Wins          │    Fixes          │
-                 ├──────────────────┼──────────────────┤
-   LOW IMPACT    │ 🟢 P3: Cleanup   │ ⚪ P4: Backlog    │
-                 │    & Polish      │                   │
-                 └──────────────────┴──────────────────┘
-```
+### FIX-002: Eliminate shell=True Usage
+- **Issue**: ISS-002 (Command Injection)
+- **Effort**: 4 hours
+- **Files**: `core/sandbox.py`, `core/isolation/container.py`, `core/validation/runner.py`
+- **Changes**:
+  1. Replace `shell=True` with `shlex.split()` in all subprocess calls
+  2. Add command input validation
+  3. Add unit tests for injection attempts
+- **Testing**: Run existing sandbox tests + new injection tests
 
----
+## Priority 2: High Security Fixes (Week 2)
 
-## 🔥 P1: Quick Wins (1-3 days, high impact) — 6/6 COMPLETE as of 2026-06-25
+### FIX-003: Add Request Size Limits
+- **Issue**: ISS-004 (No Request Size Limits)
+- **Effort**: 1 hour
+- **File**: `scripts/api_server.py`
+- **Changes**:
+  1. Add middleware to limit request body size (1MB max)
+  2. Return 413 if exceeded
+- **Testing**: Send oversized requests
 
-### P1-1: Fix shell=True Fallback [CRITICAL] ✅ DONE
+### FIX-004: Docker Non-Root User
+- **Issue**: ISS-007 (Docker Runs as Root)
+- **Effort**: 30 minutes
+- **File**: `Dockerfile`
+- **Changes**:
+  1. Add `RUN adduser --disabled-password --gecos "" appuser`
+  2. Add `USER appuser`
+  3. Adjust file permissions
+- **Testing**: Build and run container
 
-| Field | Value |
-|-------|-------|
-| **Issue** | CRIT-001, CRIT-003 |
-| **Files** | `core/sandbox.py:637-641`, `scripts/web/sandbox.py:65` |
-| **Effort** | 2 hours |
-| **Fix** | Replace `shell=True` fallback with `shlex.split()` + explicit shell wrapper |
-| **Verification** | Run `test_sandbox.py` + manual injection test |
+## Priority 3: Medium Improvements (Week 3-4)
 
-```python
-# In _execute_subprocess():
-cmd, needs_shell = self._split_command(command)
-if needs_shell:
-    # Explicitly wrap in shell — logged and auditable
-    logger.info("shell=True for: %.100s", command)
-    proc = subprocess.Popen(
-        ["bash", "-c", command],  # Explicit shell, not shell=True
-        ...
-    )
-```
+### FIX-005: CORS Restriction
+- **Issue**: ISS-006 (CORS Too Permissive)
+- **Effort**: 1 hour
+- **File**: `scripts/api_server.py`
+- **Changes**:
+  1. Default to localhost-only CORS
+  2. Allow configuration via env var
+  3. Document CORS settings
+- **Testing**: Test cross-origin requests
 
-### P1-2: Fix GitHub Webhook Security [CRITICAL] ✅ DONE
+### FIX-006: Error Message Sanitization
+- **Issue**: ISS-014 (Error Messages Leak Internals)
+- **Effort**: 3 hours
+- **Files**: Various exception handlers
+- **Changes**:
+  1. Create `sanitize_error()` utility function
+  2. Apply to all user-facing error responses
+  3. Keep detailed errors in logs only
+- **Testing**: Verify error messages don't contain paths
 
-| Field | Value |
-|-------|-------|
-| **Issue** | CRIT-002 |
-| **Files** | `github-app/app.py:43` |
-| **Effort** | 1 hour |
-| **Fix** | Make `WEBHOOK_SECRET` required; reject when empty |
-| **Verification** | Test with empty/missing secret |
+### FIX-007: Deprecated Module Cleanup
+- **Issue**: ISS-015 (Deprecated Modules)
+- **Effort**: 2 hours
+- **Files**: `core/project_structure.py`, `core/project_context.py`
+- **Changes**:
+  1. Update tests to use new modules
+  2. Remove deprecated modules
+  3. Update imports in all files
+- **Testing**: Run full test suite
 
-### P1-3: Add Request Size Limits [HIGH] ✅ DONE
+## Priority 4: Low Priority Improvements (Month 2)
 
-| Field | Value |
-|-------|-------|
-| **Issue** | HIGH-001, HIGH-002 |
-| **Files** | `scripts/api_server.py:118`, `scripts/web/server.py` |
-| **Effort** | 30 minutes |
-| **Fix** | Add `Field(max_length=100000)` to `ChatRequest.message` |
-| **Verification** | Test with oversized payload |
+### FIX-008: Input Validation
+- **Issue**: ISS-019 (Missing Input Validation)
+- **Effort**: 4 hours
+- **Files**: `scripts/web/server.py`
+- **Changes**:
+  1. Add Pydantic models for all endpoints
+  2. Validate query parameters
+  3. Add field validators
+- **Testing**: Test with invalid inputs
 
-### P1-4: Add CORS to Web Server [MEDIUM] ✅ DONE
+### FIX-009: Logging Sanitization
+- **Issue**: ISS-020 (Logging Sensitive Data)
+- **Effort**: 2 hours
+- **Files**: Various logging statements
+- **Changes**:
+  1. Create `sanitize_log()` utility
+  2. Apply to sensitive data logging
+  3. Redact API keys, tokens
+- **Testing**: Verify logs don't contain secrets
 
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-001 |
-| **Files** | `scripts/web/server.py` |
-| **Effort** | 30 minutes |
-| **Fix** | Add `CORSMiddleware` with localhost-only origins |
-| **Verification** | Test cross-origin request from different port |
+### FIX-010: Type Hint Completion
+- **Issue**: ISS-017 (Missing Type Hints)
+- **Effort**: 8 hours
+- **Files**: Various older modules
+- **Changes**:
+  1. Add type hints to public APIs
+  2. Run mypy for verification
+  3. Fix any type errors
+- **Testing**: Run mypy with strict mode
 
-### P1-5: Enable SQLite WAL Mode [MEDIUM] ✅ DONE
+### FIX-011: Naming Convention Standardization
+- **Issue**: ISS-018 (Inconsistent Naming)
+- **Effort**: 4 hours
+- **Files**: Various
+- **Changes**:
+  1. Rename camelCase to snake_case
+  2. Update all references
+  3. Add to coding standards
+- **Testing**: Run full test suite
 
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-003 |
-| **Files** | `core/database.py:25` |
-| **Effort** | 15 minutes |
-| **Fix** | Add `PRAGMA journal_mode=WAL` after connection |
-| **Verification** | Check WAL file created |
+## Effort Summary
 
-### P1-6: Fix Hardcoded Paths in Config [MEDIUM] ✅ DONE
+| Priority | Fixes | Total Effort |
+|----------|-------|--------------|
+| P1 (Critical) | 3 | ~6.25 hours |
+| P2 (High) | 3 | ~2.5 hours |
+| P3 (Medium) | 3 | ~9 hours |
+| P4 (Low) | 4 | ~18 hours |
+| **Total** | **13** | **~36 hours** |
 
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-004 |
-| **Files** | `config.json` |
-| **Effort** | 15 minutes |
-| **Fix** | Replace `E:/deepseek/chat-tool/` with `{PROJECT_ROOT}` placeholder |
-| **Verification** | Verify config loads on different machine |
-
----
-
-## 🟠 P2: Strategic Fixes (1-2 weeks, high impact)
-
-### P2-1: Sandbox MCP Servers [HIGH]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | HIGH-003 |
-| **Files** | `core/mcp/client.py:152` |
-| **Effort** | 1 day |
-| **Fix** | Run MCP servers in `SandboxExecutor` with resource limits |
-| **Verification** | Test MCP server startup/shutdown |
-
-### P2-2: Skill Code Signing [HIGH]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | HIGH-004 |
-| **Files** | `core/skills.py:58-73` |
-| **Effort** | 2 days |
-| **Fix** | Add hash verification for skill Python files |
-| **Verification** | Test with modified skill file |
-
-### P2-3: Improve Command Guard [HIGH]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | HIGH-005 |
-| **Files** | `core/tools/security.py` |
-| **Effort** | 1 day |
-| **Fix** | Add shell expansion simulation + Unicode normalization |
-| **Verification** | Test bypass techniques |
-
-### P2-4: Parallel ExpertTeam [MEDIUM]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-008 |
-| **Files** | `core/agents/expert.py:248` |
-| **Effort** | 2 days |
-| **Fix** | Use `threading` for independent expert tasks |
-| **Verification** | Benchmark complex task execution time |
-
-### P2-5: Batch Knowledge Saves [MEDIUM]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-007 |
-| **Files** | `core/uil/knowledge.py:100` |
-| **Effort** | 4 hours |
-| **Fix** | Add dirty flag + timer-based flush (every 5 records or 30 seconds) |
-| **Verification** | Monitor disk I/O during rapid execution |
-
-### P2-6: Local Classifier as Primary [MEDIUM]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-010 |
-| **Files** | `core/uil/analyzer.py` |
-| **Effort** | 3 days |
-| **Fix** | Make `LocalClassifier` primary; LLM as fallback for ambiguous cases |
-| **Verification** | Benchmark classification accuracy + latency |
-
-### P2-7: Add Docker Non-Root User [LOW]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | HIGH-006 |
-| **Files** | `Dockerfile` |
-| **Effort** | 30 minutes |
-| **Fix** | Add `RUN useradd -m widdx && USER widdx` |
-| **Verification** | Build and run Docker image |
-
-### P2-8: Add HTTPS Support [MEDIUM]
-
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-002 |
-| **Files** | `scripts/api_server.py`, `scripts/web/server.py` |
-| **Effort** | 1 day |
-| **Fix** | Add SSL cert/key configuration options |
-| **Verification** | Test with self-signed certificate |
-
----
-
-## 🟢 P3: Cleanup & Polish (1 week, low impact)
-
-### P3-1: Remove Dead Code
-
-| Field | Value |
-|-------|-------|
-| **Issues** | DEAD-001 through DEAD-008 |
-| **Files** | `core/auto_commit.py`, `core/project_context.py`, `core/project_structure.py`, `core/self_reflection.py`, `core/web_launcher.py`, `_debug_brain.py`, `_run_tests.py` |
-| **Effort** | 2 hours |
-| **Fix** | Delete dead modules + update imports |
-| **Verification** | Run full test suite |
-
-### P3-2: Fix __import__ Anti-Pattern
-
-| Field | Value |
-|-------|-------|
-| **Issue** | LOW-007 |
-| **Files** | 9 provider files in `core/providers/` |
-| **Effort** | 30 minutes |
-| **Fix** | Replace `__import__("logging")` with standard import |
-| **Verification** | Run `test_providers.py` |
-
-### P3-3: Add CSP Headers to Web UI
-
-| Field | Value |
-|-------|-------|
-| **Issue** | LOW-001 |
-| **Files** | `scripts/web/server.py` |
-| **Effort** | 30 minutes |
-| **Fix** | Add `Content-Security-Policy` header middleware |
-| **Verification** | Check browser console for CSP violations |
-
-### P3-4: Sanitize Log Output
-
-| Field | Value |
-|-------|-------|
-| **Issue** | LOW-002 |
-| **Files** | Various `core/` modules |
-| **Effort** | 2 hours |
-| **Fix** | Create `mask_secret()` helper; apply to all log calls |
-| **Verification** | Grep logs for API keys |
-
-### P3-5: Enable SQLite Foreign Keys
-
-| Field | Value |
-|-------|-------|
-| **Issue** | LOW-005 |
-| **Files** | `core/database.py` |
-| **Effort** | 15 minutes |
-| **Fix** | Add `PRAGMA foreign_keys = ON` after connection |
-| **Verification** | Run database tests |
-
-### P3-6: Add SQLite Connection Timeout
-
-| Field | Value |
-|-------|-------|
-| **Issue** | LOW-009 |
-| **Files** | `core/database.py:25` |
-| **Effort** | 5 minutes |
-| **Fix** | Add `timeout=5` to `sqlite3.connect()` |
-| **Verification** | Run database tests |
-
-### P3-7: Cache Project Scan Results
-
-| Field | Value |
-|-------|-------|
-| **Issue** | LOW-010 |
-| **Files** | `core/project/scanner.py` |
-| **Effort** | 2 hours |
-| **Fix** | Add mtime-based cache with 5-minute TTL |
-| **Verification** | Benchmark startup time |
-
-### P3-8: Tool Cache Path-Based Invalidation
-
-| Field | Value |
-|-------|-------|
-| **Issue** | MED-009 |
-| **Files** | `core/cache.py` |
-| **Effort** | 4 hours |
-| **Fix** | Track file paths in cache keys; invalidate by path pattern |
-| **Verification** | Measure cache hit rate during editing session |
-
----
-
-## ⚪ P4: Backlog (when time permits)
-
-| # | Issue | Effort | Notes |
-|---|-------|--------|-------|
-| P4-1 | Redis-backed rate limiter | 2 days | Only needed for multi-instance deployment |
-| P4-2 | Connection pooling for SQLite | 1 day | Current performance is acceptable |
-| P4-3 | Async execution throughout | 2 weeks | Major refactor, high risk |
-| P4-4 | Vector-based semantic memory | 1 week | Replace TF-IDF with proper embeddings |
-| P4-5 | WebSocket streaming for all interfaces | 1 week | Already partially implemented |
-| P4-6 | Precompiled skill modules | 4 hours | Eliminate exec_module overhead |
-| P4-7 | DOM-based HTML verification | 2 days | Replace regex with BeautifulSoup |
-
----
-
-## Implementation Roadmap
+## Dependencies
 
 ```
-Week 1:  P1-1 to P1-6 (Quick Wins — security + portability)
-Week 2:  P2-1 to P2-3 (Security hardening)
-Week 3:  P2-4 to P2-6 (Performance + Architecture)
-Week 4:  P2-7 to P2-8 + P3-1 to P3-4 (Cleanup + Polish)
-Week 5+: P3-5 to P3-8 + P4 items (Backlog)
+FIX-001 (Auth) ──→ No dependencies
+FIX-002 (shell=True) ──→ No dependencies
+FIX-003 (auto_commit) ──→ No dependencies
+FIX-004 (Request Size) ──→ FIX-001 (Auth)
+FIX-005 (Docker) ──→ No dependencies
+FIX-006 (Webhook) ──→ No dependencies
+FIX-007 (CORS) ──→ FIX-001 (Auth)
+FIX-008 (Error Sanitize) ──→ No dependencies
+FIX-009 (Deprecated) ──→ No dependencies
+FIX-010 (Input Validation) ──→ FIX-004 (Request Size)
+FIX-011 (Log Sanitize) ──→ No dependencies
+FIX-012 (Type Hints) ──→ No dependencies
+FIX-013 (Naming) ──→ No dependencies
 ```
 
-## Estimated Total Effort
+## Recommended Execution Order
 
-| Priority | Issues | Effort |
-|----------|--------|--------|
-| P1 (Quick Wins) | 6 | ~1 day |
-| P2 (Strategic) | 8 | ~10 days |
-| P3 (Cleanup) | 8 | ~3 days |
-| P4 (Backlog) | 7 | ~5 weeks |
-| **Total** | **29** | **~7 weeks** |
+1. **Week 1**: FIX-001, FIX-002, FIX-003 (Critical security + bug fix)
+2. **Week 2**: FIX-004, FIX-005, FIX-006 (High security)
+3. **Week 3**: FIX-007, FIX-008, FIX-009 (Medium improvements)
+4. **Week 4+**: FIX-010, FIX-011, FIX-012, FIX-013 (Low priority)
+
+## Testing Strategy
+
+### Unit Tests
+- Each fix should include unit tests
+- Run affected test files after each fix
+- Run full test suite after all fixes
+
+### Integration Tests
+- Test API endpoints with new validation
+- Test sandbox with injection attempts
+- Test Docker with non-root user
+
+### Security Tests
+- Penetration testing for auth bypass
+- Command injection testing
+- Input validation testing
+
+## Rollback Plan
+
+1. Keep git branches for each fix
+2. Test in staging environment
+3. Deploy to production with feature flags
+4. Monitor error rates after deployment
+5. Rollback if issues detected

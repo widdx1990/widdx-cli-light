@@ -1,336 +1,260 @@
-# Architecture — WIDDX Nexus
+# WIDDX Nexus — Architecture
 
-## High-Level Architecture
+## System Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        FRONTENDS                            │
-│  ┌─────────┐  ┌─────────┐  ┌───────────┐  ┌────────────┐  │
-│  │  CLI    │  │   TUI   │  │  Web UI   │  │  VSCode    │  │
-│  │cli/app  │  │tui/app  │  │(SPA+WS)  │  │ Extension  │  │
-│  └────┬────┘  └────┬────┘  └─────┬─────┘  └─────┬──────┘  │
-└───────┼─────────────┼─────────────┼───────────────┼─────────┘
-        │             │             │               │
-        ▼             ▼             ▼               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     ENTRY ORCHESTRATORS                     │
-│  core/cli.py    tui/chat_engine  scripts/web/chat.py        │
-│  core/commands  tui/commands     scripts/web/server.py      │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│              UNIFIED INTELLIGENCE LAYER (UIL)               │
-│                                                             │
-│  UnifiedIntelligenceLayer (core/uil/brain.py)               │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │ Analyzer │→ │  Router  │→ │ Planner  │→ │ Executor  │  │
-│  │(classify)│  │(routing) │  │(plan)    │  │(run task) │  │
-│  └──────────┘  └──────────┘  └──────────┘  └─────┬─────┘  │
-│                                                   │         │
-│  ┌──────────┐  ┌──────────┐                       ▼         │
-│  │Knowledge │← │ Verifier │←──────────────── Result        │
-│  │(record)  │  │(quality) │                                 │
-│  └──────────┘  └──────────┘                                 │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-    │  EXECUTORS  │ │  PROVIDERS  │ │   TOOLS     │
-    │ (agents/    │ │ (LLM APIs)  │ │ (file/bash/ │
-    │  executor_  │ │             │ │  web/code)  │
-    │  adapter)   │ │ Ollama      │ │             │
-    │             │ │ OpenAI      │ │ ~20 built-in│
-    │ DIRECT_CHAT │ │ DeepSeek    │ │ + MCP tools │
-    │ AGENT       │ │ GGUF        │ │ + dynamic   │
-    │ CODE_REVIEW │ │ OpenCodeZen │ │ skills      │
-    │ RESEARCH    │ └─────────────┘ └─────────────┘
-    │ WORKFLOW    │
-    └─────────────┘
-```
+WIDDX Nexus is an **orchestration framework** for LLM-powered coding assistance. It wraps multiple LLM providers behind a unified interface, adds tool-calling capabilities, and provides three UIs (CLI, TUI, Web).
 
----
+**Core Architecture Pattern**: Pipeline-based with a central "Brain" orchestrator.
 
-## UIL Pipeline (core/uil/)
-
-The UIL is the cognitive heart of WIDDX. Every user message flows through this pipeline:
+## Architecture Layers
 
 ```
-user_input
+┌─────────────────────────────────────────────────────────┐
+│                     PRESENTATION                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
+│  │ Web UI   │  │ CLI      │  │ TUI      │  │Gateway │  │
+│  │ (FastAPI)│  │ (Rich)   │  │(Textual) │  │(TG/DC) │  │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬────┘  │
+│       │              │              │             │       │
+├───────┼──────────────┼──────────────┼─────────────┼──────┤
+│       └──────────────┼──────────────┘             │       │
+│                      ▼                            │       │
+│              ┌──────────────┐                     │       │
+│              │  core/chat.py│◄────────────────────┘       │
+│              │  (Conv Loop) │                             │
+│              └──────┬───────┘                             │
+├─────────────────────┼─────────────────────────────────────┤
+│                     ▼           INTELLIGENCE              │
+│              ┌──────────────┐                             │
+│              │  core/uil/   │◄── Core pipeline            │
+│              │  brain.py    │                             │
+│              │ Analyze→Route│                             │
+│              │ →Plan→Execute│                             │
+│              │ →Verify      │                             │
+│              └──────┬───────┘                             │
+│                     │                                     │
+│     ┌───────────────┼───────────────────┐                │
+│     ▼               ▼                   ▼                │
+│ ┌─────────┐  ┌────────────┐  ┌──────────────┐           │
+│ │core/int │  │core/validat│  │core/isolation│           │
+│ │elligence│  │ion/        │  │/             │           │
+│ │(v4.0)   │  │(v4.0)      │  │(v4.0)        │           │
+│ └─────────┘  └────────────┘  └──────────────┘           │
+├──────────────────────────────────────────────────────────┤
+│                     INFRASTRUCTURE                       │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│  │providers │ │tools     │ │memory    │ │mcp       │   │
+│  │(7 types) │ │(12 built)│ │(markdown)│ │(protocol)│   │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│  │session   │ │skills    │ │sandbox   │ │cron      │   │
+│  │(SQLite)  │ │(markdown)│ │(subproc) │ │(JSON)    │   │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │
+└──────────────────────────────────────────────────────────┘
+```
+
+## UIL Brain Pipeline (core/uil/brain.py)
+
+The central orchestration pipeline. Every user message flows through:
+
+```
+User Input
     │
     ▼
-[1] TaskAnalyzer.analyze()
-    → ClassificationResult:
-      task_type, domain, complexity,
-      confidence, detected_features
-    │
-    ▼
-[2] DecisionRouter.route()
-    → RoutingDecision:
-      plan (mode, steps, tools_subset)
-      confidence, reasoning
-    │
-    ▼
-[3] TaskPlanner.plan()         ← optional cognitive enhancer
-    → enriched plan
-    │
-    ▼
-[4] _resolve_executor(mode)
-    → callable executor from EXECUTOR_MAP
-    │
-    ▼
-[5] executor(context) → ExecutionResult
-    (one of: direct_chat, agent_loop,
-     code_review, research, workflow, etc.)
-    │
-    ▼
-[6] Verifier.verify(result)
-    → VerificationReport (findings, severity)
-    │
-    ▼
-[7] KnowledgeBase.record(outcome)
-    → persists to .widdx/knowledge.json
-    │
-    ▼
-ExecutionResult → caller
+┌─────────────────┐
+│ 1. ANALYZE      │  → TaskType (13 types) + confidence + features
+│   analyzer.py   │  → LLM classification with keyword fallback
+│                 │  → Project-aware: adjusts classification based on project context
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ 2. ROUTE        │  → ExecutionMode (SIMPLE_CHAT/AUTONOMOUS/EXPERT_TEAM/DIRECT_TOOL)
+│   router.py     │  → Static mapping: TaskType → ExecutionMode
+│                 │  → Feature flag: intelligence engine can override
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ 3. PLAN         │  → Ordered steps with tool hints and file suggestions
+│   planner.py    │  → 3 decomposers (CODE_WRITE, CODE_MODIFY, COMPLEX)
+│                 │  → All others get minimal single-step plan
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ 4. EXECUTE      │  → ExecutionResult with summary, tools_used, success
+│   brain.py      │  → Routes to executor based on ExecutionMode
+│                 │  → SIMPLE_CHAT: core.chat.run_stream_turn()
+│                 │  → AUTONOMOUS: agent.AutonomousAgent.run()
+│                 │  → EXPERT_TEAM: expert.ExpertTeam.run()
+│                 │  → DIRECT_TOOL: executors.run_direct_tool()
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ 4.5 VERIFY      │  → VerificationReport with findings
+│   verifier.py   │  → HtmlVerifier / CodeVerifier / BashVerifier / GenericVerifier
+│                 │  → CRITICAL findings flip success=False
+│                 │  → Auto-retry on CRITICAL (1 attempt)
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ 5. FEEDBACK     │  → ExecutionResult updated with verification, telemetry
+│   brain.py      │  → Cost tracking, tool usage tracking
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ 6. KNOWLEDGE    │  → Learn from execution for future routing decisions
+│   knowledge.py  │  → JSON-based persistent knowledge store
+└─────────────────┘
 ```
 
-### v4.0 Engine Overlay
+## Three UIs
 
-Added on top of the UIL without breaking it:
+### CLI (cli/)
+- **Entry**: `main.py` → `cli/app.py:run()` → `CLIApp.run()`
+- **Loop**: Read input → check commands → process message via UIL → display → repeat
+- **Input**: prompt_toolkit with history, autocomplete, styled prompt
+- **Display**: Rich library panels, tables, markdown
+- **Features**: 30+ slash commands, auto-skill suggestion, auto-commit, self-reflection, memory learning
 
+### TUI (tui/)
+- **Entry**: `run_textual.py` → `tui/app.py:run_tui()`
+- **Framework**: Textual (modern Python TUI framework)
+- **Architecture**: MainScreen → ChatEngine (background thread) + CommandHandler
+- **Features**: Streaming chat, side panels (tools, skills, history, memories), settings screens, Ubuntu-style grid launcher
+- **State**: `TUIState` centralizes all state; provider, messages, tool_defs, cost
+
+### Web UI (scripts/web/)
+- **Entry**: `scripts/web_app.py` → `scripts/web/server.py` (FastAPI)
+- **Backend**: FastAPI REST API + WebSocket for streaming
+- **Frontend**: Vanilla JS SPA with i18n (English/Arabic), dark/light themes
+- **Chat**: WebSocket `/ws/chat` for real-time streaming
+- **Dashboard**: 50+ REST endpoints covering all subsystems via Dashboard mixin pattern
+- **Features**: Full system management — sessions, memory, cron, gateway, settings, git, plugins, workflows, GGUF, permissions, proxy, MCP, checkpoints, token budget, auto-commit
+
+## Engine Architecture (v4.0)
+
+Three new engines added alongside the original UIL pipeline:
+
+### Intelligence Engine (`core/intelligence/`)
+- **Classifier**: TF-IDF embedding + keyword matching, 200+ labeled examples
+- **Decision Engine**: Learned routing tree from execution history
+- **Patterns**: 25+ software project patterns with concrete steps
+- **Planner**: Pattern-aware decomposition (replaces 3-decomposer planner)
+- **Learner**: Extracts new patterns from successful executions
+- **Embeddings**: Pure Python TF-IDF (zero dependencies)
+
+### Validation Engine (`core/validation/`)
+- **Runner**: Actually executes Python/bash code in temp workspace
+- **Reporter**: Multi-signal quality scoring (syntax + runtime + quality)
+- Catches runtime errors old verifier missed
+
+### Isolation Engine (`core/isolation/`)
+- **Profiles**: 5 security profiles (python/bash/browser/mcp/trusted)
+- **Container**: Docker/podman execution with graceful subprocess fallback
+- **Policy**: Permission-level-based command filtering
+
+### Adapters (`core/engine_adapters.py`)
+- Bridges between engine-specific types and UIL contract types
+- Single file that needs updating when either side evolves
+
+## Data Flow Patterns
+
+### Session Persistence
 ```
-UIL Analysis Step
-    │
-    ├── OLD: analyzer.analyze()      (keyword/heuristic)
-    │
-    ├── NEW: intelligence.classify() (TF-IDF + learned patterns)
-    │         ← feature-flagged via WIDDX_ENGINE_* env vars
-    │
-    └── ARBITER: engine_arbiter.py  (when both disagree)
-               ← runs BOTH, validates BOTH, picks winner
-               ← engine_trust.py accumulates trust over time
-```
-
----
-
-## Execution Modes (ExecutionMode enum)
-
-| Mode | Handler | Description |
-|---|---|---|
-| `DIRECT_CHAT` | `_exec_direct_chat` | Single LLM call, no tools |
-| `AGENT` | `_exec_agent` | AutonomousAgent tool-calling loop |
-| `CODE_REVIEW` | `_exec_code_review` | Specialized code review agent |
-| `RESEARCH` | `_exec_research` | Multi-step research agent |
-| `WORKFLOW` | `_exec_workflow` | Structured multi-step workflow |
-| `DELEGATION` | `_exec_delegation` | Sub-agent delegation |
-| `BACKGROUND` | `_exec_background` | Async background task |
-| `EXPERT` | `_exec_expert` | Domain expert agent |
-
----
-
-## Provider Architecture
-
-```
-Provider (ABC — core/providers/base.py)
-    │
-    ├── OllamaProvider           ← Local Ollama server
-    ├── OpenAICompatibleProvider ← Any OpenAI-compatible API
-    ├── OpenCodeZenProvider      ← WIDDX hosted proxy
-    ├── DeepSeekProvider         ← DeepSeek API (extends OpenAI-compat)
-    └── GGUFDirectProvider       ← llama-cpp-python local inference
-
-All providers implement:
-  .chat(messages, tools)        → streaming generator of str chunks
-  .chat_sync(messages, tools)   → str (full response)
-  .list_models()                → list of model names
-
-Factory: create_provider(cfg) → Provider
-Resolution: resolve_model(name) → (provider_type, model_name)
-```
-
----
-
-## Database Architecture
-
-Single SQLite file at `.widdx/widdx.db` (per-project).
-
-```
-sessions
-  ├── id (PK)
-  ├── name
-  ├── branch
-  ├── created_at, updated_at (Unix timestamps)
-  └── metadata (JSON blob)
-
-messages
-  ├── id (PK)
-  ├── session_id (FK → sessions.id CASCADE)
-  ├── role (user | assistant | tool | system)
-  ├── content
-  ├── tool_calls (JSON)
-  └── timestamp
-
-memories
-  ├── id (PK)
-  ├── name, description, content
-  ├── memory_type
-  ├── tags (JSON array)
-  └── created_at, updated_at
-
-provider_stats
-  ├── id (PK, autoincrement)
-  ├── provider_name, model_name (UNIQUE)
-  ├── success_count, failure_count
-  ├── avg_response_time
-  └── last_used
+CLI/TUI/Web → project.state.save_session() → JSON file (.widdx/session.json)
+         ↕
+CLI/TUI/Web → SessionV2 → SQLite database (.widdx/sessions.db)
+         ↕
+SessionCompat handles JSON→SQLite migration
 ```
 
----
-
-## MCP Architecture
-
+### Memory System
 ```
-MCPClientManager (core/mcp/client.py)
-    │
-    ├── Reads servers from config.json → mcp_servers[]
-    ├── Spawns each as a subprocess (stdio transport)
-    │     command: "node path/to/server.js"
-    │     or:      "uvx mcp-server-fetch"
-    │
-    ├── Communicates via JSON-RPC 2.0 over stdin/stdout
-    │
-    └── Returns tool definitions → TOOL_DEFINITIONS (merged)
+MemoryStore (markdown files in .widdx/memory/)
+    ├── Global: ~/.widdx/memory/
+    └── Project: .widdx/memory/
 
-Supported MCP servers (in shipped config.json):
-  - filesystem    (node)
-  - memory        (node)
-  - fetch         (uvx)
-  - sequential-thinking (node)
-  - playwright    (node)
-  - sqlite        (uvx)
+MemoryLearner extracts facts every 2 turns via LLM
+RAGStore provides semantic search (sentence-transformers or TF-IDF fallback)
+VectorMemory provides vector-based similarity search
 ```
 
----
-
-## Web UI Architecture
-
+### Provider System
 ```
-Browser (SPA)
-    │ WebSocket ws://host/ws
-    │ HTTP     http://host/api/*
-    ▼
-FastAPI app (scripts/web/server.py)
-    │
-    ├── /                    → index.html (static)
-    ├── /static/*            → css, js assets
-    ├── /ws                  → WebSocket (streaming chat)
-    ├── /api/chat            → POST (non-streaming chat)
-    ├── /api/sandbox/*       → Terminal + file ops
-    ├── /api/dashboard/*     → System status + management
-    └── /api/*               → 72 total REST endpoints
-         │
-         ├── ChatHandler (scripts/web/chat.py)
-         │     └── UnifiedIntelligenceLayer
-         │           └── All providers + tools
-         │
-         ├── SandboxHandler (scripts/web/sandbox.py)
-         │     └── SandboxExecutor
-         │
-         └── Dashboard (scripts/web/dashboard/)
-               └── 6 mixin classes (one per subsystem)
+create_provider(cfg) → factory pattern
+    ├── OpenCodeZenProvider (free tier, proxy rotation)
+    ├── DeepSeekProvider (deepseek-v4-flash/pro)
+    ├── OpenAICompatibleProvider (any OpenAI-compatible API)
+    ├── OllamaProvider (local models)
+    ├── GGUFProvider (imported GGUF models via Ollama)
+    └── FreeModelsProvider (auto-discover free models)
+
+All providers implement: chat(messages, tools, temperature) → (content, tool_calls)
+                        stream(messages, tools, temperature) → generator of events
 ```
 
----
-
-## VS Code Extension Architecture
-
+### Tool System
 ```
-extension.ts (activate)
-    ├── Creates WiddxClient (HTTP + WebSocket to widdx-web)
-    ├── Registers ChatPanelProvider (WebviewView sidebar)
-    ├── Registers commands:
-    │     widdx-cortex.openChat
-    │     widdx-cortex.newSession
-    │     widdx-cortex.sendSelection
-    │     widdx-cortex.explainCode
-    │     widdx-cortex.fixCode
-    └── Starts health-check interval (every 30s)
+core.tools.TOOL_DEFINITIONS (12 built-in tools)
+    ├── read, write, edit, bash, glob, grep
+    ├── list_files, web_fetch, validate
+    └── update_project_doc, use_skill
 
-panel.ts
-    └── WebView HTML + message bridge → WiddxClient
++ MCP tools (dynamic, from mcp.client)
++ Skill tools (active skill's custom tools)
++ Workflow tools (create_agent, run_parallel)
 
-client.ts (WiddxClient)
-    ├── GET/POST to WIDDX API (/api/chat, /api/sessions, etc.)
-    └── WebSocket for streaming
+execute_with_skills(tool_name, args) → result string
+    → Skills can intercept and augment tool execution
 ```
 
----
-
-## Sandbox Architecture
-
+### Gateway System
 ```
-SandboxExecutor (core/sandbox.py)
-    │
-    ├── detect_best_mode()
-    │     Windows: WSL > Docker > process
-    │     Linux:   cgroups > Docker > process
-    │     macOS:   sandbox-exec > Docker > process
-    │
-    ├── execute(command, timeout, limits)
-    │     → SandboxResult(stdout, stderr, exit_code, files_created, ...)
-    │
-    └── ResourceLimits:
-          max_cpu_seconds: 60
-          max_memory_mb:   512
-          max_file_size_mb: 100
-          allow_network:   True
+GatewayCore
+    ├── TelegramAdapter (python-telegram-bot, polling)
+    ├── DiscordAdapter (discord.py, gateway)
+    └── Message handler → WIDDX engine → Reply
+
+Multi-platform: same message format across all channels
 ```
 
----
+## Design Patterns Used
 
-## Gateway Architecture
+1. **Singleton Pattern**: Most subsystems use module-level singletons (proxy_manager, skill_manager, error_collector, etc.)
+2. **Mixin Pattern**: Dashboard uses 6 mixins for composability
+3. **Factory Pattern**: Provider creation, tool definitions
+4. **Strategy Pattern**: Multiple executors for different execution modes
+5. **Observer Pattern**: Activity store with subscribers for live events
+6. **Pipeline Pattern**: UIL Brain (Analyze → Route → Plan → Execute → Verify → Knowledge)
+7. **Adapter Pattern**: engine_adapters.py bridges engine types to UIL types
+8. **Decorator Pattern**: `@catch_silent` for error collection
+9. **Command Pattern**: All slash commands as separate handler methods
 
-```
-GatewayCore (core/gateway/__init__.py)
-    │
-    ├── start_platform("telegram", token=...) → TelegramGateway
-    ├── start_platform("discord",  token=...) → DiscordGateway
-    │
-    ├── set_handler(fn: str → str)
-    │     fn receives Message, returns Reply text
-    │
-    └── Both gateways run in background threads
-          → call handler(msg) → send_reply(reply)
-```
+## Key Configuration Files
 
----
+| File | Format | Purpose |
+|------|--------|---------|
+| `config.json` | JSON | Main config (provider, model, settings) |
+| `.widdx/session.json` | JSON | Current session state |
+| `.widdx/sessions.db` | SQLite | All sessions (multi-branch) |
+| `.widdx/memory/` | Markdown | Persistent facts |
+| `.widdx/knowledge.json` | JSON | UIL knowledge base |
+| `.widdx/decisions.json` | JSON | Decision engine learnings |
+| `.widdx/engine_trust.json` | JSON | Engine trust metrics |
+| `.widdx/patterns.json` | JSON | Learned software patterns |
+| `.widdx/permissions.json` | JSON | Tool permission state |
+| `.widdx/repo_map.json` | JSON | Repository dependency graph |
+| `.widdx/self_improve/` | JSON | Error patterns + fix tracker |
+| `.widdx/cron_jobs.json` | JSON | Scheduled jobs |
+| `.widdx/manifest.json` | JSON | Project manifest |
 
-## Config Resolution Order
+## Environment Variables
 
-```
-1. .widdx/config.json   (project-local — highest priority)
-2. config.json           (CWD bare)
-3. <install>/config.json (bundled default — read-only)
-
-API keys: .widdx/apikeys.json (XOR-obfuscated, never in config.json)
-Engine trust: .widdx/engine_trust.json
-Knowledge: .widdx/knowledge.json (UIL outcomes)
-Database: .widdx/widdx.db (SQLite)
-```
-
----
-
-## Key Design Patterns
-
-| Pattern | Where Used |
-|---|---|
-| Mixin composition | `Dashboard` class (6 mixins) |
-| Lazy singleton | `get_chat()`, `get_sandbox()`, `get_mcp_manager()` |
-| Feature flags | `engine_enabled(name)` via env vars |
-| Backward-compat facade | `providers/providers.py` re-exports split modules |
-| Trust accumulation | `engine_trust.py` promotes engines automatically |
-| Hot reload | `plugin_loader.py` watches for file changes |
-| Adapter pattern | `engine_adapters.py` bridges old ↔ new types |
+| Variable | Purpose |
+|----------|---------|
+| `WIDDX_API_KEY` | API authentication for REST server |
+| `OPENAI_API_KEY` | OpenAI provider key |
+| `DEEPSEEK_API_KEY` | DeepSeek provider key |
+| `ANTHROPIC_API_KEY` | Anthropic provider key |
+| `TELEGRAM_BOT_TOKEN` | Telegram gateway |
+| `DISCORD_BOT_TOKEN` | Discord gateway |
+| `WIDDX_CORS_ORIGINS` | Allowed CORS origins |
