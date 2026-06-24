@@ -93,6 +93,12 @@ async def index():
     return HTMLResponse("<h1>WIDDX Nexus Web UI</h1><p>Build index.html first.</p>")
 
 
+@app.get("/api/health")
+async def health():
+    """Health check endpoint — lightweight, no side effects."""
+    return {"status": "ok", "version": "3.2.0"}
+
+
 @app.get("/api/status")
 async def status():
     """System status endpoint."""
