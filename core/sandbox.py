@@ -568,9 +568,13 @@ class SandboxExecutor:
     ) -> SandboxResult:
         """Run command in a resource-limited subprocess (or container if enabled)."""
         # ── v4.0: Isolation Engine — container-based execution ──
+        # Only use Docker if config EXPLICITLY enables isolation engine
+        # (disabled by default to keep files on real filesystem)
         try:
             from core.engine_adapters import engine_enabled, adapt_container_result
-            if engine_enabled(getattr(self, '_cfg', {}) or {}, "isolation"):
+            cfg = getattr(self, '_cfg', {}) or {}
+            engines = cfg.get("engines", {}) if isinstance(cfg, dict) else {}
+            if engines.get("isolation") is True:  # explicit opt-in only
                 from core.isolation.container import get_container_manager
                 cm = get_container_manager()
                 if cm.available:
