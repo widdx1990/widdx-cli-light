@@ -67,6 +67,14 @@ def test_integration_workflow():
         # Configure sandbox so tools.write/edit are allowed only inside tmp
         tools.configure(tmp)
 
+        # Pre-seed the permission singleton to PERMISSIVE so the test
+        # doesn't block on interactive prompts (no stdin in pytest).
+        import core.permissions as _perms
+        pm = _perms.PermissionManager(tmp)
+        pm._level = _perms.PermissionLevel.PERMISSIVE
+        pm._remembered["write"] = True
+        _perms._permission_manager = pm
+
         provider = MockProvider(tmp)
 
         # Build a minimal state and cfg
