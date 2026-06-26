@@ -25,7 +25,8 @@ from .router import DecisionRouter
 from .planner import TaskPlanner
 from .contract import (ExecutionMode, ExecutionPlan, RoutingDecision,
                        DecisionStep, ExecutionContext, ExecutionResult,
-                       StepResult, ExecutionMetrics, VerificationSeverity)
+                       StepResult, ExecutionMetrics,
+                       VerificationSeverity, VerificationFinding)
 from .knowledge import KnowledgeBase
 from .verifier import get_verifier
 
@@ -397,7 +398,6 @@ class UnifiedIntelligenceLayer:
                             lang = "python"
                         run_result = runner.run_python(code) if lang == "python" else runner.run_bash(code)
                         if not run_result.success:
-                            from core.uil.contract import VerificationFinding, VerificationSeverity
                             verification_report.findings.append(VerificationFinding(
                                 check_name=f"runtime_check_{i}",
                                 severity=VerificationSeverity.ERROR,
