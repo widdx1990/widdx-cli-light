@@ -1088,6 +1088,31 @@ register(
     _handle_edit_files,
 )
 
+# ── Recursive Agent Spawning ──────────────────────────────
+def _handle_spawn_agent(task: str = "", role: str = "worker") -> str:
+    """Spawn a sub-agent. Sub-agents can spawn further sub-agents."""
+    try:
+        from core.agents.agent import spawn_sub_agent
+        result = spawn_sub_agent(task=task, role=role, depth=0)
+        return (
+            f"Sub-agent spawned: {result['agent_id']} ({result['role']})\n"
+            f"Steps: {result['steps']}\n"
+            f"Success: {result['success']}\n"
+            f"Summary: {result['summary']}"
+        )
+    except Exception as e:
+        return f"spawn_agent failed: {e}"
+
+register(
+    "spawn_agent",
+    "Spawn a specialized sub-agent for a subtask. The sub-agent runs autonomously with access to all tools including spawn_agent itself (can spawn further sub-agents). Use this to parallelize work or delegate specialized tasks. Max 3 levels deep, max 10 total agents per root task.",
+    {"type": "object", "properties": {
+        "task": {"type": "string", "description": "The subtask for the sub-agent to complete"},
+        "role": {"type": "string", "description": "Role: researcher, coder, tester, reviewer, debugger, writer"},
+    }, "required": ["task", "role"]},
+    _handle_spawn_agent,
+)
+
 # ── Browser tools (handlers in core.tools.browser) ────────
 # Wrapped in try/except: if Playwright MCP is unavailable, only browser
 # tools are missing — not ALL tools (FIX-014: safe import isolation)

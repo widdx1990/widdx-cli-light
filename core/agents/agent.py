@@ -795,6 +795,88 @@ class AutonomousAgent:
 
 
 # ---------------------------------------------------------------------------
+# Recursive Agent Spawning — sub-agent → sub-sub-agent tree
+# ---------------------------------------------------------------------------
+
+_MAX_DEPTH = 3
+_MAX_TOTAL_AGENTS = 10
+_agent_counter: dict[str, int] = {}
+_agent_results: dict[str, dict] = {}
+
+
+def spawn_sub_agent(task: str, role: str = "worker", provider=None, tool_defs=None,
+                    cfg=None, parent_id: str = "", depth: int = 0) -> dict:
+    """Spawn a sub-agent that runs autonomously. Sub-agents can spawn further sub-agents."""
+    import uuid, threading
+
+    if depth >= _MAX_DEPTH:
+        return {"agent_id": "", "role": role, "summary": "Max depth reached", "success": False}
+
+    agent_id = f"agent_{uuid.uuid4().hex[:8]}"
+    root_id = parent_id or agent_id
+
+    if _agent_counter.get(root_id, 0) >= _MAX_TOTAL_AGENTS:
+        return {"agent_id": agent_id, "role": role, "summary": "Agent cap reached", "success": False}
+
+    _agent_counter[root_id] = _agent_counter.get(root_id, 0) + 1
+
+    role_prompt = f"""You are a specialized sub-agent: {role}. Depth: {depth+1}/{_MAX_DEPTH}.
+TASK: {task}
+Focus only on your task. Use tools. You can spawn sub-agents via spawn_agent tool for subtasks."""
+
+    from core.providers.providers import create_provider as _cp
+    from core.config.settings import load as _load
+
+    if provider is None:
+        provider = _cp(_load())
+    if tool_defs is None:
+        from .. import tools
+        tool_defs = tools.TOOL_DEFINITIONS
+    if cfg is None:
+        cfg = _load()
+
+    # Add spawn_agent tool for recursive spawning
+    if depth < _MAX_DEPTH - 1:
+        spawn_def = {
+            "name": "spawn_agent",
+            "description": f"Spawn a sub-agent for a subtask. Sub-agents can spawn further sub-agents (depth {depth+1}/{_MAX_DEPTH}).",
+            "parameters": {"type": "object", "properties": {
+                "task": {"type": "string", "description": "Subtask description"},
+                "role": {"type": "string", "description": "Role: researcher, coder, tester, reviewer"},
+            }, "required": ["task", "role"]},
+        }
+        tool_defs = list(tool_defs) + [spawn_def]
+
+    state = {"model": getattr(provider, "model", ""), "turns": 0, "cost": 0.0}
+    result_container = {}
+
+    def _run():
+        try:
+            agent = AutonomousAgent(provider, tool_defs, cfg, state, custom_prompt=role_prompt)
+            steps, summary = agent.run(task)
+            result_container["steps"] = len(steps)
+            result_container["summary"] = summary or "Done"
+            result_container["success"] = True
+        except Exception as e:
+            result_container["steps"] = 0
+            result_container["summary"] = str(e)
+            result_container["success"] = False
+
+    t = threading.Thread(target=_run, daemon=True, name=f"sub-{agent_id}")
+    t.start()
+    t.join(timeout=300)
+
+    if t.is_alive():
+        result_container["summary"] = "Timed out after 5min"
+        result_container["success"] = False
+
+    result_container["agent_id"] = agent_id
+    result_container["role"] = role
+    _agent_results[agent_id] = result_container
+    return result_container
+
+
+# ---------------------------------------------------------------------------
 # Helper: run agent with a custom system prompt
 # ---------------------------------------------------------------------------
 
