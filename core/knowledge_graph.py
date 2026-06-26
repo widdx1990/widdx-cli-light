@@ -32,14 +32,25 @@ class KnowledgeGraph:
         self._nodes: dict[str, dict] = {}     # name → {type, file, line}
         self._edges: list[dict] = []           # {from, to, relation}
         self._built = False
+        self._last_build: float = 0.0           # timestamp of last build
+        self._cache_ttl: float = 30.0            # seconds before rebuild needed
 
-    def build(self) -> int:
-        """Scan project and build the graph. Returns node count."""
+    def build(self, force: bool = False) -> int:
+        """Scan project and build the graph. Returns node count.
+
+        Uses 30-second cache to avoid expensive rebuilds on rapid calls.
+        Pass force=True to bypass cache.
+        """
+        import time as _time
+        now = _time.time()
+        if self._built and not force and (now - self._last_build < self._cache_ttl):
+            return len(self._nodes)
+
         self._nodes.clear()
         self._edges.clear()
 
         try:
-            # Walk project files directly
+            # Walk project files directly (max depth 5 for performance)
             ignore = {".git", "__pycache__", ".pytest_cache", ".widdx",
                       "node_modules", ".venv", "venv", "env",
                       ".idea", ".vscode", ".mypy_cache", "build", "dist"}
@@ -48,6 +59,13 @@ class KnowledgeGraph:
                          ".yaml", ".yml", ".toml", ".sh", ".java", ".c", ".cpp", ".h"}
 
             for fp in self._root.rglob("*"):
+                # Limit depth to avoid excessive traversal
+                try:
+                    rel = fp.relative_to(self._root)
+                    if len(rel.parts) > 5:
+                        continue
+                except ValueError:
+                    continue
                 if fp.is_dir() or any(p in ignore for p in fp.parts):
                     continue
                 if fp.suffix not in code_exts:
@@ -74,6 +92,7 @@ class KnowledgeGraph:
                     self._edges.append({"from": fname, "to": node_id, "relation": "contains"})
 
             self._built = True
+            self._last_build = _time.time()
             logger.info("KnowledgeGraph built: %d nodes, %d edges", len(self._nodes), len(self._edges))
         except Exception as e:
             logger.warning("KnowledgeGraph build failed: %s", e)

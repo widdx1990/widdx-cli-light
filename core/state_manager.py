@@ -34,8 +34,8 @@ class StateManager:
         """Build complete unified context for agent. Returns in < 100ms."""
         t0 = time.perf_counter()
 
-        # Cache for 2 seconds to avoid rebuild on rapid calls
-        if self._cached_context and (time.perf_counter() - self._last_build < 2):
+        # Cache for 10 seconds to avoid rebuild on rapid calls
+        if self._cached_context and (time.perf_counter() - self._last_build < 10):
             return self._cached_context[:max_chars]
 
         parts = []
