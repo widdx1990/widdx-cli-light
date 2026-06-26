@@ -69,7 +69,13 @@ VERIFICATION (MANDATORY):
   JavaScript: node --check <file>
   Python:     python -m py_compile <file>
 - If syntax check FAILS, fix immediately — do NOT proceed.
-- After all edits pass: run the project and verify it WORKS."""
+- After all edits pass: run the project and verify it WORKS.
+
+AUTO-PREVIEW (MANDATORY for HTML/CSS/JS files):
+- After creating ANY .html file, you MUST open it in the browser immediately
+  using the browser tool to verify it renders correctly.
+- After creating a web project, ALWAYS start a local server and preview it.
+- Never consider a web project "done" until you have seen it working."""
 
 
 # ---------------------------------------------------------------------------

@@ -37,7 +37,35 @@ class ChatHandler:
     def __init__(self):
         self._uil: Any = None
         self._cfg: dict = {}
+        self._session_id: str | None = None
         self._init_uil()
+
+    def _ensure_session(self):
+        """Get or create the current session ID."""
+        if self._session_id:
+            return self._session_id
+        try:
+            from core.database import get_db
+            db = get_db()
+            sessions = db.list_sessions(limit=1)
+            if sessions:
+                self._session_id = sessions[0]["id"]
+            else:
+                self._session_id = db.create_session("Web UI Session")
+        except Exception:
+            import uuid
+            self._session_id = str(uuid.uuid4())
+        return self._session_id
+
+    def _save_message(self, role: str, content: str):
+        """Persist a message to the database."""
+        try:
+            from core.database import get_db
+            db = get_db()
+            sid = self._ensure_session()
+            db.add_message(sid, role, content)
+        except Exception:
+            pass  # non-critical — session persistence failure shouldn't break chat
 
     def _init_uil(self):
         """Initialize the UIL Brain from config + auto-setup project."""
@@ -226,6 +254,11 @@ class ChatHandler:
 
             clean = self._clean_content(content)
 
+            # ── Persist to session database ──
+            self._save_message("user", message)
+            if clean:
+                self._save_message("assistant", clean)
+
             return {
                 "content": clean or "",
                 "tools": tools_result,
@@ -247,6 +280,8 @@ class ChatHandler:
         if self._uil is None:
             yield {"type": "error", "data": "UIL Brain not initialized"}
             return
+
+        self._save_message("user", message)
 
         import queue
         import threading
@@ -301,6 +336,7 @@ class ChatHandler:
                 content = getattr(result, "summary", "") or ""
                 clean = self._clean_content(content)
                 if clean:
+                    self._save_message("assistant", clean)
                     yield {"type": "text", "data": clean}
         yield {"type": "done", "data": None}
 
