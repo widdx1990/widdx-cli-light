@@ -1051,6 +1051,40 @@ async function showDesktop() {
   }
 }
 
+var _termHistory = [];
+var _termIdx = -1;
+
+window.runTermCmd = function(cmd) {
+  var inp = document.getElementById('ti');
+  if (!inp) return;
+  // Execute directly if terminal is visible, otherwise fill input
+  var o = document.getElementById('to');
+  if (o) {
+    execTermCmd(cmd, o);
+  } else {
+    // Fill the chat input instead
+    var msgInp = document.getElementById('messageInput');
+    if (msgInp) { msgInp.value = cmd; sendMessage(); }
+  }
+};
+
+function execTermCmd(cmd, o) {
+  _termHistory.push(cmd);
+  _termIdx = _termHistory.length;
+  o.innerHTML += '<span style="color:#f0a030;font-weight:600">$ ' + escapeHtml(cmd) + '</span>\n';
+  setActivity('Running', cmd);
+  fetch('/api/computer/info').then(function(r){return r.json()}).then(function(d){o.innerHTML='<span style="color:var(--text-muted);font-size:12px">📂 '+(d.system&&d.system.working_directory||'?')+'</span>\n'+o.innerHTML;});
+  fetch('/api/computer/exec', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command:cmd})})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.stdout) o.innerHTML += d.stdout + '\n';
+      if (d.stderr) o.innerHTML += '<span style="color:#f04848">' + escapeHtml(d.stderr) + '</span>\n';
+      o.innerHTML += '<span style="color:var(--text-muted);font-size:12px">→ exit ' + (d.exit_code || 0) + ' [' + (d.mode || 'auto') + ']</span>\n';
+      o.scrollTop = o.scrollHeight; setActivity('Ready', '—');
+    })
+    .catch(function(e) { o.innerHTML += '<span style="color:#f04848">' + escapeHtml(e.message) + '</span>\n'; setActivity('Ready', '—'); });
+}
+
 function showTerminal() {
   const body = document.getElementById('panelBody');
   body.innerHTML = '<div id="tc" style="display:flex;flex-direction:column;height:100%;background:#080a0e">'
@@ -1066,24 +1100,25 @@ function showTerminal() {
     + '<button class="quick-port-btn" onclick="runTermCmd(\'python -m http.server 8080\')">serve :8080</button>'
     + '<button class="quick-port-btn" onclick="runTermCmd(\'dir\')">dir</button>'
     + '</div></div>';
+  // Set focus
+  var ti = document.getElementById('ti');
+  if (ti) ti.focus();
+  // Keyboard: Enter to execute, Arrow keys for history
   document.getElementById('ti').onkeydown = function(e) {
-    if (e.key !== 'Enter') return;
-    var cmd = e.target.value.trim();
-    if (!cmd) return;
-    var o = document.getElementById('to');
-	    fetch('/api/computer/info').then(function(r){return r.json()}).then(function(d){o.innerHTML='<span style="color:var(--text-muted);font-size:12px">📂 '+(d.system&&d.system.working_directory||'?')+'</span>\n';});
-    o.innerHTML += '<span style="color:#f0a030;font-weight:600">$ ' + escapeHtml(cmd) + '</span>\n';
-    e.target.value = '';
-    setActivity('Running', cmd);
-    fetch('/api/computer/exec', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command:cmd})})
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d.stdout) o.innerHTML += d.stdout + '\n';
-        if (d.stderr) o.innerHTML += '<span style="color:#f04848">' + escapeHtml(d.stderr) + '</span>\n';
-        o.innerHTML += '<span style="color:var(--text-muted);font-size:12px">→ exit ' + (d.exit_code || 0) + ' [' + (d.mode || 'auto') + ']</span>\n';
-        o.scrollTop = o.scrollHeight; setActivity('Ready', '—');
-      })
-      .catch(function(e) { o.innerHTML += '<span style="color:#f04848">' + escapeHtml(e.message) + '</span>\n'; setActivity('Ready', '—'); });
+    if (e.key === 'Enter') {
+      var cmd = e.target.value.trim();
+      if (!cmd) return;
+      var o = document.getElementById('to');
+      execTermCmd(cmd, o);
+      e.target.value = '';
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (_termIdx > 0) { _termIdx--; e.target.value = _termHistory[_termIdx]; }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (_termIdx < _termHistory.length - 1) { _termIdx++; e.target.value = _termHistory[_termIdx]; }
+      else { _termIdx = _termHistory.length; e.target.value = ''; }
+    }
   };
 }
 
@@ -1218,12 +1253,14 @@ document.addEventListener('DOMContentLoaded', function() {
     var file = e.target.files[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { showToast('Image too large (max 5MB)', 'error'); return; }
+    showUploadPreview(file.name, '🖼️');
     var reader = new FileReader();
     reader.onload = function(ev) {
       var base64 = ev.target.result.split(',')[1];
       var userMsg = { role: 'user', content: '[Image attached: ' + file.name + ']', image: base64 };
       S.messages.push(userMsg);
       appendMessageBubble('user', '<i class=\"fa-solid fa-image\"></i> ' + file.name);
+      clearUploadPreview();
       fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1241,6 +1278,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var file = e.target.files[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) { showToast('File too large (max 2MB)', 'error'); return; }
+    showUploadPreview(file.name, '📎');
     var reader = new FileReader();
     reader.onload = function(ev) {
       var content = ev.target.result;
@@ -1248,12 +1286,29 @@ document.addEventListener('DOMContentLoaded', function() {
       var userMsg = { role: 'user', content: 'Uploaded file: ' + file.name + '\n\n```\n' + preview + '\n```' };
       S.messages.push(userMsg);
       appendMessageBubble('user', '<i class=\"fa-solid fa-file\"></i> ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
+      clearUploadPreview();
       var input = document.getElementById('messageInput');
       input.value = 'Review the attached file: ' + file.name;
       sendMessage();
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  function showUploadPreview(name, icon) {
+    var existing = document.getElementById('uploadPreview');
+    if (existing) existing.remove();
+    var div = document.createElement('div');
+    div.id = 'uploadPreview';
+    div.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 12px;font-size:12px;color:var(--accent-primary);background:var(--bg-card);border-radius:6px;margin:0 12px 4px';
+    div.innerHTML = icon + ' ' + escapeHtml(name) + ' <span onclick=\"clearUploadPreview()\" style=\"cursor:pointer;color:var(--text-muted);margin-left:8px\">✕</span>';
+    var toolbar = document.querySelector('.input-toolbar');
+    if (toolbar) toolbar.parentNode.insertBefore(div, toolbar);
+  }
+
+  window.clearUploadPreview = function() {
+    var el = document.getElementById('uploadPreview');
+    if (el) el.remove();
   };
 
   // ── Project Docs viewer ──────────────────────────────
