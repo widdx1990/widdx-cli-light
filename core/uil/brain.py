@@ -377,31 +377,33 @@ class UnifiedIntelligenceLayer:
 
         if is_code_task:
             try:
-                from core.validation.runner import CodeRunner
                 import re
-                runner = CodeRunner(timeout_default=15)
                 code_blocks: list[str] = re.findall(
                     r'```(?:python|bash|sh)\n(.*?)```', raw_text, re.DOTALL
                 )
-                for i, code in enumerate(code_blocks[:5]):  # max 5 blocks
-                    # Determine language from code fence
-                    try:
-                        fence_match = re.search(
-                            r'```(python|bash|sh)\n' + re.escape(code)[:50],
-                            raw_text, re.DOTALL,
-                        )
-                        lang = fence_match.group(1) if fence_match else "python"
-                    except Exception:
-                        lang = "python"
-                    run_result = runner.run_python(code) if lang == "python" else runner.run_bash(code)
-                    if not run_result.success:
-                        from core.uil.contract import VerificationFinding, VerificationSeverity
-                        verification_report.findings.append(VerificationFinding(
-                            check_name=f"runtime_check_{i}",
-                            severity=VerificationSeverity.ERROR,
-                            message=f"Runtime error in code block {i+1}: {run_result.stderr[:300]}",
-                            passed=False,
-                        ))
+                # Guard: only run CodeRunner if code blocks are actually present
+                if code_blocks:
+                    from core.validation.runner import CodeRunner
+                    runner = CodeRunner(timeout_default=15)
+                    for i, code in enumerate(code_blocks[:5]):  # max 5 blocks
+                        # Determine language from code fence
+                        try:
+                            fence_match = re.search(
+                                r'```(python|bash|sh)\n' + re.escape(code)[:50],
+                                raw_text, re.DOTALL,
+                            )
+                            lang = fence_match.group(1) if fence_match else "python"
+                        except Exception:
+                            lang = "python"
+                        run_result = runner.run_python(code) if lang == "python" else runner.run_bash(code)
+                        if not run_result.success:
+                            from core.uil.contract import VerificationFinding, VerificationSeverity
+                            verification_report.findings.append(VerificationFinding(
+                                check_name=f"runtime_check_{i}",
+                                severity=VerificationSeverity.ERROR,
+                                message=f"Runtime error in code block {i+1}: {run_result.stderr[:300]}",
+                                passed=False,
+                            ))
             except ImportError:
                 pass  # CodeRunner unavailable — skip runtime validation
 

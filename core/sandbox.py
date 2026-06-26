@@ -672,11 +672,20 @@ class SandboxExecutor:
 
     # -- Helpers --------------------------------------------------------
 
+    # Windows built-in shell commands — require shell=True
+    _WINDOWS_BUILTINS = {
+        "echo", "dir", "cls", "del", "copy", "move",
+        "type", "set", "cd", "md", "rd", "mkdir", "rmdir",
+    }
+
     @staticmethod
     def _split_command(command: str) -> tuple[list[str] | str, bool]:
         SHELL_CHARS = {"|", ">", "<", "&&", "||", ";", "$", "`", "*", "?", "[", "]", "~", "!", "{", "}"}
         try:
             parts = shlex.split(command)
+            # Windows shell built-ins require shell=True
+            if os.name == "nt" and parts and parts[0].lower() in SandboxExecutor._WINDOWS_BUILTINS:
+                return command, True
             for part in parts:
                 for char in SHELL_CHARS:
                     if char in part:
