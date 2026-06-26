@@ -983,9 +983,9 @@ function showView(view) {
   } else if (view === 'apikeys') {
     showApiKeysView(area);
   } else if (view === 'docs') {
-    showProjectDocsView(area);
+    if (window.showProjectDocsView) window.showProjectDocsView(area);
   } else if (view === 'search') {
-    showSearchView(area);
+    if (window.showSearchView) window.showSearchView(area);
   }
 }
 
@@ -1234,7 +1234,7 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   // ── Project Docs viewer ──────────────────────────────
-  function showProjectDocsView(area) {
+  window.showProjectDocsView = function(area) {
     area.innerHTML = '<div style=\"padding:24px;max-width:900px;margin:0 auto\">'
       + '<h2 style=\"margin-bottom:16px\"><i class=\"fa-solid fa-book\"></i> Project Documentation</h2>'
       + '<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px\" id=\"docsGrid\">Loading…</div>'
@@ -1259,7 +1259,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // ── Session search ───────────────────────────────────
-  function showSearchView(area) {
+  window.showSearchView = function(area) {
     area.innerHTML = '<div style=\"padding:24px;max-width:900px;margin:0 auto\">'
       + '<h2 style=\"margin-bottom:16px\"><i class=\"fa-solid fa-magnifying-glass\"></i> Search Sessions</h2>'
       + '<input id=\"searchInput\" style=\"width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border-main);border-radius:8px;color:var(--text-primary);font-size:16px;outline:none;margin-bottom:16px\" placeholder=\"Search messages, sessions, memories…\" oninput=\"doSearch(this.value)\">'
