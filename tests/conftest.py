@@ -18,6 +18,26 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def permissive_for_tests():
+    """Pre-seed permission singleton to PERMISSIVE for all tests.
+
+    Without this, any test that triggers a tool execution (bash, write,
+    browser, etc.) will hit an interactive Rich prompt and fail with
+    ``OSError: reading from stdin while output is captured`` because
+    pytest captures stdin/stdout.
+    """
+    try:
+        import core.permissions as _perms
+        if _perms._permission_manager is None:
+            pm = _perms.PermissionManager()
+            pm._level = _perms.PermissionLevel.PERMISSIVE
+            _perms._permission_manager = pm
+    except Exception:
+        pass
+    yield
+
+
+@pytest.fixture(autouse=True)
 def clear_knowledge():
     """Clear persistent KnowledgeBase before each test to avoid cross-test contamination.
 
