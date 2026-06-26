@@ -6,12 +6,21 @@ Created by [MUHAMMAD MUSLIH](https://widdx.com) — Founder & CEO of WIDDX
 
 ---
 
-## ⚡ Quick Install
+## ⚡ One-Line Install
 
 ```bash
-git clone https://github.com/widdx1990/widdx-cli-light
-cd widdx-cli-light
+pip install git+https://github.com/widdx1990/widdx-cli-light.git
+```
+
+Or if you have the repo locally:
+```bash
 pip install -e ".[api]"
+```
+
+## 🪟 Windows One-Line (PowerShell)
+
+```powershell
+pip install git+https://github.com/widdx1990/widdx-cli-light.git
 ```
 
 ## 🚀 Run
