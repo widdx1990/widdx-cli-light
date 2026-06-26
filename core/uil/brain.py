@@ -558,6 +558,35 @@ class UnifiedIntelligenceLayer:
         except Exception:
             pass
 
+        # ── VerifyLoop integration ──
+        if verification_report.criticals and not getattr(result, "_loop_retried", False):
+            try:
+                from core.verification.loop import get_verify_loop
+                loop = get_verify_loop()
+                loop_result = loop.run(raw, classification.task_type)
+                logger.info(
+                    "VerifyLoop: passed=%s iterations=%d fixed=%d",
+                    loop_result.passed_all, loop_result.iterations, loop_result.findings_fixed,
+                )
+                if loop_result.passed_all:
+                    verification_report = loop_result.final_report or verification_report
+                    result._loop_retried = True
+            except Exception as e:
+                logger.debug("VerifyLoop unavailable: %s", e)
+
+        # ── ADR: auto-record significant architectural decisions ──
+        if len(result.tools_used) >= 3:
+            try:
+                from core.adr import adr_manager
+                adr_manager.record(
+                    title=f"Auto: {user_input[:80]}",
+                    context=f"Task executed in {getattr(result, 'iterations', 1)} step(s)",
+                    decision=f"Tools: {', '.join(str(t) for t in result.tools_used[:5])}",
+                    consequences=getattr(raw, 'summary', '')[:200] if hasattr(raw, 'summary') else '',
+                )
+            except Exception:
+                pass
+
         # ── KnowledgeGraph → Memory: store project structure facts ──
         try:
             from core.knowledge_graph import get_knowledge_graph
@@ -573,6 +602,17 @@ class UnifiedIntelligenceLayer:
                     metadata={"type": "reference", "source": "knowledge_graph"},
                     confidence=0.9,
                 )
+        except Exception:
+            pass
+
+        # ── DocSync: trigger after each execution ──
+        try:
+            from core.doc_sync import get_doc_sync
+            ds = get_doc_sync()
+            drifts = ds.detect_drift()
+            if drifts:
+                logger.info("DocSync: %d drifts detected", len(drifts))
+                ds.auto_update(drifts)
         except Exception:
             pass
 

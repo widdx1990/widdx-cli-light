@@ -39,25 +39,35 @@ class KnowledgeGraph:
         self._edges.clear()
 
         try:
-            from core.repo_mapper import RepoMapper
-            mapper = RepoMapper(self._root)
-            mapper.scan()
-            stats = mapper.stats()
+            # Walk project files directly
+            ignore = {".git", "__pycache__", ".pytest_cache", ".widdx",
+                      "node_modules", ".venv", "venv", "env",
+                      ".idea", ".vscode", ".mypy_cache", "build", "dist"}
+            code_exts = {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs",
+                         ".html", ".css", ".scss", ".sql", ".md", ".json",
+                         ".yaml", ".yml", ".toml", ".sh", ".java", ".c", ".cpp", ".h"}
 
-            # Add file nodes
-            for file_path in mapper.select("*", top_k=2000):
-                fname = str(Path(file_path).relative_to(self._root))
+            for fp in self._root.rglob("*"):
+                if fp.is_dir() or any(p in ignore for p in fp.parts):
+                    continue
+                if fp.suffix not in code_exts:
+                    continue
+                try:
+                    fname = str(fp.relative_to(self._root))
+                except ValueError:
+                    continue
                 self._nodes[fname] = {"type": "file", "file": fname}
 
-                # Extract dependencies as edges
-                deps = mapper.get_dependencies(fname)
-                for dep in deps:
-                    self._edges.append({"from": fname, "to": dep, "relation": "depends_on"})
-                    if dep not in self._nodes:
-                        self._nodes[dep] = {"type": "file", "file": dep}
+                # Extract imports as edges for Python files
+                if fp.suffix == ".py":
+                    deps = self._get_python_imports(fp)
+                    for dep in deps:
+                        self._edges.append({"from": fname, "to": dep, "relation": "imports"})
+                        if dep not in self._nodes:
+                            self._nodes[dep] = {"type": "module", "file": dep}
 
                 # Extract symbols
-                symbols = self._extract_symbols(file_path)
+                symbols = self._get_symbols(str(fp))
                 for sym in symbols:
                     node_id = f"{fname}::{sym['name']}"
                     self._nodes[node_id] = {"type": sym["type"], "file": fname, "name": sym["name"], "line": sym.get("line", 0)}
@@ -140,7 +150,19 @@ class KnowledgeGraph:
         lines.append("</knowledge_graph>")
         return "\n".join(lines)
 
-    def _extract_symbols(self, file_path: str) -> list[dict]:
+    def _get_python_imports(self, fp: Path) -> list[str]:
+        """Extract imported module names from a Python file."""
+        imports = []
+        try:
+            import re
+            text = fp.read_text(encoding="utf-8", errors="ignore")
+            for m in re.finditer(r'^(?:from|import)\s+(\w+)', text, re.MULTILINE):
+                imports.append(m.group(1))
+        except Exception:
+            pass
+        return list(set(imports))
+
+    def _get_symbols(self, file_path: str) -> list[dict]:
         """Extract class/function names from a file."""
         symbols = []
         fp = self._root / file_path
