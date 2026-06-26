@@ -259,6 +259,25 @@ class ChatHandler:
             except Exception:
                 pass
 
+            # ── Level 5: Unified StateManager context ──
+            try:
+                from core.state_manager import get_state_manager
+                sm = get_state_manager()
+                unified = sm.get_full_context(goal=message)
+                if unified:
+                    uil_history.insert(0, {"role": "system", "content": unified})
+            except Exception:
+                pass
+
+            # ── Inject Decision Layer guidance ──
+            try:
+                from core.decision_layer import get_decision_layer
+                guidance = get_decision_layer().get_context_for_prompt()
+                if guidance:
+                    uil_history.insert(0, {"role": "system", "content": guidance})
+            except Exception:
+                pass
+
             # ── Inject Knowledge Graph context ──
             try:
                 from core.knowledge_graph import get_knowledge_graph

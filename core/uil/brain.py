@@ -540,6 +540,20 @@ class UnifiedIntelligenceLayer:
                     MAX_RETRIES, len(verification_report.criticals),
                 )
 
+        # ── SelfCorrection ← Verify: targeted fixes ──
+        if verification_report.criticals:
+            try:
+                from core.self_correction import SelfCorrection
+                sc = SelfCorrection()
+                correction = sc.correct(verification_report.criticals, raw)
+                logger.info(
+                    "SelfCorrection: %d strategies applied — %s",
+                    len(correction["strategies_applied"]),
+                    ", ".join(s["error_type"] for s in correction["strategies_applied"]),
+                )
+            except Exception as e:
+                logger.debug("SelfCorrection unavailable: %s", e)
+
         # ── SelfImprove ← Verify: record verification outcome ──
         try:
             from core.self_improve import get_improver
