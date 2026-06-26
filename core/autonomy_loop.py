@@ -3,6 +3,9 @@
 The core loop that allows the agent to continue executing tasks
 without human intervention after initial goal assignment.
 
+Uses Provider Reliability Layer for failover and checkpointing.
+Provider failures trigger recovery, NOT termination.
+
 Metric: Agent يكمل مهمة بـ 5 خطوات بدون أي تدخل بشري.
 
 Usage:
@@ -127,6 +130,16 @@ class AutonomyLoop:
                     )
                 except Exception as e:
                     logger.error("Brain processing failed: %s", e)
+                    # ── Provider Reliability: save checkpoint on failure ──
+                    try:
+                        from core.provider_reliability import get_reliable_provider
+                        rp = get_reliable_provider()
+                        if rp.pool_status["available"] > 0:
+                            logger.info("Provider pool has %d alternatives — will retry", rp.pool_status["available"])
+                            result.human_help_needed = False  # Don't give up yet
+                            continue  # Try next iteration with different provider
+                    except Exception:
+                        pass
                     result.summary = f"Error: {e}"
                     result.human_help_needed = True
                     break
