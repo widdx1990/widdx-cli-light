@@ -1035,7 +1035,15 @@ function showTerminal() {
     + '<div id="to" style="flex:1;padding:12px;font-family:var(--font-mono);font-size:13px;color:var(--success);overflow-y:auto;line-height:1.6;white-space:pre-wrap"></div>'
     + '<div style="display:flex;align-items:center;padding:8px 12px;border-top:1px solid var(--border-main);gap:8px;background:#0a0d14">'
     + '<span style="color:var(--success);font-weight:700;font-family:var(--font-mono)">$</span>'
-    + '<input id="ti" style="flex:1;background:transparent;border:none;color:var(--text-primary);font-family:var(--font-mono);font-size:13px;outline:none" placeholder="Run any command..."></div></div>';
+    + '<input id="ti" style="flex:1;background:transparent;border:none;color:var(--text-primary);font-family:var(--font-mono);font-size:13px;outline:none" placeholder="Run command (e.g. python app.py, npm start)..."></div>'
+    + '<div style="display:flex;gap:4px;padding:4px 12px 6px;background:#0a0d14;flex-wrap:wrap">'
+    + '<span style="font-size:10px;color:var(--text-muted);padding:2px 0">Quick:</span>'
+    + '<button class="quick-port-btn" onclick="runTermCmd('python --version')">python</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd('node --version')">node</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd('npm start')">npm start</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd('python -m http.server 8080')">serve :8080</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd('dir')">dir</button>'
+    + '</div></div>';
   document.getElementById('ti').onkeydown = function(e) {
     if (e.key !== 'Enter') return;
     var cmd = e.target.value.trim();
@@ -1109,6 +1117,14 @@ window.takeScreenshot = async function() {
   }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-camera"></i> Take Screenshot'; }
 };
+
+function previewFileInBrowser(path) {
+  if (path.endsWith('.html') || path.endsWith('.htm')) {
+    document.getElementById('bu').value = path;
+    document.getElementById('bf').src = path;
+    switchTab(document.querySelector('.right-panel-tab:nth-child(4)'), 'browser');
+  }
+}
 
 function renderTree(items, depth) {
   return items.map(function(i) {
