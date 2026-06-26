@@ -57,46 +57,70 @@ class MemoryStore:
 
     # ── CRUD ───────────────────────────────────────────────────────────
 
-    def save(self, name: str, content: str, metadata: dict | None = None) -> Path:
-        """Save a memory. Updates MEMORY.md index.
-        Detects conflicts: if same slug exists with different content,
-        saves the old version as .old.md before overwriting.
+    def save(self, name: str, content: str, metadata: dict | None = None,
+             confidence: float = 0.5, version: int = 1,
+             status: str = "active") -> Path:
+        """Save a memory with versioning metadata.
+
+        Args:
+            name: Short kebab-case name.
+            content: The fact body.
+            metadata: Arbitrary metadata dict.
+            confidence: 0.0–1.0 how confident we are in this fact.
+            version: Integer version number (auto-incremented on conflict).
+            status: 'active', 'deprecated', or 'superseded'.
         """
         slug = to_slug(name)
         filepath = self.memory_dir / f"{slug}.md"
 
-        # ── Conflict detection ──────────────────────────────────────
+        # ── Versioning: bump version on content change ──────────
         existing_body = self.get(name)
         if existing_body is not None and existing_body.strip() != content.strip():
-            old_path = self.memory_dir / f"{slug}.old.md"
+            old_path = self.memory_dir / f"{slug}.v{version}.old.md"
             try:
-                old_path.write_text(filepath.read_text(encoding="utf-8"),
-                                    encoding="utf-8")
+                existing_text = filepath.read_text(encoding="utf-8")
+                # Extract old version number
+                old_meta, _ = parse_frontmatter(existing_text, nested_metadata=True)
+                old_ver = int(old_meta.get("version", 1))
+                old_path = self.memory_dir / f"{slug}.v{old_ver}.old.md"
+                old_path.write_text(existing_text, encoding="utf-8")
+                version = old_ver + 1
                 import logging
-                logging.getLogger("widdx.memory").warning(
-                    "Memory conflict: '%s' overwritten with different content. "
-                    "Previous version saved to %s", name, old_path,
+                logging.getLogger("widdx.memory").info(
+                    "Memory versioned: '%s' v%d → v%d. Previous saved to %s",
+                    name, old_ver, version, old_path,
                 )
             except OSError:
                 pass
 
         meta = metadata or {}
-        # Add timestamp metadata if not present
-        if "created" not in meta and "updated" not in meta:
-            from datetime import datetime, timezone
-            meta["updated"] = datetime.now(timezone.utc).isoformat()
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
 
-        meta_str = ""
-        if meta:
-            meta_lines = ["metadata:"]
-            for k, v in meta.items():
-                meta_lines.append(f"  {k}: {v}")
-            meta_str = "\n" + "\n".join(meta_lines)
+        # ── Versioning frontmatter fields ──
+        meta.update({
+            "version": version,
+            "confidence": round(confidence, 2),
+            "status": status,
+            "updated": now,
+        })
+        if "created" not in meta:
+            meta["created"] = now
+        if "last_validated" not in meta and status == "active":
+            meta["last_validated"] = now
+
+        meta_lines = ["metadata:"]
+        for k, v in meta.items():
+            meta_lines.append(f"  {k}: {v}")
+        meta_str = "\n" + "\n".join(meta_lines)
 
         frontmatter = (
             f"---\n"
             f"name: {slug}\n"
             f"description: {content[:80].strip()}\n"
+            f"version: {version}\n"
+            f"confidence: {round(confidence, 2)}\n"
+            f"status: {status}\n"
             f"{meta_str}\n"
             f"---\n"
         )
@@ -206,9 +230,93 @@ class MemoryStore:
                 })
         return results
 
+    # ── Versioning API ──────────────────────────────────────────
+
+    def search_active(self, query: str) -> list[dict]:
+        """Search only ACTIVE memories (excludes deprecated/superseded)."""
+        results = self.search(query)
+        active = []
+        for r in results:
+            name = r.get("name", "")
+            filepath = self.memory_dir / f"{to_slug(name)}.md"
+            if filepath.exists():
+                meta, _ = parse_frontmatter(
+                    filepath.read_text(encoding="utf-8"), nested_metadata=True
+                )
+                if meta.get("status", "active") == "active":
+                    r["version"] = meta.get("version", 1)
+                    r["confidence"] = meta.get("confidence", 0.5)
+                    r["status"] = "active"
+                    active.append(r)
+        return active
+
+    def deprecate(self, name: str, reason: str = "") -> bool:
+        """Mark a memory as deprecated."""
+        content = self.get(name)
+        if content is None:
+            return False
+        slug = to_slug(name)
+        filepath = self.memory_dir / f"{slug}.md"
+        existing = filepath.read_text(encoding="utf-8")
+        meta, body = parse_frontmatter(existing, nested_metadata=True)
+        if reason:
+            body = f"{body}\n\n---\nDeprecated: {reason}"
+        return self.save(
+            name, body,
+            metadata=meta.get("metadata", {}),
+            confidence=float(meta.get("confidence", 0.3)),
+            version=int(meta.get("version", 1)),
+            status="deprecated",
+        ) is not None
+
+    def validate(self, name: str) -> bool:
+        """Update last_validated timestamp (confidence boost)."""
+        content = self.get(name)
+        if content is None:
+            return False
+        slug = to_slug(name)
+        filepath = self.memory_dir / f"{slug}.md"
+        existing = filepath.read_text(encoding="utf-8")
+        meta, body = parse_frontmatter(existing, nested_metadata=True)
+        md = meta.get("metadata", {})
+        from datetime import datetime, timezone
+        md["last_validated"] = datetime.now(timezone.utc).isoformat()
+        new_conf = min(1.0, float(meta.get("confidence", 0.5)) + 0.1)
+        return self.save(
+            name, body,
+            metadata=md,
+            confidence=new_conf,
+            version=int(meta.get("version", 1)),
+            status="active",
+        ) is not None
+
+    def cleanup_deprecated(self, older_than_days: int = 90) -> int:
+        """Delete deprecated memories older than the threshold."""
+        import time
+        cutoff = time.time() - (older_than_days * 86400)
+        removed = 0
+        for f in self.memory_dir.glob("*.md"):
+            if ".old." in f.name or f.name.startswith("._"):
+                continue
+            text = f.read_text(encoding="utf-8")
+            meta, _ = parse_frontmatter(text, nested_metadata=True)
+            if meta.get("status") == "deprecated":
+                try:
+                    updated = meta.get("metadata", {}).get("updated", "")
+                    from datetime import datetime
+                    ts = datetime.fromisoformat(updated).timestamp()
+                    if ts < cutoff:
+                        f.unlink()
+                        removed += 1
+                except (ValueError, OSError):
+                    pass
+        if removed:
+            self._rebuild_index()
+        return removed
+
     def total(self) -> int:
-        """Number of stored memories."""
-        return len(list(self.memory_dir.glob("*.md")))
+        """Number of stored memories (excluding old versions)."""
+        return len([f for f in self.memory_dir.glob("*.md") if ".old." not in f.name])
 
     # ── Index management ──────────────────────────────────────────────
 
