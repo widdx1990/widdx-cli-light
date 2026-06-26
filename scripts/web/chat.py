@@ -209,6 +209,40 @@ class ChatHandler:
             }
             uil_history.insert(0, cwd_msg)
 
+            # ── Inject project context (PLAN/DESIGN/TASKS/ROADMAP) ──
+            if self._project_context:
+                uil_history.insert(0, {
+                    "role": "system",
+                    "content": (
+                        "<project_context>\n"
+                        f"{self._project_context}\n"
+                        "Use this context to understand the project goals, "
+                        "architecture, current tasks, and roadmap.\n"
+                        "Update these docs via the project_tracker when you "
+                        "complete tasks or make design decisions.\n"
+                        "</project_context>"
+                    ),
+                    "_project_context": True,
+                })
+
+            # ── Inject learned improvements from SelfImprove ──
+            try:
+                from core.self_improve import get_improver
+                improver = get_improver()
+                suggestions = improver.suggest_prompt_improvements()
+                if suggestions:
+                    uil_history.insert(0, {
+                        "role": "system",
+                        "content": (
+                            "<learned_improvements>\n"
+                            "Based on past errors, follow these rules:\n"
+                            + "\n".join(f"- {s}" for s in suggestions[:5]) +
+                            "\n</learned_improvements>"
+                        ),
+                    })
+            except Exception:
+                pass
+
             # ── Auto-suggest relevant skills ──────────────────────
             suggested_skills = []
             try:
@@ -293,6 +327,13 @@ class ChatHandler:
         def _run():
             try:
                 uil_history = list(history or [])
+
+                # ── Inject working directory + project context ──
+                from pathlib import Path as _P
+                cwd = str(_P.cwd().resolve())
+                uil_history.insert(0, {"role": "system", "content": f"<working_directory>\n  You are working in: {cwd}\n  ALL files you create MUST go in this directory.\n  Use relative paths. This is the project root.\n</working_directory>", "_cwd_context": True})
+                if self._project_context:
+                    uil_history.insert(0, {"role": "system", "content": f"<project_context>\n{self._project_context}\nUse this context to understand the project goals, architecture, current tasks, and roadmap.\n</project_context>", "_project_context": True})
 
                 def _on_event(event):
                     if event["type"] == "text":

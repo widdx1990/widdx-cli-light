@@ -1004,6 +1004,8 @@ function showView(view) {
     if (window.showProjectDocsView) window.showProjectDocsView(area);
   } else if (view === 'search') {
     if (window.showSearchView) window.showSearchView(area);
+  } else if (view === 'plan') {
+    if (window.showPlanView) window.showPlanView(area);
   }
 }
 
@@ -1366,6 +1368,38 @@ document.addEventListener('DOMContentLoaded', function() {
       }).catch(function() {
         container.innerHTML = '<p style=\"color:var(--text-muted)\">Search failed. Try again.</p>';
       });
+  };
+
+  // ── Plan view — project status + task progress ───────
+  window.showPlanView = function(area) {
+    area.innerHTML = '<div style="padding:24px;max-width:900px;margin:0 auto"><h2><i class="fa-solid fa-list-check"></i> Project Plan</h2><div id="planContent">Loading…</div></div>';
+    var docs = ['PLAN.md', 'TASKS.md', 'ROADMAP.md'];
+    var loaded = 0;
+    var html = '';
+    docs.forEach(function(doc) {
+      fetch('/api/project/docs/' + doc).then(function(r){return r.json()})
+        .then(function(d){
+          loaded++;
+          var content = (d.content || '');
+          var tasks = [];
+          if (doc === 'TASKS.md') {
+            // Parse task statuses
+            var done = (content.match(/\[x\]|✅|done|completed/gi) || []).length;
+            var pending = (content.match(/\[ \]|todo|in-progress/gi) || []).length;
+            tasks.push('<span style="color:var(--success)">✅ ' + done + ' done</span>');
+            tasks.push('<span style="color:var(--warning)">⏳ ' + pending + ' pending</span>');
+            document.getElementById('planBadge').textContent = done + '/' + (done + pending);
+            document.getElementById('planBadge').style.display = '';
+          }
+          html += '<div style="background:var(--bg-card);border:1px solid var(--border-main);border-radius:12px;padding:16px;margin-bottom:12px">'
+            + '<h3 style="margin:0 0 4px;color:var(--accent-primary)">' + doc + (tasks.length ? ' <span style="font-size:14px">' + tasks.join(' · ') + '</span>' : '') + '</h3>'
+            + '<pre style="white-space:pre-wrap;font-size:13px;color:var(--text-secondary);max-height:400px;overflow-y:auto;line-height:1.5">' + (content || '(empty — start a chat to auto-create)') + '</pre>'
+            + '</div>';
+          if (loaded === docs.length) {
+            document.getElementById('planContent').innerHTML = html || '<p>No plan docs yet. Start a chat to auto-create them.</p>';
+          }
+        }).catch(function(){ loaded++; });
+    });
   };
 
   // ── Diff preview helper ──────────────────────────────
