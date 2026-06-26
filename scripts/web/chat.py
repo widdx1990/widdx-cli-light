@@ -59,6 +59,18 @@ class ChatHandler:
             except Exception:
                 self._project_context = ""
 
+            # ── Web UI: PERMISSIVE to avoid blocking agent tools ──
+            # The Web UI has no stdin for interactive Rich prompts.
+            # Permission is handled via the UI's own confirmation system.
+            try:
+                import core.permissions as _perms
+                if _perms._permission_manager is None:
+                    pm = _perms.PermissionManager()
+                    pm._level = _perms.PermissionLevel.PERMISSIVE
+                    _perms._permission_manager = pm
+            except Exception:
+                pass
+
             # Create provider from config
             from core.providers.providers import create_provider
             provider = create_provider(self._cfg)

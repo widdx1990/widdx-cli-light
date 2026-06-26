@@ -578,6 +578,7 @@ function handleWSMessage(msg) {
       S._toolCount = 0;
       updateProgress(100, 'Complete');
       setActivity('Ready', '—');
+      resetSendUI();
       break;
 
     case 'error':
@@ -593,6 +594,7 @@ function handleWSMessage(msg) {
       S._toolCount = 0;
       updateProgress(0, 'Error');
       setActivity('Ready', '—');
+      resetSendUI();
       addMsg('system', '⚠ ' + (msg.data || 'Unknown error'));
       break;
 
@@ -683,11 +685,23 @@ window.showTyping = function(on, label) {
   }
 };
 
+function resetSendUI() {
+  var stopBtn = document.getElementById('cancelBtn');
+  var sendBtn = document.getElementById('sendBtn');
+  var input = document.getElementById('messageInput');
+  if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.classList.remove('visible'); }
+  if (sendBtn) sendBtn.style.display = '';
+  if (input) input.disabled = false;
+}
+
 function cancelAgent() {
   if (S.ws && S.ws.readyState === WebSocket.OPEN) {
     S.ws.send(JSON.stringify({cancel: true}));
   }
   showTyping(false);
+  S.streaming = false;
+  S._processing = false;
+  resetSendUI();
   setActivity('Cancelled', '—');
   showToast('Task cancelled', 'info');
 }
@@ -920,6 +934,10 @@ function showView(view) {
   S.view = view;
   const area = document.getElementById('messagesArea');
   if (!area) return;
+
+  // Hide Stop button in non-Chat views (P1 #5)
+  var stopBtn = document.getElementById('cancelBtn');
+  if (stopBtn && view !== 'chat') stopBtn.style.display = 'none';
 
   // Update active nav item
   document.querySelectorAll('.nav-item').forEach(function(i) {
@@ -1162,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.toggleVoiceInput = function() {
     var micBtn = document.getElementById('micBtn');
     if (!window.webkitSpeechRecognition && !window.SpeechRecognition) {
-      showToast('Voice input not supported in this browser', 'error');
+      showToast('🎤 Voice input not supported in this browser', 'error');
       return;
     }
     if (_voiceListening) { stopVoice(); return; }
@@ -1174,20 +1192,25 @@ document.addEventListener('DOMContentLoaded', function() {
       var input = document.getElementById('messageInput');
       input.value = e.results[0][0].transcript;
       _voiceListening = false;
-      if (micBtn) micBtn.style.color = '';
+      if (micBtn) { micBtn.style.color = ''; micBtn.classList.remove('listening'); }
+      showToast('🎤 Voice captured!', 'success');
       sendMessage();
     };
-    _recognition.onerror = function() { stopVoice(); };
+    _recognition.onerror = function(e) {
+      stopVoice();
+      var msgs = {'not-allowed': 'Microphone access denied', 'no-speech': 'No speech detected', 'audio-capture': 'No microphone found', 'network': 'Network error'};
+      showToast('🎤 ' + (msgs[e.error] || e.error || 'Voice error'), 'error');
+    };
     _recognition.start();
     _voiceListening = true;
-    if (micBtn) micBtn.style.color = '#f04848';
-    showToast('Listening...', 'info');
+    if (micBtn) { micBtn.style.color = '#f04848'; micBtn.classList.add('listening'); }
+    showToast('🎤 Listening...', 'info');
   };
   function stopVoice() {
     _voiceListening = false;
-    if (_recognition) { _recognition.stop(); _recognition = null; }
+    if (_recognition) { try { _recognition.stop(); } catch(e) {} _recognition = null; }
     var micBtn = document.getElementById('micBtn');
-    if (micBtn) micBtn.style.color = '';
+    if (micBtn) { micBtn.style.color = ''; micBtn.classList.remove('listening'); }
   }
 
   // ── Image upload (vision) ────────────────────────────
