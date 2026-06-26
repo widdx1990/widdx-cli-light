@@ -4,7 +4,6 @@ Synchronous core logic.  The UI layer (MainScreen) wraps calls in
 ``@work(thread=True)`` to keep the interface responsive.
 """
 
-import json
 from pathlib import Path
 from textual.message import Message
 from core import tools as core_tools
@@ -196,7 +195,6 @@ class ChatEngine:
 
         if is_bg_task:
             from core.background import background
-            from core.sandbox import SandboxExecutor
             task_id = background.run(text, sandbox_mode="auto", on_done=lambda t: (
                 self.app.call_from_thread(
                     self.screen._log_message, "system",

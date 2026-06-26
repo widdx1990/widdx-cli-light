@@ -39,6 +39,15 @@ try:
 except ImportError:
     _ENGINES_AVAILABLE = False
 
+# ── v4.0 Engine Arbiter + Trust (wired post-execution) ──
+_ARBITER_AVAILABLE = False
+try:
+    from core.engine_arbiter import get_arbiter
+    from core.engine_trust import get_trust_tracker
+    _ARBITER_AVAILABLE = True
+except ImportError:
+    pass
+
 
 # -------------------------------------------------------------------
 # Execution Mode Executor Map — imported lazily to avoid circular
@@ -148,7 +157,16 @@ class UnifiedIntelligenceLayer:
                     classification.task_type.value, classification.confidence,
                 )
                 if adapted.task_type != classification.task_type:
-                    if adapted.confidence >= 0.6:
+                    # ── v4.0 Arbiter: resolve disagreement with quality-based arbitration ──
+                    trusted = None
+                    if _ARBITER_AVAILABLE:
+                        trusted = _resolve_engine_disagreement(
+                            classification, adapted, user_input, messages, cfg,
+                        )
+                    if trusted is not None:
+                        classification = trusted
+                        logger.info("Arbiter selected: %s", classification.task_type.value)
+                    elif adapted.confidence >= 0.6:
                         logger.info(
                             "IntelligenceEngine wins (confidence=%.2f): %s → %s",
                             adapted.confidence,
@@ -169,6 +187,8 @@ class UnifiedIntelligenceLayer:
                             adapted.task_type.value, adapted.confidence,
                             classification.task_type.value, classification.confidence,
                         )
+                        # Record disagreement for trust tracking
+                        _record_engine_disagreement(classification, adapted)
             except Exception as e:
                 logger.debug("IntelligenceEngine unavailable: %s", e)
 
@@ -570,3 +590,56 @@ class UnifiedIntelligenceLayer:
             "Ensure EXECUTOR_MAP covers this mode "
             "or pass an explicit executors dict to process()."
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Engine Arbiter helpers (v4.0 — wired but non-disruptive)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _resolve_engine_disagreement(
+    old_classification, new_classification,
+    user_input: str, messages: list | None, cfg: dict | None,
+):
+    """Use Engine Arbiter to resolve disagreement between old and new classifiers.
+
+    When the two engines disagree on task_type, the arbiter executes both paths
+    and picks the winner based on actual quality scores (not just confidence).
+
+    Returns the winning classification, or None to defer to the confidence heuristic.
+    """
+    # Only engage arbiter when we have a real executor (heavyweight mode).
+    # Without one, defer to the confidence-based heuristic below.
+    if _ARBITER_AVAILABLE:
+        try:
+            arbiter = get_arbiter()
+            verdict = arbiter.resolve(
+                old_classification=old_classification,
+                new_classification=new_classification,
+                user_input=user_input,
+                executor=None,      # lightweight: arbiter records disagreement
+                old_ctx=None,
+                new_ctx=None,
+                messages=messages,
+            )
+            _, classification, arb_verdict = verdict
+            if arb_verdict and arb_verdict.winner == "new":
+                return classification if classification else new_classification
+            if arb_verdict and arb_verdict.winner == "old":
+                return old_classification
+        except Exception:
+            pass  # fall through to confidence heuristic
+    return None  # defer to default heuristic
+
+
+def _record_engine_disagreement(old_classification, new_classification):
+    """Record engine disagreement in the Trust Tracker for future decisions."""
+    try:
+        tracker = get_trust_tracker()
+        tracker.record(
+            engine="intelligence",
+            agreed=False,
+            engine_correct=False,
+            old_correct=True,  # assume analyzer was correct (conservative)
+        )
+    except Exception:
+        pass

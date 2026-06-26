@@ -4,15 +4,8 @@ Each command is a method on CommandHandler.  The handler is attached
 to the app and calls back into it for UI operations.
 """
 
-from pathlib import Path
-from core import tools
 from core.memory import MemoryStore
-from core.providers.providers import fetch_free_models, fetch_ollama_models, create_provider
-from core.project import state as project_state
-from core.project.git import auto_commit
 from core.skills import skill_manager
-from core.utils import get_last_turn
-from core.memory_learner import MemoryLearner
 from core.diagnostics import audit_silent_errors
 import os
 
@@ -87,12 +80,6 @@ class CommandHandler:
             mem = MemoryStore()
             mem.save(f"note-{len(fact[:20])}", fact, {"type": "feedback"})
             self.app._log_message("system", f"✓ Remembered: {fact[:80]}")
-            # Memory already saved above — pattern extraction done
-            try:
-                learner = MemoryLearner(provider=state.provider)
-                logger.debug("Memory saved: %s", fact[:50])
-            except Exception as e:
-                logger.debug("Memory note: %s", e)
             self.app._show_chat()
 
         # ── Debug ─────────────────────────────────────────
@@ -183,7 +170,6 @@ class CommandHandler:
             elif sub.startswith("say "):
                 text = sub[4:].strip()
                 if text:
-                    import asyncio
                     voice = tts.auto_voice(text)
                     self.app._log_message("system", f"🔊 Speaking ({voice})...")
                     path = tts.speak_sync(text)
@@ -239,7 +225,7 @@ class CommandHandler:
 
         # ── Gateway / Multi-Channel ──────────────────────
         elif cmd == "/gateway":
-            from core.gateway import GatewayCore, Platform
+            from core.gateway import GatewayCore
             sub = parts[1].strip() if len(parts) > 1 else ""
 
             if sub == "start" or sub == "all":

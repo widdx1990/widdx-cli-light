@@ -119,8 +119,8 @@ ALL_MODULES = [
     # Scripts
     "scripts",
     "scripts.api_server",
-    "scripts.main",
     "scripts.run_textual",
+    "scripts.web_app",
 ]
 
 

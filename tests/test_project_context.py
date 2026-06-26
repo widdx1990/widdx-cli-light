@@ -42,69 +42,36 @@ def test_project_context():
 
 
 def test_project_structure():
-    """Test project structure analysis"""
-    print("=" * 60)
-    print("Testing Project Structure Analyzer")
-    print("=" * 60)
-    print()
-    
-    try:
-        scanner = ProjectScanner()
-        print("✅ Structure analyzer initialized!")
-        
-        structure = scanner.analyze()
-        print(f"✅ Structure analyzed! Root: {structure.name}")
-        print()
-        
-        summary = scanner.get_structure_summary()
-        print("📁 Project Structure:")
-        print("-" * 60)
-        print(summary)
-        print()
-        
-        extensions = scanner.get_file_extensions()
-        print(f"📊 File extensions found:")
-        for ext, count in sorted(extensions.items(), key=lambda x: -x[1]):
-            print(f"  .{ext}: {count} files")
-        print()
-        
-        print("✅ Project structure test passed!")
-        assert True
-    except Exception as e:
-        print(f"❌ Project structure test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        raise AssertionError(f"Project structure test failed: {e}") from e
+    """Test project structure analysis via ProjectScanner.scan()."""
+    scanner = ProjectScanner()
+    assert scanner is not None
+
+    card = scanner.scan()
+    assert card is not None, "scan() should return a ProjectCard"
+    assert isinstance(card.file_count, int), "file_count must be int"
+    assert card.file_count > 0, f"Expected files in project, got {card.file_count}"
+    assert isinstance(card.languages, dict), "languages must be dict"
+    assert card.root_name, "root_name must not be empty"
 
 
 def test_file_search():
-    """Test file search functionality"""
-    print("=" * 60)
-    print("Testing File Search")
-    print("=" * 60)
-    print()
-    
-    try:
-        scanner = ProjectScanner()
-        
-        search_patterns = ["py", "readme", "json"]
-        for pattern in search_patterns:
-            results = scanner.search_files(pattern)
-            print(f"🔍 Searching for '{pattern}': {len(results)} results")
-            if results:
-                for i, path in enumerate(results[:5], 1):
-                    print(f"  {i}. {Path(path).relative_to(Path.cwd())}")
-                if len(results) > 5:
-                    print(f"  ... and {len(results) - 5} more")
-        print()
-        
-        print("✅ File search test passed!")
-        assert True
-    except Exception as e:
-        print(f"❌ File search test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        raise AssertionError(f"File search test failed: {e}") from e
+    """Test project file discovery via ProjectScanner.scan()."""
+    scanner = ProjectScanner()
+    card = scanner.scan()
+
+    # Verify common file types are detected in this Python project
+    lang_keys = {k.lower() for k in card.languages.keys()}
+    expected = {"python", "markdown", "json"}
+    found = expected & lang_keys
+    assert len(found) >= 2, (
+        f"Expected at least 2 of {expected} in project languages, "
+        f"got: {list(card.languages.keys())}"
+    )
+
+    # Verify framework markers
+    assert len(card.frameworks) > 0, (
+        f"Expected at least one framework detected, got: {card.frameworks}"
+    )
 
 
 def main():

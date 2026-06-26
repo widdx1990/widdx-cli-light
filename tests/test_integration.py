@@ -12,7 +12,6 @@ Tests the full validation and project verification workflow.
 import tempfile
 import shutil
 import os
-import json
 
 from core import tools
 
@@ -61,7 +60,8 @@ class MockProvider:
         yield {"type": "done", "data": ("", [tc])}
 
 
-def run_test():
+def test_integration_workflow():
+    """Integration test: mock provider + agent validates auto-validate logic."""
     tmp = tempfile.mkdtemp(prefix="widdx_test_")
     try:
         # Configure sandbox so tools.write/edit are allowed only inside tmp
@@ -79,35 +79,17 @@ def run_test():
         system_prompt = "PROJECT_DIR: %s" % tmp
         agent = AutonomousAgent(provider, tools.TOOL_DEFINITIONS, cfg, state, custom_prompt=system_prompt)
 
-        steps, summary = agent.run("Create a valid HTML file in PROJECT_DIR and validate it")
+        steps, _summary = agent.run("Create a valid HTML file in PROJECT_DIR and validate it")
 
-        print("=" * 80)
-        print("INTEGRATION TEST: Auto-Validate Workflow")
-        print("=" * 80)
-        print("\nSUMMARY:")
-        print(summary)
-        print("\nSTEPS:")
-        for s in steps:
-            print(json.dumps(s.to_dict(), ensure_ascii=False, indent=2))
-
-        # Inspect written file
+        # Verify file was created
         fp = os.path.join(tmp, "index.html")
-        print('\n' + "=" * 80)
-        print("FILE VERIFICATION")
-        print("=" * 80)
-        print('File exists:', os.path.exists(fp))
-        if os.path.exists(fp):
-            print('File contents:\n', open(fp, 'r', encoding='utf-8').read())
-        
-        # Check that agent performed write and validate steps
+        assert os.path.exists(fp), f"Expected file not found: {fp}"
+        assert os.path.getsize(fp) > 0, "File is empty"
+
+        # Verify write step was performed
         tool_names = [s.tool_name for s in steps]
-        print('\nTools called:', tool_names)
-        print('Write steps:', tool_names.count('write'))
-        print('Validate steps:', tool_names.count('validate'))
+        assert 'write' in tool_names, f"Expected 'write' step, got: {tool_names}"
+        assert len(steps) > 0, "Expected at least one execution step"
 
     finally:
         shutil.rmtree(tmp)
-
-
-if __name__ == '__main__':
-    run_test()

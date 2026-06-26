@@ -122,8 +122,8 @@ def test_uil_no_global_expert_team_import():
 
 
 def test_main_py_uses_uil_not_expert_team():
-    """Main entry point delegates to scripts.main — no direct ExpertTeam usage."""
+    """Main entry point delegates to scripts.web_app — no direct ExpertTeam usage."""
     source = (Path(__file__).parent.parent / "main.py").read_text(encoding="utf-8-sig")
-    # main.py is now a lightweight redirect to scripts.main
-    assert "from scripts.main import run" in source
+    # main.py is now a lightweight redirect to scripts.web_app (1 less hop)
+    assert "from scripts.web_app import main as run" in source
     assert "expert team handles everything" not in source

@@ -4,13 +4,16 @@ Session V2 - Durable Session Management
 Inspired by OpenCode's Session Architecture
 """
 
+from __future__ import annotations
 from pathlib import Path
+from typing import Any
 
 from .database import get_db
 
 
 class SessionV2:
-    def __init__(self, session_id=None, name="New Session", branch="main", db=None):
+    def __init__(self, session_id: str | None = None, name: str = "New Session",
+                 branch: str = "main", db: Any = None):
         self.db = db if db is not None else get_db()
         if session_id:
             existing = self.db.get_session(session_id)
@@ -28,27 +31,27 @@ class SessionV2:
         self._messages = []
     
     @property
-    def messages(self):
+    def messages(self) -> list[dict]:
         return self._messages.copy()
-    
-    def add_message(self, role, content, tool_calls=None):
+
+    def add_message(self, role: str, content: str, tool_calls: Any = None) -> str:
         msg_id = self.db.add_message(self.id, role, content, tool_calls)
         self._messages = self.db.get_messages(self.id)
         return msg_id
-    
-    def clear(self):
+
+    def clear(self) -> None:
         self.db.clear_messages(self.id)
         self._messages = []
-    
-    def rename(self, new_name):
+
+    def rename(self, new_name: str) -> None:
         self.name = new_name
         self.db.update_session(self.id, name=new_name)
-    
-    def switch_branch(self, new_branch):
+
+    def switch_branch(self, new_branch: str) -> None:
         self.branch = new_branch
         self.db.update_session(self.id, branch=new_branch)
-    
-    def get_context(self, max_tokens=8000, max_messages=None):
+
+    def get_context(self, max_tokens: int = 8000, max_messages: int | None = None) -> list[dict]:
         messages = self._messages.copy()
         if max_messages:
             if len(messages) > max_messages:
@@ -72,12 +75,12 @@ class SessionV2:
         return trimmed
     
     @staticmethod
-    def list_sessions(branch=None, limit=50):
+    def list_sessions(branch: str | None = None, limit: int = 50) -> list[dict]:
         db = get_db()
         return db.list_sessions(branch, limit)
-    
+
     @staticmethod
-    def delete(session_id):
+    def delete(session_id: str) -> None:
         db = get_db()
         db.delete_session(session_id)
     
@@ -182,21 +185,26 @@ class SessionV2:
         }
 
 
-_current_session = None
+_current_session: SessionV2 | None = None
 
-def get_current_session():
+
+def get_current_session() -> SessionV2 | None:
     return _current_session
 
-def set_current_session(session):
+
+def set_current_session(session: SessionV2) -> None:
     global _current_session
     _current_session = session
 
-def create_new_session(name="New Session", branch="main", db=None):
+
+def create_new_session(name: str = "New Session", branch: str = "main",
+                       db: Any = None) -> SessionV2:
     session = SessionV2(name=name, branch=branch, db=db)
     set_current_session(session)
     return session
 
-def load_session(session_id):
+
+def load_session(session_id: str) -> SessionV2:
     session = SessionV2(session_id=session_id)
     if session:
         set_current_session(session)

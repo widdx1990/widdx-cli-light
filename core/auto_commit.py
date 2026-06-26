@@ -12,18 +12,9 @@ Usage:
 import logging
 
 logger = logging.getLogger("widdx.auto_commit")
-    # ... agent runs ...
-    if success:
-        acm.commit_if_success("add login feature")
-    else:
-        acm.rollback_if_failure()
-"""
 
-import subprocess, time
+import subprocess
 from pathlib import Path
-from typing import Optional
-
-CO_AUTHOR = "Co-Authored-By: WIDDX <widdx@agent.local>"
 
 
 class AutoCommitManager:
@@ -52,7 +43,7 @@ class AutoCommitManager:
         if not new_changes:
             return None
 
-        return self._commit(f"[WIDDX] {description}", list(new_changes))
+        return self._commit(f"[WIDDX] {description}")
 
     def rollback_if_failure(self) -> bool:
         """Restore files that were changed during the task.
@@ -102,27 +93,19 @@ class AutoCommitManager:
             logger.warning("Auto-commit error: %s", e)
             return None
 
-    def _commit(self, message: str, files: list[str]) -> str | None:
+    def _commit(self, message: str) -> str | None:
+        """Commit changes using the canonical auto_commit from core.project.git."""
         try:
-            subprocess.run(
-                ["git", "add"] + files,
-                capture_output=True, timeout=10,
-                cwd=str(self._repo),
-            )
-            msg = f"{message}\n\n{CO_AUTHOR}"
-            r = subprocess.run(
-                ["git", "commit", "-m", msg],
-                capture_output=True, text=True, timeout=10,
-                cwd=str(self._repo),
-            )
-            if r.returncode == 0:
-                # Extract commit hash
-                r2 = subprocess.run(
+            from core.project.git import auto_commit as git_auto_commit
+            success = git_auto_commit(str(self._repo), message)
+            if success:
+                # Extract commit hash for the return value
+                r = subprocess.run(
                     ["git", "log", "-1", "--format=%H"],
                     capture_output=True, text=True, timeout=5,
                     cwd=str(self._repo),
                 )
-                return (r2.stdout or "").strip()[:12] or None
+                return (r.stdout or "").strip()[:12] or None
             return None
         except Exception as e:
             logger.warning("Auto-commit error: %s", e)

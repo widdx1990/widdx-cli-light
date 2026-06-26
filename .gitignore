@@ -53,6 +53,8 @@ chat_*.json
 
 # Build artifacts
 /build/
+/dist/
+*.whl
 
 # Private developer docs (removed from history)
 PLAN_PHASE*.md
@@ -71,3 +73,7 @@ _debug_brain.py
 
 # Log files
 *.log
+
+# Database files
+*.db
+*.sqlite

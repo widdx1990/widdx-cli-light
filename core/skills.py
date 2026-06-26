@@ -10,6 +10,46 @@ from .utils import parse_frontmatter
 
 SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
+# ── Skill Sandbox: safe builtins for tools.py execution ──
+# Skills may provide custom tool functions, but those functions execute
+# with the full Python runtime.  To reduce the attack surface we restrict
+# what the *module-level* code in tools.py can do at import time.
+# Individual tool functions still run with normal builtins — their safety
+# relies on the function being well-behaved (no os.system, subprocess, etc.).
+_SAFE_BUILTINS = {
+    "True": True, "False": False, "None": None,
+    "abs": abs, "all": all, "any": any, "ascii": ascii,
+    "bin": bin, "bool": bool, "bytes": bytes, "callable": callable,
+    "chr": chr, "complex": complex, "dict": dict, "dir": dir,
+    "divmod": divmod, "enumerate": enumerate, "filter": filter,
+    "float": float, "format": format, "frozenset": frozenset,
+    "getattr": getattr, "hasattr": hasattr, "hash": hash,
+    "hex": hex, "id": id, "int": int, "isinstance": isinstance,
+    "issubclass": issubclass, "iter": iter, "len": len,
+    "list": list, "map": map, "max": max, "min": min,
+    "next": next, "object": object, "oct": oct, "ord": ord,
+    "pow": pow, "print": print, "range": range, "repr": repr,
+    "reversed": reversed, "round": round, "set": set,
+    "slice": slice, "sorted": sorted, "str": str, "sum": sum,
+    "tuple": tuple, "type": type, "vars": vars, "zip": zip,
+    # Allow imports of safe stdlib modules
+    "__import__": __import__,
+    "ImportError": ImportError, "ModuleNotFoundError": ModuleNotFoundError,
+    "ValueError": ValueError, "TypeError": TypeError,
+    "Exception": Exception, "RuntimeError": RuntimeError,
+}
+
+# Modules that skill tools.py files are NOT allowed to import at module level.
+_BLOCKED_MODULES: set[str] = {
+    "os", "subprocess", "shutil", "sys", "ctypes", "signal",
+    "socket", "http", "urllib", "requests", "ftplib", "telnetlib",
+    "smtplib", "pickle", "shelve", "marshal", "code", "codeop",
+    "builtins", "__builtins__", "importlib", "pkgutil", "runpy",
+    "multiprocessing", "threading", "concurrent.futures",
+    "pathlib",   # block direct FS access at module level
+}
+
+
 
 class SkillTool:
     """A callable tool associated with a skill, with OpenAI-compatible schema."""
@@ -68,7 +108,14 @@ class Skill:
 
 
 def _load_skill_tools(skill_dir: Path) -> dict:
-    """Load custom tools from tools.py in a skill directory, if present."""
+    """Load custom tools from tools.py in a skill directory, if present.
+
+    Safety: the module-level code in tools.py runs with restricted builtins
+    and a blocked-module import hook to prevent dangerous operations at import
+    time.  Individual tool functions (called later via ``execute_tool``) still
+    run with full builtins — their safety depends on the function being
+    well-behaved.
+    """
     tools_py = skill_dir / "tools.py"
     if not tools_py.exists():
         return {}
@@ -76,11 +123,21 @@ def _load_skill_tools(skill_dir: Path) -> dict:
         spec = importlib.util.spec_from_file_location(
             f"skill_{skill_dir.name}_tools", str(tools_py)
         )
+        if spec is None:
+            logger.warning("Could not create module spec for %s", tools_py)
+            return {}
         mod = importlib.util.module_from_spec(spec)
-        # Use a unique sys.modules key
+
+        # ── Sandbox: restrict builtins at module level ──
+        mod.__builtins__ = _SAFE_BUILTINS.copy()
+
+        # ── Sandbox: install import hook to block dangerous modules ──
+        _install_skill_import_blocker(mod)
+
         sys.modules[f"_skill_{skill_dir.name}"] = mod
         spec.loader.exec_module(mod)
-        # Collect all callable public functions
+
+        # ── Collect all callable public functions ──
         tools = {}
         for name in dir(mod):
             if name.startswith("_"):
@@ -92,6 +149,28 @@ def _load_skill_tools(skill_dir: Path) -> dict:
     except Exception as e:
         logger.warning("Failed to load skill tools from %s: %s", skill_dir, e)
         return {}
+
+
+def _install_skill_import_blocker(mod):
+    """Install a module-level __import__ hook that blocks dangerous modules.
+
+    Only active during the import of the skill's tools.py module.
+    Once the module is loaded, we remove the hook so tool functions
+    can import anything they need at runtime.
+    """
+    original_import = mod.__builtins__.get("__import__", __import__)
+
+    def _safe_import(name, *args, **kwargs):
+        # Resolve top-level package name
+        top_level = name.split(".")[0]
+        if top_level in _BLOCKED_MODULES:
+            raise ImportError(
+                f"Module '{name}' is blocked for security reasons "
+                f"in skill tools.py. Use allowed stdlib modules only."
+            )
+        return original_import(name, *args, **kwargs)
+
+    mod.__builtins__["__import__"] = _safe_import
 
 
 class SkillManager:

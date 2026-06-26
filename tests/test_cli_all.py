@@ -8,70 +8,67 @@ by passing explicit arguments.
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from cli.app import CLIApp
-
-# ── Boot ──────────────────────────────────────────────────────────
-app = CLIApp()
-app.startup()
 
 # ── Command test matrix ───────────────────────────────────────────
-# Each entry: command string (argument already embedded)
+# Each entry: (command, should_exit)
 COMMANDS = [
-    "/help",
-    "/clear",
-    "/model",
-    "/provider opencode-zen",   # preset bypasses interactive prompt
-    "/tools",
-    "/skills",
-    "/history",
-    "/save",
-    "/load .",
-    "/export",
-    "/remember test-fact-from-cli-test",
-    "/memories",
-    "/manifest",
-    "/reasoning",
-    "/debug",
-    "/doctor",
-    "/undo",
-    "/proxy",
-    "/sandbox .",
-    "/mcp",
-    "/gguf",
-    "/branch list",
-    "/version",
-    "/permissions",
-    "/apikey show",
-    "/exit",          # caught via SystemExit — does NOT terminate test
+    ("/help", False),
+    ("/clear", False),
+    ("/model", False),
+    ("/provider opencode-zen", False),   # preset bypasses interactive prompt
+    ("/tools", False),
+    ("/skills", False),
+    ("/history", False),
+    ("/save", False),
+    ("/load .", False),
+    ("/export", False),
+    ("/remember test-fact-from-cli-test", False),
+    ("/memories", False),
+    ("/manifest", False),
+    ("/reasoning", False),
+    ("/debug", False),
+    ("/doctor", False),
+    ("/undo", False),
+    ("/proxy", False),
+    ("/sandbox .", False),
+    ("/mcp", False),
+    ("/gguf", False),
+    ("/branch list", False),
+    ("/version", False),
+    ("/permissions", False),
+    ("/apikey show", False),
 ]
 
-# ── Run ───────────────────────────────────────────────────────────
-print("\n=== WIDDX CLI — Comprehensive connectivity test ===\n")
 
-passed = 0
-failed = 0
-skipped = 0
+@pytest.fixture(scope="module")
+def cli_app():
+    """Create ONE CLIApp for the entire test module to save startup time."""
+    from cli.app import CLIApp
+    app = CLIApp()
+    app.startup()
+    return app
 
-for cmd in COMMANDS:
-    print(f"  ▸ {cmd}")
+
+@pytest.mark.parametrize("cmd,should_exit", COMMANDS)
+def test_cli_command(cmd, should_exit, cli_app):
+    """Each slash command runs without error."""
     try:
-        app.cmds.handle(cmd.strip(), app.provider, app.state, app.messages)
-        passed += 1
+        cli_app.cmds.handle(cmd.strip(), cli_app.provider, cli_app.state, cli_app.messages)
     except SystemExit:
-        print("    ↳ [exit command — caught, skipping]")
-        skipped += 1
+        if should_exit:
+            return  # expected exit
+        pytest.fail(f"Unexpected SystemExit from command: {cmd}")
     except Exception as exc:
-        print(f"    ↳ ERROR: {exc}")
-        failed += 1
+        pytest.fail(f"Command '{cmd}' raised {type(exc).__name__}: {exc}")
 
-print()
-print(f"=== Results: {passed} passed | {failed} failed | {skipped} skipped ===")
-if failed == 0:
-    print("✅  All commands working correctly.\n")
-else:
-    print(f"❌  {failed} command(s) need attention.\n")
-    sys.exit(1)
+
+def test_exit_command(cli_app):
+    """Exit command raises SystemExit (expected)."""
+    with pytest.raises(SystemExit):
+        cli_app.cmds.handle("/exit", cli_app.provider, cli_app.state, cli_app.messages)

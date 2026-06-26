@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import signal
 import threading
 import time
 import uuid
@@ -198,6 +199,27 @@ class BackgroundTaskManager:
             if to_remove:
                 logger.debug("Cleaned %d old background tasks", len(to_remove))
 
+    def shutdown(self, timeout: float = 5.0):
+        """Cancel all running tasks and wait for threads to finish.
+
+        Called during graceful shutdown (SIGINT/SIGTERM).
+        """
+        running: list[BackgroundTask] = []
+        with self._lock:
+            for t in self._tasks.values():
+                if t.status == TaskStatus.RUNNING:
+                    t.status = TaskStatus.CANCELLED
+                    running.append(t)
+
+        if not running:
+            return
+
+        logger.info("Shutting down %d background task(s)...", len(running))
+        for t in running:
+            if t.thread and t.thread.is_alive():
+                t.thread.join(timeout=timeout)
+        logger.info("Background tasks shut down complete.")
+
     @property
     def active_count(self) -> int:
         """Number of currently running tasks."""
@@ -207,3 +229,41 @@ class BackgroundTaskManager:
 
 # Global singleton
 background = BackgroundTaskManager()
+
+
+# ── Graceful shutdown handler ───────────────────────────────────
+_shutdown_callbacks: list[Callable[[], None]] = []
+
+
+def register_shutdown(callback: Callable[[], None]):
+    """Register a cleanup callback for graceful shutdown."""
+    _shutdown_callbacks.append(callback)
+
+
+def _handle_shutdown(signum, frame):
+    """Signal handler for SIGINT/SIGTERM — runs all cleanup callbacks."""
+    sig_name = signal.Signals(signum).name
+    logger.info("Received %s — graceful shutdown...", sig_name)
+    for cb in _shutdown_callbacks:
+        try:
+            cb()
+        except Exception:
+            logger.exception("Shutdown callback failed: %s", cb)
+
+    # Cancel background tasks
+    background.shutdown()
+
+    # Give threads a moment, then force exit
+    import os
+    os._exit(0 if signum == signal.SIGTERM else 0)
+
+
+# Register signal handlers if not already registered
+for _sig in (signal.SIGINT, signal.SIGTERM):
+    try:
+        prev = signal.signal(_sig, _handle_shutdown)
+        if prev == signal.SIG_DFL or prev == signal.SIG_IGN:
+            logger.debug("Registered %s handler", signal.Signals(_sig).name)
+    except (ValueError, OSError):
+        # Cannot set signal in this context (e.g., non-main thread)
+        pass

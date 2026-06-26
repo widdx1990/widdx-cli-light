@@ -68,9 +68,9 @@ def _project_changed(project_dir: Path, extra_ignore: list | None = None) -> boo
     _last_index_hash = current_hash
     return True
 
-from core import config, tools
-from core.config.settings import load as load_config, save as save_config
-from core.providers.providers import create_provider, estimate_turn_cost
+from core import tools
+from core.config.settings import load as load_config
+from core.providers.providers import create_provider
 from core.mcp.client import get_mcp_manager
 from core.project import state as project_state
 from core.project.scanner import ProjectScanner
@@ -83,7 +83,6 @@ from core.skills import skill_manager
 from core.uil import UnifiedIntelligenceLayer, ExecutionMode
 from core.agents.executor_adapter import EXECUTOR_MAP
 from core.workflow import WorkflowEngine
-from core.proxy import proxy_manager
 from core.config.keychain import prompt_key, has_key
 
 from .display import (
@@ -399,6 +398,17 @@ class CLIApp:
             if self.state.get("turns", 0) % 4 == 0 and self.state.get("turns", 0) > 0:
                 from core.self_reflection import reflect_on_last_turn
                 reflect_on_last_turn(self.provider, self.messages, self.state)
+        except Exception:
+            pass
+
+        # Self-improvement: learn from errors
+        try:
+            last_error = self.state.get("last_error")
+            if last_error:
+                from core.self_improve import get_improver
+                improver = get_improver()
+                improver.record_error("chat_turn", str(last_error)[:200], "unresolved")
+                self.state["last_error"] = None  # clear after learning
         except Exception:
             pass
 

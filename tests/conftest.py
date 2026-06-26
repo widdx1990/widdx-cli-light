@@ -19,7 +19,13 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def clear_knowledge():
-    """Clear persistent KnowledgeBase before each test to avoid cross-test contamination."""
+    """Clear persistent KnowledgeBase before each test to avoid cross-test contamination.
+
+    .. note::
+       Kept as ``autouse=True`` because the KnowledgeBase is a process-level
+       singleton and many UIL/Brain tests depend on a clean slate.
+       Removing autouse causes ~16 test regressions.
+    """
     try:
         from core.uil.knowledge import KnowledgeBase
         kb = KnowledgeBase()

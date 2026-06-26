@@ -311,7 +311,7 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
         try:
             from core.self_improve import get_improver
             improver = get_improver()
-            improver.learn_from_error(last_error, state.get("model", ""))
+            improver.record_error("chat_turn", str(last_error)[:200], "unresolved")
         except Exception:
             pass
 

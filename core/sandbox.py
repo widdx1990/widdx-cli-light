@@ -252,6 +252,23 @@ class SandboxExecutor:
         Returns:
             SandboxResult with full output and metadata.
         """
+        # ── Security: guard check before execution ──
+        try:
+            from core.guard import guard
+            guard_result = guard.check(command)
+            if guard_result.blocked:
+                return SandboxResult(
+                    stdout="",
+                    stderr=f"BLOCKED: {guard_result.reason}",
+                    exit_code=-1,
+                    was_timeout=False,
+                    mode="guard",
+                )
+            if guard_result.warn:
+                logger.warning("Guard warning for '%s': %s", command[:80], guard_result.reason)
+        except ImportError:
+            pass  # guard module optional — proceed without it
+
         mode = self._resolve_mode()
         t0 = time.perf_counter()
 

@@ -7,13 +7,14 @@ SQLite-based persistent storage for sessions, memories, and history
 import sqlite3
 import json
 import uuid
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 
 
-def get_db_path(project_dir=None):
+def get_db_path(project_dir: str | Path | None = None) -> Path:
     if project_dir is None:
         project_dir = Path.cwd()
     else:
@@ -24,7 +25,7 @@ def get_db_path(project_dir=None):
 
 
 class Database:
-    def __init__(self, db_path=None):
+    def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
             db_path = get_db_path()
         self.db_path = db_path
@@ -37,60 +38,127 @@ class Database:
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
     
+    # Schema version that the current code expects.
+    # Increment this when you add a new migration to _MIGRATIONS.
+    CURRENT_SCHEMA_VERSION = 1
+
+    _MIGRATIONS: list[tuple[int, str]] = [
+        # (version, sql_statement) — applied in order when version > current
+        (1, """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                branch TEXT DEFAULT 'main',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                metadata TEXT DEFAULT '{}'
+            )
+        """),
+        (1, """
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tool_calls TEXT,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            )
+        """),
+        (1, """
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                content TEXT NOT NULL,
+                memory_type TEXT DEFAULT 'general',
+                tags TEXT DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+        """),
+        (1, """
+            CREATE TABLE IF NOT EXISTS provider_stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_name TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                success_count INTEGER DEFAULT 0,
+                failure_count INTEGER DEFAULT 0,
+                avg_response_time REAL DEFAULT 0,
+                last_used INTEGER,
+                UNIQUE(provider_name, model_name)
+            )
+        """),
+    ]
+
+    _INDEX_MIGRATIONS: list[tuple[int, str]] = [
+        (1, "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)"),
+        (1, "CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC)"),
+        (1, "CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type)"),
+        (1, "CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)"),
+    ]
+
     def _init_db(self):
+        """Initialise the database and run any pending migrations."""
         with self._get_conn() as conn:
+            # ── Schema version tracking ──
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    branch TEXT DEFAULT 'main',
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL,
-                    metadata TEXT DEFAULT '{}'
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at INTEGER NOT NULL
                 )
             """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    tool_calls TEXT,
-                    timestamp INTEGER NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS memories (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    content TEXT NOT NULL,
-                    memory_type TEXT DEFAULT 'general',
-                    tags TEXT DEFAULT '[]',
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS provider_stats (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    provider_name TEXT NOT NULL,
-                    model_name TEXT NOT NULL,
-                    success_count INTEGER DEFAULT 0,
-                    failure_count INTEGER DEFAULT 0,
-                    avg_response_time REAL DEFAULT 0,
-                    last_used INTEGER,
-                    UNIQUE(provider_name, model_name)
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)")
+            self._migrate(conn)
             conn.commit()
+
+    def _migrate(self, conn):
+        """Run pending migrations in version order."""
+        current = self._get_schema_version(conn)
+
+        # Collect all migration steps (table + index) and sort by version
+        all_steps: list[tuple[int, str]] = []
+        for v, sql in self._MIGRATIONS:
+            if v > current:
+                all_steps.append((v, sql))
+        for v, sql in self._INDEX_MIGRATIONS:
+            if v > current:
+                all_steps.append((v, sql))
+        all_steps.sort(key=lambda x: x[0])
+
+        if not all_steps:
+            return
+
+        logger = logging.getLogger("widdx.db")
+        max_v = current
+        for v, sql in all_steps:
+            try:
+                conn.execute(sql)
+                if v > max_v:
+                    max_v = v
+            except Exception as e:
+                logger.warning("Migration v%d failed: %s", v, e)
+                raise
+
+        # Record the highest version applied
+        if max_v > current:
+            now = int(datetime.now().timestamp())
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
+                (max_v, now),
+            )
+            logger.info("Database migrated to schema v%d", max_v)
+
+    def _get_schema_version(self, conn) -> int:
+        """Return the current schema version, or 0 if never migrated."""
+        try:
+            row = conn.execute(
+                "SELECT MAX(version) FROM schema_version"
+            ).fetchone()
+            return row[0] if row and row[0] is not None else 0
+        except Exception:
+            return 0
     
-    def create_session(self, name, branch="main", metadata=None):
+    def create_session(self, name: str, branch: str = "main", metadata: dict | None = None) -> str:
         session_id = str(uuid.uuid4())
         now = int(datetime.now().timestamp())
         with self._get_conn() as conn:
@@ -101,7 +169,7 @@ class Database:
             conn.commit()
         return session_id
     
-    def get_session(self, session_id):
+    def get_session(self, session_id: str) -> dict | None:
         with self._get_conn() as conn:
             row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if row:
@@ -115,7 +183,7 @@ class Database:
                 }
         return None
     
-    def list_sessions(self, branch=None, limit=50):
+    def list_sessions(self, branch: str | None = None, limit: int = 50) -> list[dict]:
         with self._get_conn() as conn:
             if branch:
                 rows = conn.execute(
@@ -174,7 +242,7 @@ class Database:
             conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             conn.commit()
     
-    def add_message(self, session_id, role, content, tool_calls=None):
+    def add_message(self, session_id: str, role: str, content: str, tool_calls: Any = None) -> str:
         msg_id = str(uuid.uuid4())
         now = int(datetime.now().timestamp())
         with self._get_conn() as conn:

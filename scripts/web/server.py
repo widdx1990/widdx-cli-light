@@ -814,7 +814,7 @@ def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
 
     _gateway = None
     try:
-        from core.gateway import GatewayCore, Platform, Message
+        from core.gateway import GatewayCore
         from core._path import ensure_project_root
         ensure_project_root()
 
@@ -844,6 +844,13 @@ def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
         from core.activity import add as add_event
         add_event("system", detail="WIDDX Nexus Mission Control started",
                   icon="fa-star", agent="system", status="done")
+    except Exception:
+        pass
+
+    # ── Graceful shutdown (SIGINT/SIGTERM handlers) ─────────
+    try:
+        from core.background import register_shutdown
+        register_shutdown(lambda: logger.info("Web server shutting down..."))
     except Exception:
         pass
 

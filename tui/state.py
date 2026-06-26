@@ -1,14 +1,11 @@
 """TUI State Management — central state for WIDDX TUI."""
 
 from pathlib import Path
-from typing import Optional
-from datetime import datetime
 
-from core import config, tools
+from core import tools
 from core.config.settings import load as load_config
 from core.providers.providers import create_provider
 from core.memory import MemoryStore
-from core.memory_learner import MemoryLearner
 from core.project import state as project_state
 from core.project.scanner import ProjectScanner
 from core.project_tracker import ensure_docs, build_context_block
