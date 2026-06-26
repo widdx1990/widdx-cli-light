@@ -243,6 +243,22 @@ class ChatHandler:
             except Exception:
                 pass
 
+            # ── Inject Architecture Decision Records ──
+            try:
+                from core.adr import adr_manager
+                adr_context = adr_manager.get_context_for_prompt()
+                if adr_context:
+                    uil_history.insert(0, {
+                        "role": "system",
+                        "content": (
+                            f"{adr_context}\n\n"
+                            "DO NOT suggest alternatives listed as 'Rejected' above. "
+                            "They were already evaluated and discarded."
+                        ),
+                    })
+            except Exception:
+                pass
+
             # ── Auto-suggest relevant skills ──────────────────────
             suggested_skills = []
             try:
