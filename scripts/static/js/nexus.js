@@ -1049,8 +1049,7 @@ function showTerminal() {
     var cmd = e.target.value.trim();
     if (!cmd) return;
     var o = document.getElementById('to');
-	    fetch('/api/computer/info').then(function(r){return r.json()}).then(function(d){o.innerHTML='<span style="color:var(--text-muted);font-size:12px">📂 '+(d.system&&d.system.working_directory||'?')+'</span>
-';});
+	    fetch('/api/computer/info').then(function(r){return r.json()}).then(function(d){o.innerHTML='<span style="color:var(--text-muted);font-size:12px">📂 '+(d.system&&d.system.working_directory||'?')+'</span>\n';});
     o.innerHTML += '<span style="color:#f0a030;font-weight:600">$ ' + escapeHtml(cmd) + '</span>\n';
     e.target.value = '';
     setActivity('Running', cmd);
