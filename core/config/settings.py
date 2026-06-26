@@ -1,15 +1,17 @@
 """Configuration loader / saver — JSON config file with automatic secret stripping.
 
 Resolution order (first found wins):
-  1. .widdx/config.json   (project-local, in CWD)
-  2. config.json           (bare in CWD)
-  3. <install>/config.json (bundled default — read-only)
+  1. .widdx/config.json    (project-local, in CWD)
+  2. config.json            (bare in CWD)
+  3. ~/.widdx/config.json   (global user config — survives across all projects)
+  4. <install>/config.json  (bundled default — read-only)
 """
 
 import json, os
 from pathlib import Path
 
 _INSTALL_DIR = Path(__file__).resolve().parent.parent.parent
+_USER_CONFIG_DIR = Path.home() / ".widdx"
 
 
 def _find_config() -> tuple[Path, bool]:
@@ -30,13 +32,19 @@ def _find_config() -> tuple[Path, bool]:
     if bare.exists():
         return bare, True
 
-    # 3. Bundled default (read-only — copy to CWD to modify)
+    # 3. Global user config (~/.widdx/config.json)
+    global_config = _USER_CONFIG_DIR / "config.json"
+    if global_config.exists():
+        return global_config, True
+
+    # 4. Bundled default (read-only — copy to CWD to modify)
     bundled = _INSTALL_DIR / "config.json"
     if bundled.exists():
         return bundled, False
 
-    # No config exists yet — return writable path in CWD
-    return cwd / ".widdx" / "config.json", True
+    # No config exists yet — create global user config
+    _USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    return global_config, True
 
 
 def _resolve_placeholders(cfg: dict) -> dict:
