@@ -107,6 +107,34 @@ class UnifiedIntelligenceLayer:
         self.knowledge = KnowledgeBase()
         self.provider = provider
 
+    # ── Project context injection (GAP #4) ──────────────────────
+    @staticmethod
+    def _get_project_context_snippet(project_dir: str = "") -> str:
+        """Return a compact project map for injection into coding prompts."""
+        try:
+            from pathlib import Path as _Path
+            from core.repo_mapper import RepoMapper
+            target = _Path(project_dir) if project_dir else _Path.cwd()
+            mapper = RepoMapper(target)
+            mapper.scan()
+            stats = mapper.stats()
+            if not stats or stats.get("files", 0) == 0:
+                return ""
+            lines = [
+                f"Project: {target.name}",
+                f"Files: {stats.get('files', '?')}",
+            ]
+            if stats.get("languages"):
+                lines.append(f"Languages: {', '.join(stats['languages'][:8])}")
+            return (
+                "\n\n---\n"
+                "Project structure (follow existing patterns and naming conventions):\n"
+                + "\n".join(lines) +
+                "\n---\n"
+            )
+        except Exception:
+            return ""
+
     def process(self, user_input: str,
                 messages: list | None = None,
                 executors: dict[ExecutionMode, callable] | None = None,
@@ -337,6 +365,45 @@ class UnifiedIntelligenceLayer:
             context=verifier_context if verifier_context else None,
         )
         verification_report.execution_time = round(time.perf_counter() - verify_t0, 4)
+
+        # ── Runtime validation: run extracted code through CodeRunner ──
+        try:
+            from core.uil.contract import TaskType as _TT
+            is_code_task = classification.task_type in (
+                _TT.CODE_WRITE, _TT.CODE_MODIFY,
+            )
+        except Exception:
+            is_code_task = False
+
+        if is_code_task:
+            try:
+                from core.validation.runner import CodeRunner
+                import re
+                runner = CodeRunner(timeout_default=15)
+                code_blocks: list[str] = re.findall(
+                    r'```(?:python|bash|sh)\n(.*?)```', raw_text, re.DOTALL
+                )
+                for i, code in enumerate(code_blocks[:5]):  # max 5 blocks
+                    # Determine language from code fence
+                    try:
+                        fence_match = re.search(
+                            r'```(python|bash|sh)\n' + re.escape(code)[:50],
+                            raw_text, re.DOTALL,
+                        )
+                        lang = fence_match.group(1) if fence_match else "python"
+                    except Exception:
+                        lang = "python"
+                    run_result = runner.run_python(code) if lang == "python" else runner.run_bash(code)
+                    if not run_result.success:
+                        from core.uil.contract import VerificationFinding, VerificationSeverity
+                        verification_report.findings.append(VerificationFinding(
+                            check_name=f"runtime_check_{i}",
+                            severity=VerificationSeverity.ERROR,
+                            message=f"Runtime error in code block {i+1}: {run_result.stderr[:300]}",
+                            passed=False,
+                        ))
+            except ImportError:
+                pass  # CodeRunner unavailable — skip runtime validation
 
         # Log verification findings
         if verification_report.findings:

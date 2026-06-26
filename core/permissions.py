@@ -33,7 +33,7 @@ class PermissionManager:
 
     def __init__(self, project_dir: str | Path | None = None):
         self._dir = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
-        self._level = PermissionLevel.PERMISSIVE
+        self._level = PermissionLevel.NORMAL  # safer default — was PERMISSIVE
         self._remembered: dict[str, bool] = {}  # tool_name -> allow (True) / deny (False)
         self._load()
 

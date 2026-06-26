@@ -52,6 +52,13 @@ security_scheme = HTTPBearer(auto_error=False)
 
 def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)) -> None:
     """Dependency: require valid API key on every endpoint."""
+    # Reject everything if the key was never configured
+    if not _API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Server not configured: WIDDX_API_KEY is not set."
+        )
+    # Normal token check
     if credentials is None or credentials.credentials != _API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")
 
