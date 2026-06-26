@@ -572,64 +572,6 @@ class UnifiedIntelligenceLayer:
         except Exception:
             pass
 
-        # ── VerifyLoop integration ──
-        if verification_report.criticals and not getattr(result, "_loop_retried", False):
-            try:
-                from core.verification.loop import get_verify_loop
-                loop = get_verify_loop()
-                loop_result = loop.run(raw, classification.task_type)
-                logger.info(
-                    "VerifyLoop: passed=%s iterations=%d fixed=%d",
-                    loop_result.passed_all, loop_result.iterations, loop_result.findings_fixed,
-                )
-                if loop_result.passed_all:
-                    verification_report = loop_result.final_report or verification_report
-                    result._loop_retried = True
-            except Exception as e:
-                logger.debug("VerifyLoop unavailable: %s", e)
-
-        # ── ADR: auto-record significant architectural decisions ──
-        if len(result.tools_used) >= 3:
-            try:
-                from core.adr import adr_manager
-                adr_manager.record(
-                    title=f"Auto: {user_input[:80]}",
-                    context=f"Task executed in {getattr(result, 'iterations', 1)} step(s)",
-                    decision=f"Tools: {', '.join(str(t) for t in result.tools_used[:5])}",
-                    consequences=getattr(raw, 'summary', '')[:200] if hasattr(raw, 'summary') else '',
-                )
-            except Exception:
-                pass
-
-        # ── KnowledgeGraph → Memory: store project structure facts ──
-        try:
-            from core.knowledge_graph import get_knowledge_graph
-            from core.memory import MemoryStore
-            kg = get_knowledge_graph()
-            kg.build()
-            kg_snippet = kg.get_context_snippet()
-            if kg_snippet:
-                mem = MemoryStore()
-                mem.save(
-                    "project_structure",
-                    kg_snippet,
-                    metadata={"type": "reference", "source": "knowledge_graph"},
-                    confidence=0.9,
-                )
-        except Exception:
-            pass
-
-        # ── DocSync: trigger after each execution ──
-        try:
-            from core.doc_sync import get_doc_sync
-            ds = get_doc_sync()
-            drifts = ds.detect_drift()
-            if drifts:
-                logger.info("DocSync: %d drifts detected", len(drifts))
-                ds.auto_update(drifts)
-        except Exception:
-            pass
-
         # Step 5: Feedback — build ExecutionResult + populate telemetry
         steps_count = len(plan.steps) if plan and plan.steps else 0
         if isinstance(raw, tuple) and len(raw) >= 3:
@@ -708,6 +650,62 @@ class UnifiedIntelligenceLayer:
             failed_steps=result.steps_failed,
             tools_used_count=len(result.tools_used),
         )
+
+        # ── Post-execution integrations (Level 4.0 + 5.0) ──
+
+        # VerifyLoop (only if criticals remain)
+        if verification_report.criticals:
+            try:
+                from core.verification.loop import get_verify_loop
+                loop = get_verify_loop()
+                loop_result = loop.run(raw, classification.task_type)
+                logger.info(
+                    "VerifyLoop: passed=%s iterations=%d fixed=%d",
+                    loop_result.passed_all, loop_result.iterations, loop_result.findings_fixed,
+                )
+                if loop_result.passed_all:
+                    verification_report = loop_result.final_report or verification_report
+            except Exception as e:
+                logger.debug("VerifyLoop unavailable: %s", e)
+
+        # ADR: record decisions with multiple tools
+        if len(result.tools_used) >= 3:
+            try:
+                from core.adr import adr_manager
+                adr_manager.record(
+                    title=f"Auto: {user_input[:80]}",
+                    context=f"Task executed in {len(result.tools_used)} tool call(s)",
+                    decision=f"Tools: {', '.join(str(t) for t in result.tools_used[:5])}",
+                    consequences=getattr(raw, 'summary', '')[:200] if hasattr(raw, 'summary') else '',
+                )
+            except Exception:
+                pass
+
+        # KG → Memory
+        try:
+            from core.knowledge_graph import get_knowledge_graph
+            from core.memory import MemoryStore
+            kg = get_knowledge_graph()
+            kg.build()
+            kg_snippet = kg.get_context_snippet()
+            if kg_snippet:
+                MemoryStore().save(
+                    "project_structure", kg_snippet,
+                    metadata={"type": "reference", "source": "knowledge_graph"},
+                    confidence=0.9,
+                )
+        except Exception:
+            pass
+
+        # DocSync
+        try:
+            from core.doc_sync import get_doc_sync
+            ds = get_doc_sync()
+            drifts = ds.detect_drift()
+            if drifts:
+                ds.auto_update(drifts)
+        except Exception:
+            pass
 
         # Step 6: Knowledge — record execution outcome
         self.knowledge.record(
