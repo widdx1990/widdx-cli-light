@@ -697,7 +697,7 @@ function showSkillSuggestions(skills) {
   var container = document.getElementById('skill-suggestions');
   if (!container) return;
   var html = skills.map(function(s) {
-    return '<span class="skill-chip" onclick="document.getElementById('msgInput').value='/skill ' + s.name + '';document.getElementById('msgInput').focus()" title="' + escapeHtml(s.description || '') + '">' + (s.icon || '') + ' ' + escapeHtml(s.name) + '</span>';
+    return '<span class="skill-chip" onclick="var inp=document.getElementById(\'messageInput\');inp.value=\'/skill ' + s.name + '\';inp.focus();inp.dispatchEvent(new Event(\'input\'))" title="' + escapeHtml(s.description || '') + '">' + (s.icon || '') + ' ' + escapeHtml(s.name) + '</span>';
   }).join('');
   container.innerHTML = html;
   container.style.display = 'block';

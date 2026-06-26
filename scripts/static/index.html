@@ -173,7 +173,7 @@
       <!-- Input -->
       <div class="input-area-wrapper">
         <div class="input-container">
-          <textarea class="input-textarea" id="messageInput" data-i18n="input_placeholder" data-i18n-attr="placeholder" placeholder="Send a message to WIDDX..." rows="1" onkeydown="handleInputKey(event)"></textarea>
+          <textarea class="input-textarea" id="messageInput" data-i18n="input_placeholder" data-i18n-attr="placeholder" placeholder="Send a message to WIDDX..." rows="1" onkeydown="if(window.handleInputKey)handleInputKey(event)"></textarea>
           <div class="input-toolbar">
             <div class="input-toolbar-left">
               <button class="input-toolbar-btn" data-i18n="cmd_actions" data-i18n-attr="title" title="Commands" onclick="openCommandPalette()">
