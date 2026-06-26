@@ -540,6 +540,42 @@ class UnifiedIntelligenceLayer:
                     MAX_RETRIES, len(verification_report.criticals),
                 )
 
+        # ── SelfImprove ← Verify: record verification outcome ──
+        try:
+            from core.self_improve import get_improver
+            improver = get_improver()
+            if verification_report.criticals:
+                for f in verification_report.criticals:
+                    improver.record_error(
+                        f"verify_{f.check_name}",
+                        f"{f.message} (severity={f.severity.value})",
+                        "unresolved" if verification_report.criticals else "fixed",
+                    )
+            else:
+                improver.record_error(
+                    "verify_pass", "Verification passed all checks", "fixed"
+                )
+        except Exception:
+            pass
+
+        # ── KnowledgeGraph → Memory: store project structure facts ──
+        try:
+            from core.knowledge_graph import get_knowledge_graph
+            from core.memory import MemoryStore
+            kg = get_knowledge_graph()
+            kg.build()
+            kg_snippet = kg.get_context_snippet()
+            if kg_snippet:
+                mem = MemoryStore()
+                mem.save(
+                    "project_structure",
+                    kg_snippet,
+                    metadata={"type": "reference", "source": "knowledge_graph"},
+                    confidence=0.9,
+                )
+        except Exception:
+            pass
+
         # Step 5: Feedback — build ExecutionResult + populate telemetry
         steps_count = len(plan.steps) if plan and plan.steps else 0
         if isinstance(raw, tuple) and len(raw) >= 3:

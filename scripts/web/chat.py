@@ -259,6 +259,16 @@ class ChatHandler:
             except Exception:
                 pass
 
+            # ── Inject Knowledge Graph context ──
+            try:
+                from core.knowledge_graph import get_knowledge_graph
+                kg = get_knowledge_graph()
+                kg_snippet = kg.get_context_snippet()
+                if kg_snippet:
+                    uil_history.insert(0, {"role": "system", "content": kg_snippet})
+            except Exception:
+                pass
+
             # ── Auto-suggest relevant skills ──────────────────────
             suggested_skills = []
             try:

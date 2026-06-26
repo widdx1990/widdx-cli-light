@@ -1,17 +1,25 @@
-# Project Plan
+# WIDDX 5.0 — الخطة
 
-> Auto-managed by WIDDX. Updated as the project evolves.
+> ربط 11 وحدة في طبقة تنسيق واحدة | القوانين: لا بناء جديد إلا للترابط
 
-## Current Goal
+## الرؤية
 
-*Describe what you're working on right now.*
+Agent يستطيع: فهم الهدف → خطة → تنفيذ → اختبار → إصلاح → توثيق → ADR → تعلم → استمرار
 
-## Implementation Steps
+## المكونات الموجودة (11)
 
-1. *Step 1 — description*
-2. *Step 2 — description*
-3. *Step 3 — description*
+MemoryStore(v) + MemoryLearner + VectorMemory + RepoMapper + ProjectTracker + SelfImprove + ADR + VerifyLoop + KnowledgeGraph + DocSync + ExpertTeam
 
-## Completed Milestones
+## ما يحتاج بناء
 
-- *Milestone 1*
+1. **Orchestrator** (`core/orchestrator.py`) — ينسق كل المكونات
+2. **KG↔Memory bridge** — الرسم البياني يغذي الذاكرة
+3. **ExpertTeam+KG** — اختيار خبير بناءً على الرسم
+4. **SelfImprove+Verify** — التعلم من نتائج التحقق
+
+## قوانين
+
+1. لا ملف جديد إلا للترابط
+2. كل قدرة تثبت باختبار
+3. ADR لكل قرار
+4. تحديث PLAN/DESIGN/TASKS/ROADMAP بعد كل commit كبير
