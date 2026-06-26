@@ -206,8 +206,14 @@ window.sendMessage = async function() {
   input.value = '';
   input.style.height = 'auto';
   localStorage.removeItem('widdx-draft');
-  showTyping(true, 'WIDDX is analyzing…');
-  setActivity('Thinking', text.slice(0, 40));
+
+  if (S.autoMode) {
+    showTyping(true, '🤖 Autonomous Mode — planning, executing, verifying…');
+    setActivity('Autonomous', text.slice(0, 40));
+  } else {
+    showTyping(true, 'WIDDX is analyzing…');
+    setActivity('Thinking', text.slice(0, 40));
+  }
 
   // Try WebSocket first, fallback to REST
   if (S.ws && S.ws.readyState === WebSocket.OPEN) {
@@ -1400,6 +1406,23 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         }).catch(function(){ loaded++; });
     });
+  };
+
+  // ── Autonomous Mode toggle ───────────────────────────
+  S.autoMode = false;
+  window.toggleAutoMode = function() {
+    S.autoMode = !S.autoMode;
+    var btn = document.getElementById('autoModeBtn');
+    var label = document.getElementById('autoModeLabel');
+    if (S.autoMode) {
+      if (btn) btn.style.background = 'var(--accent-primary)';
+      if (label) { label.textContent = 'ON'; label.style.color = '#fff'; }
+      showToast('🤖 Autonomous Mode ON — AI will plan, execute, verify, fix, and learn automatically', 'success');
+    } else {
+      if (btn) btn.style.background = '';
+      if (label) { label.textContent = 'AUTO'; label.style.color = ''; }
+      showToast('Autonomous Mode OFF — Manual control', 'info');
+    }
   };
 
   // ── Diff preview helper ──────────────────────────────

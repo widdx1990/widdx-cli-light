@@ -276,6 +276,32 @@ class ExpertTeam:
         """Return the current working directory — files go directly here."""
         return str(Path().resolve())
 
+    @staticmethod
+    def _detect_project_languages() -> list[str]:
+        """Use KnowledgeGraph to detect project languages for expert selection."""
+        try:
+            from core.knowledge_graph import get_knowledge_graph
+            kg = get_knowledge_graph()
+            kg.build()
+            langs = set()
+            for node_id, data in kg._nodes.items():
+                fname = data.get("file", "")
+                if fname.endswith(".py"):
+                    langs.add("Python")
+                elif fname.endswith(".js") or fname.endswith(".ts"):
+                    langs.add("JavaScript/TypeScript")
+                elif fname.endswith(".go"):
+                    langs.add("Go")
+                elif fname.endswith(".rs"):
+                    langs.add("Rust")
+                elif fname.endswith(".sql"):
+                    langs.add("SQL")
+                elif fname.endswith(".html") or fname.endswith(".css"):
+                    langs.add("HTML/CSS")
+            return sorted(langs)[:5]
+        except Exception:
+            return []
+
     @classmethod
     def _estimate_complexity(cls, user_input: str) -> int:
         """1=simple, 2=medium, 3=complex."""
@@ -292,19 +318,27 @@ class ExpertTeam:
           Level 1 (simple)    -> orchestrator + coder + reviewer        (3 calls)
           Level 2 (medium)    -> +researcher                            (4 calls)
           Level 3 (complex)   -> full pipeline + debugger               (5-6 calls)
+
+        KG-aware: Uses KnowledgeGraph to detect project languages and
+        select domain-specific experts (Python, JS, etc.).
         """
         self._log = []
         project_dir = self._generate_project_dir(user_input)
         complexity = self._estimate_complexity(user_input)
 
+        # ── KG: detect project languages for expert selection ──
+        lang_hints = self._detect_project_languages()
+
         # Phase 1: Orchestrator (always)
         self._print_phase("1", "widdx-orchestrator", "Creating project plan")
         plan = self._run("orchestrator", user_input)
         ctx = "\n--- PROJECT DIRECTORY ---\n%s\n\n--- ORCHESTRATOR PLAN ---\n%s\n" % (project_dir, plan)
+        if lang_hints:
+            ctx += "\n--- PROJECT LANGUAGES ---\n%s\n" % ", ".join(lang_hints)
         n = 2
 
-        # Phase 2: Researcher for medium+ complexity
-        if complexity >= 2:
+        # Phase 2: Researcher for medium+ complexity (or KG-detected needs)
+        if complexity >= 2 or lang_hints:
             self._print_phase(str(n), "widdx-researcher", "Researching requirements")
 
             # ── Parallel: Researcher + Coder run concurrently ────

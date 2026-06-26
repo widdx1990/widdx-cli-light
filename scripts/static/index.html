@@ -149,6 +149,10 @@
           <button class="header-btn" data-i18n="header_commands" data-i18n-attr="title" title="Commands (Ctrl+K)" onclick="openCommandPalette()">
             <i class="fa-solid fa-terminal"></i>
           </button>
+          <button class="theme-btn" id="autoModeBtn" onclick="toggleAutoMode()" title="Autonomous Mode: AI plans, executes, verifies, and learns — fully autonomous">
+            <i class="fa-solid fa-robot"></i>
+            <span id="autoModeLabel" style="font-size:9px;margin-left:3px;font-weight:700">AUTO</span>
+          </button>
           <button class="lang-btn" id="langToggleBtn" onclick="Lang.toggle()" title="Switch language" data-i18n="header_toggle_lang">عربي</button>
           <button class="theme-btn" onclick="toggleTheme()" data-i18n="header_toggle_theme" data-i18n-attr="title" title="Toggle theme">
             <i class="fa-solid fa-sun icon-sun"></i>
