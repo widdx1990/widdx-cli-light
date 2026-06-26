@@ -40,13 +40,24 @@ class ChatHandler:
         self._init_uil()
 
     def _init_uil(self):
-        """Initialize the UIL Brain from config."""
+        """Initialize the UIL Brain from config + auto-setup project."""
         try:
             from core.config.settings import load as load_cfg
             from core.uil import UnifiedIntelligenceLayer
 
             self._cfg = load_cfg()
             provider_cfg = self._cfg.get("provider", {})
+
+            # ── Auto-setup: create planning docs + index project ──
+            try:
+                from pathlib import Path as _Path
+                from core.project_tracker import ensure_docs, build_context_block
+                cwd = _Path.cwd()
+                ensure_docs(cwd)
+                # Build project context for injection into system prompt
+                self._project_context = build_context_block(cwd) or ""
+            except Exception:
+                self._project_context = ""
 
             # Create provider from config
             from core.providers.providers import create_provider
