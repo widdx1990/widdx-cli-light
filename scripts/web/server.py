@@ -644,39 +644,57 @@ async def api_version():
     return get_dashboard().app_version()
 
 
-# ── In-memory rate limiter (ISS-005) ───────────────────────────
-# Note: state resets on server restart — acceptable for a local
-# developer tool.  For multi-user deployments, replace with a
-# Redis-backed limiter or configure a reverse-proxy (nginx/Caddy).
-_ratelimit_store: dict[str, list[float]] = {}
-_RATELIMIT_MAX = 30  # max requests
-_RATELIMIT_WINDOW = 60  # per N seconds
-_RATELIMIT_LAST_CLEANUP: float = 0.0
+# ── SQLite-backed rate limiter (ISS-005) ────────────────────────
+# State survives server restarts. Uses the same .widdx directory
+# as the rest of the project's persistence layer.
+_RATELIMIT_MAX = 30   # max requests
+_RATELIMIT_WINDOW = 60   # per N seconds
+_RL_DB: "sqlite3.Connection | None" = None
+
+
+def _rl_db() -> "sqlite3.Connection":
+    """Return the rate-limiter SQLite connection (lazy init)."""
+    global _RL_DB
+    if _RL_DB is None:
+        import sqlite3
+        db_path = Path.home() / ".widdx" / "ratelimit.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        _RL_DB = sqlite3.connect(str(db_path))
+        _RL_DB.execute("""
+            CREATE TABLE IF NOT EXISTS ratelimit (
+                client_ip  TEXT NOT NULL,
+                ts         REAL NOT NULL
+            )
+        """)
+        _RL_DB.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rl_ip_ts ON ratelimit(client_ip, ts)"
+        )
+        _RL_DB.commit()
+    return _RL_DB
 
 
 def _check_rate_limit(client_ip: str) -> bool:
     """Return True if request is allowed, False if rate-limited.
 
-    Periodically purges stale entries (IPs with no recent activity)
-    so the dict doesn't grow unbounded.
+    Uses SQLite-backed storage so rate-limit state survives server
+    restarts — prevents the restart-bypass attack vector (ISS-005).
     """
-    global _RATELIMIT_LAST_CLEANUP
     now = time.time()
-    window = _RATELIMIT_WINDOW
-
-    # ── Periodic full cleanup (every 5 min) ─────────────────
-    if now - _RATELIMIT_LAST_CLEANUP > 300:
-        cutoff = now - window
-        _ratelimit_store.clear()
-        _RATELIMIT_LAST_CLEANUP = now
-
-    timestamps = _ratelimit_store.get(client_ip, [])
-    # Remove old timestamps outside the window
-    timestamps = [t for t in timestamps if now - t < window]
-    if len(timestamps) >= _RATELIMIT_MAX:
+    cutoff = now - _RATELIMIT_WINDOW
+    db = _rl_db()
+    # Purge expired entries for ALL clients
+    db.execute("DELETE FROM ratelimit WHERE ts < ?", (cutoff,))
+    # Count recent requests from this client
+    row = db.execute(
+        "SELECT COUNT(*) FROM ratelimit WHERE client_ip = ? AND ts >= ?",
+        (client_ip, cutoff),
+    ).fetchone()
+    if row and row[0] >= _RATELIMIT_MAX:
+        db.commit()
         return False
-    timestamps.append(now)
-    _ratelimit_store[client_ip] = timestamps
+    # Record this request
+    db.execute("INSERT INTO ratelimit (client_ip, ts) VALUES (?, ?)", (client_ip, now))
+    db.commit()
     return True
 
 
