@@ -644,7 +644,10 @@ async def api_version():
     return get_dashboard().app_version()
 
 
-# ── Simple in-memory rate limiter ──────────────────────────────
+# ── In-memory rate limiter (ISS-005) ───────────────────────────
+# Note: state resets on server restart — acceptable for a local
+# developer tool.  For multi-user deployments, replace with a
+# Redis-backed limiter or configure a reverse-proxy (nginx/Caddy).
 _ratelimit_store: dict[str, list[float]] = {}
 _RATELIMIT_MAX = 30  # max requests
 _RATELIMIT_WINDOW = 60  # per N seconds

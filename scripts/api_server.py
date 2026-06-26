@@ -189,6 +189,25 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+# ── Request size limit (ISS-004) ──────────────────────────────
+_MAX_BODY_BYTES = int(os.environ.get("WIDDX_MAX_BODY_BYTES", 1_048_576))  # 1 MB default
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+class _BodySizeMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose body exceeds _MAX_BODY_BYTES."""
+    async def dispatch(self, request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > _MAX_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Request body exceeds {_MAX_BODY_BYTES} bytes limit."},
+            )
+        return await call_next(request)
+
+app.add_middleware(_BodySizeMiddleware)
+
 # ─── Health ──────────────────────────────────────────────────
 @app.get("/api/health")
 async def health(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
