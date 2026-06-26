@@ -1038,11 +1038,11 @@ function showTerminal() {
     + '<input id="ti" style="flex:1;background:transparent;border:none;color:var(--text-primary);font-family:var(--font-mono);font-size:13px;outline:none" placeholder="Run command (e.g. python app.py, npm start)..."></div>'
     + '<div style="display:flex;gap:4px;padding:4px 12px 6px;background:#0a0d14;flex-wrap:wrap">'
     + '<span style="font-size:10px;color:var(--text-muted);padding:2px 0">Quick:</span>'
-    + '<button class="quick-port-btn" onclick="runTermCmd('python --version')">python</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd('node --version')">node</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd('npm start')">npm start</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd('python -m http.server 8080')">serve :8080</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd('dir')">dir</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd(\'python --version\')">python</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd(\'node --version\')">node</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd(\'npm start\')">npm start</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd(\'python -m http.server 8080\')">serve :8080</button>'
+    + '<button class="quick-port-btn" onclick="runTermCmd(\'dir\')">dir</button>'
     + '</div></div>';
   document.getElementById('ti').onkeydown = function(e) {
     if (e.key !== 'Enter') return;
