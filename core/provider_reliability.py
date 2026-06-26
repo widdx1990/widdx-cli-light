@@ -21,6 +21,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+import httpx
+from core.providers.base import Provider
 
 logger = logging.getLogger("widdx.reliability")
 
@@ -61,7 +63,7 @@ class ProviderPool:
 
             # Primary provider from config
             try:
-                primary = create_provider(cfg)
+                primary = create_provider(cfg, raw=True)
                 self._providers.append({"provider": primary, "priority": 1, "name": primary.name})
             except Exception as e:
                 logger.warning("Primary provider unavailable: %s", e)
@@ -76,7 +78,7 @@ class ProviderPool:
                     try:
                         fb_cfg = dict(cfg)
                         fb_cfg["provider"] = {"name": name, "model": model}
-                        fb = create_provider(fb_cfg)
+                        fb = create_provider(fb_cfg, raw=True)
                         self._providers.append({"provider": fb, "priority": len(self._providers) + 1, "name": name})
                     except Exception:
                         pass
@@ -95,6 +97,19 @@ class ProviderPool:
                 logger.debug("Provider %s in cooldown until %s", name, health.get("cooldown_until"))
                 continue
             return entry["provider"]
+
+        # If all are unhealthy and skip_unhealthy was True, fallback to the one with the minimum cooldown_until
+        if skip_unhealthy and self._providers:
+            entries_with_cooldown = []
+            for entry in self._providers:
+                name = entry["name"]
+                cooldown = self._health.get(name, {}).get("cooldown_until", 0)
+                entries_with_cooldown.append((cooldown, entry))
+            entries_with_cooldown.sort(key=lambda x: x[0])
+            best_entry = entries_with_cooldown[0][1]
+            logger.info("All providers are in cooldown. Selected least unhealthy provider: %s", best_entry["name"])
+            return best_entry["provider"]
+
         return None
 
     def mark_failure(self, name: str, error: str):
@@ -215,14 +230,109 @@ class CheckpointManager:
 # Reliable Provider — Main API
 # ═══════════════════════════════════════════════════════════════
 
-class ReliableProvider:
+def classify_exception(e: Exception) -> Exception:
+    """Classify exception as RateLimitError, ProviderAuthError, transient network error, or general error."""
+    import httpx
+    if isinstance(e, (RateLimitError, ProviderAuthError)):
+        return e
+    if isinstance(e, httpx.HTTPStatusError):
+        status = e.response.status_code
+        if status == 429:
+            return RateLimitError(f"HTTP 429: Rate limited by provider: {e.response.text[:200]}")
+        if status in (401, 403):
+            return ProviderAuthError(f"HTTP {status}: Auth error: {e.response.text[:200]}")
+        if status >= 500:
+            return TimeoutError(f"HTTP {status}: Server error: {e.response.text[:200]}")
+    err_str = str(e).lower()
+    if "rate limit" in err_str or "too many requests" in err_str or "429" in err_str:
+        return RateLimitError(str(e))
+    if "auth" in err_str or "api key" in err_str or "unauthorized" in err_str or "401" in err_str or "403" in err_str:
+        return ProviderAuthError(str(e))
+    if "timeout" in err_str or "timed out" in err_str or "connect" in err_str or "network" in err_str or "connection" in err_str or "httpstatuserror" in err_str:
+        return TimeoutError(str(e))
+    return e
+
+
+class ReliableProvider(Provider):
     """Production-grade provider with pool, retry, backoff, and checkpointing."""
 
-    def __init__(self):
+    def __init__(self, name: str = "reliable-provider", model: str = "reliability-pool", base_url: str = "", api_key: str = ""):
+        super().__init__(name, model, base_url, api_key)
         self._pool = ProviderPool()
         self._checkpoint = CheckpointManager()
         self._max_retries = 3
         self._base_delay = 1.0
+
+    def chat(self, messages: list, tool_defs: list, temperature: float = 0.7):
+        """Call provider with full reliability: failover + retry + backoff."""
+        res = self.chat_with_retry(messages, tool_defs, temperature=temperature)
+        if res.errors and not res.content and not res.tool_calls:
+            raise RuntimeError(f"ReliableProvider failed: {', '.join(res.errors)}")
+        from core.providers.base import ToolCall
+        tcs = []
+        for tc in res.tool_calls:
+            name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+            args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "arguments", getattr(tc, "args", {}))
+            cid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "")
+            tcs.append(ToolCall(name, args, cid))
+        return res.content, tcs
+
+    def stream(self, messages: list, tool_defs: list, temperature: float = 0.7):
+        """Streaming generator that supports failover and retry transparently."""
+        attempt = 0
+        while attempt < self._max_retries:
+            provider = self._pool.get_provider()
+            if provider is None:
+                if attempt < self._max_retries - 1:
+                    delay = self._base_delay * (2 ** attempt)
+                    logger.warning("All providers in cooldown, retrying in %.1fs", delay)
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                break
+
+            if attempt > 0:
+                yield {"type": "content", "data": f"\n\n[System: Provider failover — switching to fallback provider {provider.name}...]\n\n"}
+
+            try:
+                content_parts = []
+                tool_calls = []
+                for chunk in provider.stream(messages, tool_defs, temperature):
+                    yield chunk
+                    if isinstance(chunk, dict):
+                        if chunk.get("type") in ("content", "text"):
+                            content_parts.append(chunk.get("data", ""))
+                        elif chunk.get("type") in ("tool_call", "tool"):
+                            data = chunk.get("data", {})
+                            tool_calls.append(UnifiedToolCall.from_provider(provider.name, data))
+                        elif chunk.get("type") == "done":
+                            self._pool.mark_success(provider.name)
+                            return
+                self._pool.mark_success(provider.name)
+                return
+
+            except Exception as raw_e:
+                e = classify_exception(raw_e)
+                if isinstance(e, RateLimitError):
+                    delay = self._base_delay * (2 ** attempt)
+                    logger.warning("Rate limited by %s during stream, retry in %.1fs", provider.name, delay)
+                    self._pool.mark_failure(provider.name, "rate_limit")
+                    time.sleep(delay)
+                elif isinstance(e, ProviderAuthError):
+                    logger.error("Auth error with %s during stream: %s", provider.name, e)
+                    self._pool.mark_failure(provider.name, "auth_error")
+                    self._pool._health[provider.name]["cooldown_until"] = time.time() + 3600
+                elif isinstance(e, (TimeoutError, ConnectionError, OSError)):
+                    logger.warning("Network error with %s during stream: %s", provider.name, e)
+                    self._pool.mark_failure(provider.name, str(e)[:100])
+                    time.sleep(self._base_delay)
+                else:
+                    logger.error("Unexpected error with %s during stream: %s", provider.name, e)
+                    self._pool.mark_failure(provider.name, str(e)[:100])
+                    time.sleep(self._base_delay)
+                attempt += 1
+
+        yield {"type": "error", "data": "All providers failed during execution."}
 
     def chat_with_retry(
         self,
@@ -230,25 +340,15 @@ class ReliableProvider:
         tool_defs: list[dict] | None = None,
         task_state: Any = None,
         task_id: str = "",
+        temperature: float = 0.7,
     ) -> ReliabilityResult:
-        """Call provider with full reliability: failover + retry + checkpoint.
-
-        Args:
-            messages: Chat messages.
-            tool_defs: Tool definitions (unified format).
-            task_state: TaskState for checkpoint save on failure.
-            task_id: Unique task identifier for checkpoint.
-
-        Returns:
-            ReliabilityResult with content, tool_calls, and metadata.
-        """
+        """Call provider with full reliability: failover + retry + checkpoint."""
         t0 = time.perf_counter()
         result = ReliabilityResult()
 
         for attempt in range(self._max_retries):
             provider = self._pool.get_provider()
             if provider is None:
-                # All providers in cooldown — wait and retry
                 if attempt < self._max_retries - 1:
                     delay = self._base_delay * (2 ** attempt)
                     logger.warning("All providers in cooldown, retrying in %.1fs", delay)
@@ -258,7 +358,7 @@ class ReliableProvider:
                 break
 
             try:
-                content, tool_calls = self._call_provider(provider, messages, tool_defs)
+                content, tool_calls = self._call_provider(provider, messages, tool_defs, temperature)
                 result.content = content or ""
                 result.tool_calls = [UnifiedToolCall.from_provider(provider.name, tc).to_dict() for tc in (tool_calls or [])]
                 result.provider_used = provider.name
@@ -267,65 +367,68 @@ class ReliableProvider:
                 self._pool.mark_success(provider.name)
                 break
 
-            except RateLimitError:
-                delay = self._base_delay * (2 ** attempt)
-                logger.warning("Rate limited by %s, retry in %.1fs (attempt %d/%d)", provider.name, delay, attempt + 1, self._max_retries)
-                self._pool.mark_failure(provider.name, "rate_limit")
-                if task_state and task_id:
-                    self._checkpoint.save(task_id, [], messages, "")
-                time.sleep(delay)
-
-            except (TimeoutError, ConnectionError, OSError) as e:
-                logger.warning("Network error with %s: %s", provider.name, e)
-                self._pool.mark_failure(provider.name, str(e)[:100])
-                if task_state and task_id:
-                    self._checkpoint.save(task_id, [], messages, "")
-                if attempt < self._max_retries - 1:
-                    time.sleep(self._base_delay)
-
-            except ProviderAuthError:
-                # Auth errors are permanent — don't retry this provider
-                logger.error("Auth error with %s — disabling", provider.name)
-                self._pool.mark_failure(provider.name, "auth_error")
-                # Force long cooldown
-                self._pool._health[provider.name]["cooldown_until"] = time.time() + 3600
-
-            except Exception as e:
-                logger.error("Unexpected error with %s: %s", provider.name, e)
-                self._pool.mark_failure(provider.name, str(e)[:100])
-                if task_state and task_id:
-                    self._checkpoint.save(task_id, [], messages, "")
+            except Exception as raw_e:
+                e = classify_exception(raw_e)
+                result.errors.append(str(e))
+                if isinstance(e, RateLimitError):
+                    delay = self._base_delay * (2 ** attempt)
+                    logger.warning("Rate limited by %s, retry in %.1fs (attempt %d/%d)", provider.name, delay, attempt + 1, self._max_retries)
+                    self._pool.mark_failure(provider.name, "rate_limit")
+                    if task_state and task_id:
+                        self._checkpoint.save(task_id, [], messages, "")
+                    time.sleep(delay)
+                elif isinstance(e, ProviderAuthError):
+                    logger.error("Auth error with %s — disabling", provider.name)
+                    self._pool.mark_failure(provider.name, "auth_error")
+                    self._pool._health[provider.name]["cooldown_until"] = time.time() + 3600
+                elif isinstance(e, (TimeoutError, ConnectionError, OSError)):
+                    logger.warning("Network error with %s: %s", provider.name, e)
+                    self._pool.mark_failure(provider.name, str(e)[:100])
+                    if task_state and task_id:
+                        self._checkpoint.save(task_id, [], messages, "")
+                    if attempt < self._max_retries - 1:
+                        time.sleep(self._base_delay)
+                else:
+                    logger.error("Unexpected error with %s: %s", provider.name, e)
+                    self._pool.mark_failure(provider.name, str(e)[:100])
+                    if task_state and task_id:
+                        self._checkpoint.save(task_id, [], messages, "")
 
         result.total_time = round(time.perf_counter() - t0, 3)
         return result
 
-    def _call_provider(self, provider, messages, tool_defs):
+    def _call_provider(self, provider, messages, tool_defs, temperature: float = 0.7):
         """Call a provider, normalizing input/output."""
-        # Try streaming first, fall back to chat
         if hasattr(provider, "stream") and callable(provider.stream):
             try:
                 content_parts = []
                 tool_calls = []
-                for chunk in provider.stream(messages, tool_defs or []):
+                try:
+                    stream_generator = provider.stream(messages, tool_defs or [], temperature)
+                except TypeError:
+                    stream_generator = provider.stream(messages, tool_defs or [])
+                for chunk in stream_generator:
                     if isinstance(chunk, dict):
-                        if chunk.get("type") == "content" or chunk.get("type") == "text":
+                        if chunk.get("type") in ("content", "text"):
                             content_parts.append(chunk.get("data", ""))
-                        elif chunk.get("type") == "tool":
+                        elif chunk.get("type") in ("tool_call", "tool"):
                             tool_calls.append(UnifiedToolCall.from_provider(provider.name, chunk.get("data", {})))
                         elif chunk.get("type") == "done":
                             tc = chunk.get("data", [])
                             if isinstance(tc, list):
                                 tool_calls = [UnifiedToolCall.from_provider(provider.name, t) for t in tc]
                     elif isinstance(chunk, tuple):
-                        # (content, tool_calls) tuple
                         return chunk
                 content = "".join(content_parts)
                 if content or tool_calls:
                     return content, tool_calls
-            except Exception:
-                pass  # Fall through to chat()
+            except Exception as stream_e:
+                logger.debug("Stream attempt failed on raw provider: %s", stream_e)
 
-        return provider.chat(messages, tool_defs or [])
+        try:
+            return provider.chat(messages, tool_defs or [], temperature)
+        except TypeError:
+            return provider.chat(messages, tool_defs or [])
 
     @property
     def pool_status(self) -> dict:

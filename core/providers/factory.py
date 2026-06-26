@@ -18,13 +18,17 @@ from ..proxy import proxy_manager, ZEN_BASE
 import logging as _logging
 logger = _logging.getLogger("widdx.providers")
 
-def create_provider(cfg: dict) -> Provider:
+def create_provider(cfg: dict, raw: bool = False) -> Provider:
     """Create a provider instance from configuration dict.
 
     Reads provider name, model, base_url from cfg. API keys resolved via
     keychain (env vars) with config fallback. Supports ollama, gguf,
     opencode-zen, deepseek, and openai-compatible providers.
     """
+    if not raw:
+        from core.provider_reliability import get_reliable_provider
+        return get_reliable_provider()
+
     p = cfg.get("provider", {})
     # Load from config with dynamic fallbacks
     name = p.get("name") or cfg.get("default_provider", "opencode-zen")

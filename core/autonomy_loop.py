@@ -66,6 +66,7 @@ class AutonomyLoop:
             ts = get_task_state()
 
             # Resume or start new
+            resume = False
             if ts.is_active():
                 existing_goal = ts.get_goal()
                 if goal and goal != existing_goal:
@@ -73,8 +74,16 @@ class AutonomyLoop:
                     ts.set_goal(goal)
                 else:
                     goal = existing_goal
+                    resume = True
             else:
                 ts.set_goal(goal)
+
+            saved_messages = ts.get_messages()
+            if resume and saved_messages:
+                messages = saved_messages
+                logger.info("Resuming AutonomyLoop from saved messages history.")
+            else:
+                messages = []
 
             if on_event:
                 on_event({"type": "state", "data": f"Goal: {goal[:80]}"})
@@ -99,7 +108,14 @@ class AutonomyLoop:
 
                 # Build context with current state
                 context = sm.get_full_context(goal=goal)
-                messages = [{"role": "system", "content": context}]
+                if not messages:
+                    messages = [{"role": "system", "content": context}]
+                else:
+                    # Update system context in messages
+                    if messages[0].get("role") == "system":
+                        messages[0]["content"] = context
+                    else:
+                        messages.insert(0, {"role": "system", "content": context})
 
                 # Add step-specific instruction
                 if active_step:
@@ -148,11 +164,17 @@ class AutonomyLoop:
                 summary = getattr(exec_result, "summary", "") or ""
                 ts.increment_tools()
 
+                # Persist messages history
+                messages.append({"role": "user", "content": step_msg})
+                messages.append({"role": "assistant", "content": summary})
+                messages = messages[-20:]
+                ts.set_messages(messages)
+
                 # Check for completion signal
                 if "GOAL COMPLETE" in summary.upper() or "ALL DONE" in summary.upper():
                     result.success = True
                     result.summary = summary
-                    ts.set_goal("")  # Mark as complete
+                    ts.clear()  # Mark complete and clear state
                     if on_event:
                         on_event({"type": "done", "data": "Goal achieved"})
                     break

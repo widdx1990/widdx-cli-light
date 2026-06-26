@@ -68,11 +68,33 @@ class TaskState:
             "tools_used": 0,
             "progress_pct": 0,
             "steps": [],
+            "messages": [],
+            "agent_steps": [],
         }
 
     def _save(self):
+        import os
         self._data["updated_at"] = datetime.now(timezone.utc).isoformat()
-        self._path.write_text(json.dumps(self._data, indent=2, ensure_ascii=False))
+        tmp_path = self._path.with_suffix(".tmp")
+        try:
+            tmp_path.write_text(json.dumps(self._data, indent=2, ensure_ascii=False), encoding="utf-8")
+            os.replace(str(tmp_path), str(self._path))
+        except Exception as e:
+            logger.error("Atomic write failed for TaskState: %s", e)
+
+    def get_messages(self) -> list:
+        return self._data.get("messages", [])
+
+    def set_messages(self, messages: list):
+        self._data["messages"] = messages
+        self._save()
+
+    def get_agent_steps(self) -> list:
+        return self._data.get("agent_steps", [])
+
+    def set_agent_steps(self, steps: list):
+        self._data["agent_steps"] = steps
+        self._save()
 
     # ── Public API ──────────────────────────────────────
 
@@ -123,9 +145,19 @@ class TaskState:
         }
 
     def is_active(self) -> bool:
-        return bool(self._data["goal"]) and any(
-            s["status"] in ("pending", "running") for s in self._data["steps"]
+        """Return True if there is an active or resumable task.
+
+        A task is considered active if:
+        - There are StepState entries still pending/running, OR
+        - A checkpoint exists (goal + messages saved) meaning the agent
+          crashed mid-execution and can be resumed.
+        """
+        has_goal = bool(self._data.get("goal"))
+        has_pending_steps = any(
+            s["status"] in ("pending", "running") for s in self._data.get("steps", [])
         )
+        has_checkpoint = bool(self._data.get("messages"))
+        return has_goal and (has_pending_steps or has_checkpoint)
 
     def get_active_step(self) -> dict | None:
         for s in self._data["steps"]:

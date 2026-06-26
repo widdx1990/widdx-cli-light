@@ -22,14 +22,14 @@ class MockFailingProvider:
         self._attempts += 1
         return self._attempts <= self._fail_count
 
-    def chat(self, messages, tool_defs=None):
+    def chat(self, messages, tool_defs=None, temperature=0.7):
         if self._should_fail():
             if self._fail_with:
                 raise self._fail_with("Simulated failure")
             raise Exception("Simulated failure")
         return f"Response from {self.name}", []
 
-    def stream(self, messages, tool_defs=None):
+    def stream(self, messages, tool_defs=None, temperature=0.7):
         # If we should fail, don't yield anything useful - force fallback to chat
         if self._should_fail():
             if self._fail_with:
@@ -162,10 +162,10 @@ class TestCheckpointManager:
     """Test checkpoint save/load."""
 
     def test_save_and_load(self):
-        import tempfile, shutil
+        import tempfile, shutil, os
+        orig_dir = os.getcwd()
         tmp = tempfile.mkdtemp()
         try:
-            import os
             os.chdir(tmp)
             cm = CheckpointManager()
             cm.save("task1", [], [{"role": "user", "content": "hi"}], "test goal")
@@ -176,7 +176,8 @@ class TestCheckpointManager:
             cm.clear("task1")
             assert cm.load("task1") is None
         finally:
-            shutil.rmtree(tmp)
+            os.chdir(orig_dir)
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class TestSingleton:

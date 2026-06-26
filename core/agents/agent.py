@@ -166,6 +166,124 @@ class AutonomousAgent:
             except Exception:
                 pass
 
+    def _call_provider_with_retry(self, messages, temperature, ts=None):
+        """Call provider with full reliability: failover + retry + checkpoint.
+
+        Tries all available providers in the pool. On transient failure,
+        retries with exponential backoff. On auth failure, skips provider.
+        Saves TaskState checkpoint before each retry.
+        """
+        from core.provider_reliability import (
+            ReliableProvider, RateLimitError, ProviderAuthError,
+        )
+        import time as _time
+
+        rp = ReliableProvider()
+        rp._pool._providers = []  # Clear defaults — we rebuild from our provider
+        rp._max_retries = 3
+
+        # Add our primary provider
+        rp._pool._providers.append({
+            "provider": self.provider,
+            "priority": 1,
+            "name": getattr(self.provider, "name", "primary"),
+        })
+
+        # Add auto-detected fallbacks
+        try:
+            from core.config.settings import load as _load_cfg
+            from core.providers.factory import create_provider as _create
+            cfg = _load_cfg()
+            for fb_name, fb_model in [("opencode-zen", "deepseek-v4-flash-free")]:
+                fb_cfg = dict(cfg)
+                fb_cfg["provider"] = {"name": fb_name, "model": fb_model}
+                try:
+                    fb_provider = _create(fb_cfg)
+                    if getattr(fb_provider, "name", "") not in [p["name"] for p in rp._pool._providers]:
+                        rp._pool._providers.append({
+                            "provider": fb_provider,
+                            "priority": len(rp._pool._providers) + 1,
+                            "name": fb_provider.name,
+                        })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        last_error = None
+        for attempt in range(rp._max_retries):
+            provider_entry = rp._pool.get_provider()
+            if provider_entry is None:
+                delay = 2 ** attempt
+                print_system_msg(f"⏳ All providers in cooldown — retrying in {delay}s...")
+                _time.sleep(delay)
+                continue
+
+            prov = provider_entry["provider"] if isinstance(provider_entry, dict) else provider_entry
+            prov_name = getattr(prov, "name", str(prov))
+
+            try:
+                # Save checkpoint before call
+                if ts:
+                    ts.set_messages(messages)
+                    ts.set_agent_steps([s.to_dict() for s in self.steps])
+
+                # Try streaming first
+                if self._supports_streaming() and prov == self.provider:
+                    content, tool_calls = self._streaming_call(messages, temperature)
+                elif hasattr(prov, "stream") and callable(prov.stream):
+                    # Fallback provider — try stream, collect content
+                    try:
+                        content_parts = []
+                        tool_calls = []
+                        for chunk in prov.stream(messages, self.tool_defs):
+                            if isinstance(chunk, dict):
+                                if chunk.get("type") in ("content", "text"):
+                                    content_parts.append(chunk.get("data", ""))
+                                elif chunk.get("type") == "done":
+                                    tc = chunk.get("data", [])
+                                    if isinstance(tc, list):
+                                        tool_calls = tc
+                            elif isinstance(chunk, tuple):
+                                content, tool_calls = chunk
+                                break
+                        content = "".join(content_parts)
+                    except Exception:
+                        content, tool_calls = prov.chat(messages, self.tool_defs, temperature)
+                else:
+                    content, tool_calls = prov.chat(messages, self.tool_defs, temperature)
+
+                # Emit final text
+                if content and self._on_event:
+                    self._emit({"type": "text", "data": content})
+
+                rp._pool.mark_success(prov_name)
+                if attempt > 0:
+                    print_system_msg(f"✅ Recovered with {prov_name} after {attempt} retries")
+                return content, tool_calls
+
+            except ProviderAuthError:
+                print_system_msg(f"🔒 Auth error with {prov_name} — disabling permanently")
+                rp._pool.mark_failure(prov_name, "auth_error")
+                rp._pool._health[prov_name]["cooldown_until"] = _time.time() + 86400
+                last_error = "auth_error"
+
+            except RateLimitError:
+                delay = 2 ** attempt
+                print_system_msg(f"⏱ Rate limited by {prov_name} — backoff {delay}s")
+                rp._pool.mark_failure(prov_name, "rate_limit")
+                _time.sleep(delay)
+                last_error = "rate_limit"
+
+            except Exception as e:
+                print_system_msg(f"⚠ {prov_name} error: {e}")
+                rp._pool.mark_failure(prov_name, str(e)[:100])
+                _time.sleep(1)
+                last_error = str(e)
+
+        # All providers exhausted
+        raise Exception(f"All providers failed. Last error: {last_error}")
+
     def run(self, user_input: str, on_event=None) -> tuple[list[AgentStep], str]:
         """Execute the agentic loop. Returns (steps, summary_text).
         
@@ -175,14 +293,41 @@ class AutonomousAgent:
         """
         if on_event:
             self._on_event = on_event
-        messages = [
-            {"role": "system", "content": self._build_prompt()},
-            {"role": "user", "content": user_input},
-        ]
 
+        from core.task_state import get_task_state
+        ts = get_task_state()
+
+        self._consumed_step_indices = set()
+        resume = False
+        start_iteration = 0
         max_iter = self.cfg.get("agent_max_iterations", 25)
+
+        if ts.is_active():
+            saved_messages = ts.get_messages()
+            if saved_messages:
+                messages = saved_messages
+                saved_steps = ts.get_agent_steps()
+                self.steps = [
+                    AgentStep(s["step"], s["tool"], s["args"], s["result"])
+                    for s in saved_steps
+                ]
+                resume = True
+                assistant_turns = sum(1 for m in messages if m.get("role") == "assistant")
+                start_iteration = min(assistant_turns, max_iter - 1)
+                print_system_msg(f"🔄 Resuming autonomous execution from step {len(self.steps) + 1}...")
+                self._emit({"type": "text", "data": f"\n\n[🔄 Resuming from saved state at step {len(self.steps) + 1}...]\n\n"})
+
+        if not resume:
+            messages = [
+                {"role": "system", "content": self._build_prompt()},
+                {"role": "user", "content": user_input},
+            ]
+            self.steps = []
+            ts.set_goal(user_input)
+            ts.set_messages(messages)
+            ts.set_agent_steps([])
+
         temperature = self.cfg.get("temperature", 0.7)
-        self.steps = []
 
         # ── Loop safety: detect repeated identical tool calls ─────
         _recent_calls: list[tuple[str, str]] = []  # (tool_name, json(args))
@@ -190,27 +335,23 @@ class AutonomousAgent:
 
         print_system_msg("Starting autonomous execution...")
 
-        for iteration in range(max_iter):
+        for iteration in range(start_iteration, max_iter):
             # Check cancel flag (set by TUI escape key)
             cancel = self.cfg.get("_cancel_flag")
             if cancel and cancel():
                 print_system_msg("🛑 Agent cancelled by user")
                 break
 
-            # Call provider (streaming preferred, fallback to chat)
+            # ── Provider call with Reliability Layer ──────
             try:
-                if self._supports_streaming():
-                    content, tool_calls = self._streaming_call(messages, temperature)
-                else:
-                    content, tool_calls = self.provider.chat(
-                        messages, self.tool_defs, temperature
-                    )
-                    # Emit final text if no streaming
-                    if content and self._on_event:
-                        self._emit({"type": "text", "data": content})
+                content, tool_calls = self._call_provider_with_retry(messages, temperature, ts)
             except Exception as e:
-                print_system_msg(f"Agent error: {e}")
-                self._emit({"type": "error", "data": str(e)})
+                print_system_msg(f"❌ Agent halted: {e}")
+                self._emit({"type": "error", "data": f"All providers exhausted: {e}"})
+                # Save final state for resume
+                if ts:
+                    ts.set_messages(messages)
+                    ts.set_agent_steps([s.to_dict() for s in self.steps])
                 break
 
             model = self.state.get("model", "").split("/")[-1] or "unknown"
@@ -224,15 +365,33 @@ class AutonomousAgent:
                                   "arguments": json.dumps(tc.args, ensure_ascii=False)}}
                     for tc in tool_calls
                 ]
-                messages.append({"role": "assistant", "content": content or None, "tool_calls": tc_list})
+                if not (resume and messages and messages[-1].get("role") == "assistant" and messages[-1].get("tool_calls")):
+                    messages.append({"role": "assistant", "content": content or None, "tool_calls": tc_list})
+                    ts.set_messages(messages)
 
                 for tc in tool_calls:
                     # Emit tool start event for live Web UI
                     self._emit({"type": "tool", "data": {"name": tc.name, "args": tc.args}})
 
-                    result = self._execute_tool(tc)
-                    step = AgentStep(len(self.steps) + 1, tc.name, tc.args, result)
-                    self.steps.append(step)
+                    # Idempotency / Step lock guard
+                    existing_step = None
+                    for idx, step in enumerate(self.steps):
+                        if idx not in self._consumed_step_indices:
+                            if step.tool_name == tc.name and step.args == tc.args:
+                                existing_step = step
+                                self._consumed_step_indices.add(idx)
+                                break
+
+                    if existing_step:
+                        result = existing_step.result
+                        step = existing_step
+                        print_system_msg(f"🔒 [Step Lock] Bypassing already executed tool: {tc.name}")
+                        self._emit({"type": "text", "data": f"\n[🔒 Step Lock: retrieved result for {tc.name}]\n"})
+                    else:
+                        result = self._execute_tool(tc)
+                        step = AgentStep(len(self.steps) + 1, tc.name, tc.args, result)
+                        self.steps.append(step)
+                        self._consumed_step_indices.add(len(self.steps) - 1)
 
                     # Emit tool result event for live Web UI
                     self._emit({
@@ -265,10 +424,24 @@ class AutonomousAgent:
                     if tc.name in {"write", "edit"} and not step.result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed", "No such", "File not found")):
                         file_path = tc.args.get("file_path")
                         if file_path:
-                            self._emit({"type": "tool", "data": {"name": "validate", "args": {"file_path": file_path}}})
-                            val_result = self._auto_validate_file(file_path)
-                            validation_step = AgentStep(len(self.steps) + 1, "validate", {"file_path": file_path}, val_result)
-                            self.steps.append(validation_step)
+                            validation_step = None
+                            if existing_step:
+                                for idx, s in enumerate(self.steps):
+                                    if idx not in self._consumed_step_indices and s.tool_name == "validate" and s.args.get("file_path") == file_path:
+                                        validation_step = s
+                                        self._consumed_step_indices.add(idx)
+                                        break
+
+                            if validation_step:
+                                val_result = validation_step.result
+                                print_system_msg(f"🔒 [Step Lock] Bypassing already executed validation for: {file_path}")
+                            else:
+                                self._emit({"type": "tool", "data": {"name": "validate", "args": {"file_path": file_path}}})
+                                val_result = self._auto_validate_file(file_path)
+                                validation_step = AgentStep(len(self.steps) + 1, "validate", {"file_path": file_path}, val_result)
+                                self.steps.append(validation_step)
+                                self._consumed_step_indices.add(len(self.steps) - 1)
+
                             self._emit({
                                 "type": "tool_result",
                                 "data": {"name": "validate", "success": not val_result.startswith(("❌", "Error")), "result": val_result[:200]}
@@ -281,12 +454,19 @@ class AutonomousAgent:
                         "name": tc.name,
                         "content": result,
                     })
+
+                    ts.set_messages(messages)
+                    ts.set_agent_steps([s.to_dict() for s in self.steps])
+
                     model = self.state.get("model", "").split("/")[-1] or "unknown"
                     self.state["cost"] += estimate_turn_cost(model, 200, 100)
                     self.state["turns"] = self.state.get("turns", 0) + 1
             else:
                 # AI responded without tool calls — task may be complete
                 summary = content or "Task completed."
+                if not (resume and messages and messages[-1].get("role") == "assistant" and messages[-1].get("content") == content):
+                    messages.append({"role": "assistant", "content": content})
+                    ts.set_messages(messages)
 
                 # ── CODE EXTRACTION FALLBACK ──────────────────────
                 # If LLM described code in text instead of using write tool,
@@ -317,6 +497,8 @@ class AutonomousAgent:
                                 _P(fpath).write_text(block.strip(), encoding="utf-8")
                                 step = AgentStep(len(self.steps)+1, "write", {"file_path": fpath, "content": block[:100]}, f"✅ Written {len(block)} bytes to {fpath}")
                                 self.steps.append(step)
+                                self._consumed_step_indices.add(len(self.steps) - 1)
+                                ts.set_agent_steps([s.to_dict() for s in self.steps])
                                 self._emit({"type": "tool", "data": {"name": "write", "args": {"file_path": fpath}}})
                                 self._emit({"type": "tool_result", "data": {"name": "write", "success": True, "result": f"Created {fpath} ({len(block)} bytes)"}})
                                 summary = f"Created {len(blocks)} file(s): " + ", ".join(
@@ -349,12 +531,14 @@ class AutonomousAgent:
 
                 self._show_final_result(content)
                 print_agent_done(self.steps, summary)
+                ts.clear()
                 return self.steps, summary
 
         # Hit max iterations
         summary = f"Reached maximum iterations ({max_iter})."
         print_system_msg(summary)
         print_agent_done(self.steps, summary)
+        ts.clear()
         return self.steps, summary
 
     # ── internal helpers ──────────────────────────────────────────────
