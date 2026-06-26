@@ -285,8 +285,46 @@ class AutonomousAgent:
                     self.state["cost"] += estimate_turn_cost(model, 200, 100)
                     self.state["turns"] = self.state.get("turns", 0) + 1
             else:
-                # AI responded without tool calls — task is complete (or AI is asking a question)
+                # AI responded without tool calls — task may be complete
                 summary = content or "Task completed."
+
+                # ── CODE EXTRACTION FALLBACK ──────────────────────
+                # If LLM described code in text instead of using write tool,
+                # extract code blocks and auto-write them to disk.
+                if content and not self.steps:
+                    import re as _re
+                    blocks = _re.findall(
+                        r'```(?:python|html|javascript|js|css)?\n(.*?)```',
+                        content, _re.DOTALL
+                    )
+                    if blocks:
+                        # Try to determine filenames from the content
+                        filenames = _re.findall(
+                            r'(?:# |// |<!-- )?(?:File:|file:|==>|→)\s*([^\s<]+\.(?:py|html|js|css|json|md|txt))',
+                            content, _re.IGNORECASE
+                        )
+                        default_names = ["server.py", "index.html", "test_api.py",
+                                         "app.py", "main.py", "style.css", "script.js",
+                                         "models.py", "routes.py", "config.py"]
+                        for i, block in enumerate(blocks[:5]):
+                            fname = filenames[i] if i < len(filenames) else (
+                                default_names[i] if i < len(default_names) else f"output_{i+1}.txt"
+                            )
+                            from pathlib import Path as _P
+                            cwd = _P.cwd()
+                            fpath = str(cwd / fname)
+                            try:
+                                _P(fpath).write_text(block.strip(), encoding="utf-8")
+                                step = AgentStep(len(self.steps)+1, "write", {"file_path": fpath, "content": block[:100]}, f"✅ Written {len(block)} bytes to {fpath}")
+                                self.steps.append(step)
+                                self._emit({"type": "tool", "data": {"name": "write", "args": {"file_path": fpath}}})
+                                self._emit({"type": "tool_result", "data": {"name": "write", "success": True, "result": f"Created {fpath} ({len(block)} bytes)"}})
+                                summary = f"Created {len(blocks)} file(s): " + ", ".join(
+                                    str(cwd / (filenames[j] if j < len(filenames) else default_names[j] if j < len(default_names) else f"output_{j+1}.txt"))
+                                    for j in range(min(len(blocks), 5))
+                                )
+                            except Exception as e:
+                                self._emit({"type": "error", "data": f"Failed to write {fname}: {e}"})
 
                 # ── Auto-validate written files before declaring done ──
                 written_steps = [
