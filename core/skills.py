@@ -207,7 +207,10 @@ class SkillManager:
 
     def _load_one(self, skill_dir: Path) -> Optional[Skill]:
         """Load a single skill from a directory."""
+        # Support both WIDDX (skill.md) and Anthropic (SKILL.md) formats
         md = skill_dir / "skill.md"
+        if not md.exists():
+            md = skill_dir / "SKILL.md"
         if not md.exists():
             return None
         text = md.read_text(encoding="utf-8")
