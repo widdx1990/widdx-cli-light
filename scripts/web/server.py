@@ -196,6 +196,19 @@ async def api_project_session():
         return {"messages": [], "state": {}, "error": str(e)}
 
 
+@app.get("/api/project/docs/{doc_name}")
+async def api_project_doc(doc_name: str):
+    """Read a project doc (PLAN.md, DESIGN.md, TASKS.md, or ROADMAP.md)."""
+    from pathlib import Path
+    allowed = {"PLAN.md", "DESIGN.md", "TASKS.md", "ROADMAP.md"}
+    if doc_name not in allowed:
+        return JSONResponse(status_code=400, content={"error": "Invalid doc name"})
+    doc_path = Path.cwd() / ".widdx" / doc_name
+    if not doc_path.exists():
+        return {"content": "", "exists": False}
+    return {"content": doc_path.read_text(encoding="utf-8"), "exists": True, "name": doc_name}
+
+
 @app.get("/api/branches")
 async def api_branches():
     """List session branches for the current project."""

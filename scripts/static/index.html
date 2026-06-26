@@ -82,6 +82,14 @@
       <i class="fa-solid fa-sliders"></i>
       <span data-i18n="nav_settings">Settings</span>
     </div>
+    <div class="nav-item" data-view="docs" data-tooltip="Project Docs">
+      <i class="fa-solid fa-book"></i>
+      <span>Project Docs</span>
+    </div>
+    <div class="nav-item" data-view="search" data-tooltip="Search Sessions">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <span>Search</span>
+    </div>
   </nav>
 
   <div class="sidebar-footer">
@@ -210,6 +218,17 @@
               <button class="input-toolbar-btn" data-i18n="cmd_actions" data-i18n-attr="title" title="Commands" onclick="openCommandPalette()">
                 <i class="fa-solid fa-terminal"></i>
               </button>
+              <button class="input-toolbar-btn" id="micBtn" title="Voice input" onclick="toggleVoiceInput()">
+                <i class="fa-solid fa-microphone"></i>
+              </button>
+              <label class="input-toolbar-btn" title="Upload image (vision)" style="cursor:pointer">
+                <i class="fa-solid fa-image"></i>
+                <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
+              </label>
+              <label class="input-toolbar-btn" title="Attach file" style="cursor:pointer">
+                <i class="fa-solid fa-paperclip"></i>
+                <input type="file" id="fileUpload" style="display:none" onchange="handleFileUpload(event)">
+              </label>
             </div>
             <button class="cancel-btn" id="cancelBtn" onclick="cancelAgent()" title="Stop"><i class="fa-solid fa-stop"></i></button>
         <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send">

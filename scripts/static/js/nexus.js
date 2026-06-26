@@ -982,6 +982,10 @@ function showView(view) {
     showAutoCommitView(area);
   } else if (view === 'apikeys') {
     showApiKeysView(area);
+  } else if (view === 'docs') {
+    showProjectDocsView(area);
+  } else if (view === 'search') {
+    showSearchView(area);
   }
 }
 
@@ -1151,4 +1155,162 @@ document.addEventListener('DOMContentLoaded', function() {
   // Periodic refresh
   setInterval(loadStatus, 30000);
   setInterval(loadSidebar, 60000);
+
+  // ── Voice input ──────────────────────────────────────
+  var _voiceListening = false;
+  var _recognition = null;
+  window.toggleVoiceInput = function() {
+    var micBtn = document.getElementById('micBtn');
+    if (!window.webkitSpeechRecognition && !window.SpeechRecognition) {
+      showToast('Voice input not supported in this browser', 'error');
+      return;
+    }
+    if (_voiceListening) { stopVoice(); return; }
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    _recognition = new SR();
+    _recognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+    _recognition.interimResults = false;
+    _recognition.onresult = function(e) {
+      var input = document.getElementById('messageInput');
+      input.value = e.results[0][0].transcript;
+      _voiceListening = false;
+      if (micBtn) micBtn.style.color = '';
+      sendMessage();
+    };
+    _recognition.onerror = function() { stopVoice(); };
+    _recognition.start();
+    _voiceListening = true;
+    if (micBtn) micBtn.style.color = '#f04848';
+    showToast('Listening...', 'info');
+  };
+  function stopVoice() {
+    _voiceListening = false;
+    if (_recognition) { _recognition.stop(); _recognition = null; }
+    var micBtn = document.getElementById('micBtn');
+    if (micBtn) micBtn.style.color = '';
+  }
+
+  // ── Image upload (vision) ────────────────────────────
+  window.handleImageUpload = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { showToast('Image too large (max 5MB)', 'error'); return; }
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var base64 = ev.target.result.split(',')[1];
+      var userMsg = { role: 'user', content: '[Image attached: ' + file.name + ']', image: base64 };
+      S.messages.push(userMsg);
+      appendMessageBubble('user', '<i class=\"fa-solid fa-image\"></i> ' + file.name);
+      fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Describe this image in detail.', history: S.messages })
+      }).then(function(r) { return r.json(); })
+        .then(function(d) { if (d.reply) appendMessageBubble('assistant', d.reply); })
+        .catch(function(err) { showToast('Vision failed: ' + err.message, 'error'); });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  // ── File upload ──────────────────────────────────────
+  window.handleFileUpload = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showToast('File too large (max 2MB)', 'error'); return; }
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var content = ev.target.result;
+      var preview = content.length > 2000 ? content.substring(0, 2000) + '\n... (truncated)' : content;
+      var userMsg = { role: 'user', content: 'Uploaded file: ' + file.name + '\n\n```\n' + preview + '\n```' };
+      S.messages.push(userMsg);
+      appendMessageBubble('user', '<i class=\"fa-solid fa-file\"></i> ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
+      var input = document.getElementById('messageInput');
+      input.value = 'Review the attached file: ' + file.name;
+      sendMessage();
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // ── Project Docs viewer ──────────────────────────────
+  function showProjectDocsView(area) {
+    area.innerHTML = '<div style=\"padding:24px;max-width:900px;margin:0 auto\">'
+      + '<h2 style=\"margin-bottom:16px\"><i class=\"fa-solid fa-book\"></i> Project Documentation</h2>'
+      + '<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px\" id=\"docsGrid\">Loading…</div>'
+      + '</div>';
+    var docs = ['PLAN.md', 'DESIGN.md', 'TASKS.md', 'ROADMAP.md'];
+    var loaded = 0;
+    var html = '';
+    docs.forEach(function(doc) {
+      fetch('/api/project/docs/' + doc).then(function(r) { return r.json(); })
+        .then(function(data) {
+          loaded++;
+          var content = (data.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').substring(0, 3000);
+          html += '<div style=\"background:var(--bg-card);border:1px solid var(--border-main);border-radius:12px;padding:16px\">'
+            + '<h3 style=\"margin:0 0 8px;color:var(--accent-primary)\">' + doc + '</h3>'
+            + '<pre style=\"white-space:pre-wrap;font-size:13px;color:var(--text-secondary);max-height:300px;overflow-y:auto\">' + (content || '(empty)') + '</pre>'
+            + '</div>';
+          if (loaded === docs.length) {
+            document.getElementById('docsGrid').innerHTML = html || '<p>No project docs found. Start a chat to auto-create them.</p>';
+          }
+        }).catch(function() { loaded++; });
+    });
+  }
+
+  // ── Session search ───────────────────────────────────
+  function showSearchView(area) {
+    area.innerHTML = '<div style=\"padding:24px;max-width:900px;margin:0 auto\">'
+      + '<h2 style=\"margin-bottom:16px\"><i class=\"fa-solid fa-magnifying-glass\"></i> Search Sessions</h2>'
+      + '<input id=\"searchInput\" style=\"width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border-main);border-radius:8px;color:var(--text-primary);font-size:16px;outline:none;margin-bottom:16px\" placeholder=\"Search messages, sessions, memories…\" oninput=\"doSearch(this.value)\">'
+      + '<div id=\"searchResults\" style=\"display:flex;flex-direction:column;gap:8px\"></div>'
+      + '</div>';
+  }
+
+  window.doSearch = function(q) {
+    var container = document.getElementById('searchResults');
+    if (!container) return;
+    if (!q || q.length < 2) { container.innerHTML = ''; return; }
+    fetch('/api/dashboard/sessions?q=' + encodeURIComponent(q))
+      .then(function(r) { return r.json(); })
+      .then(function(sessions) {
+        if (!sessions || !sessions.length) {
+          container.innerHTML = '<p style=\"color:var(--text-muted)\">No results for \"' + escapeHtml(q) + '\"</p>';
+          return;
+        }
+        container.innerHTML = sessions.slice(0, 20).map(function(s) {
+          return '<div style=\"background:var(--bg-card);border:1px solid var(--border-main);border-radius:8px;padding:12px 16px;cursor:pointer\" onclick=\"showView(\'chat\');loadSession(\'' + (s.id || '') + '\')\">'
+            + '<strong>' + escapeHtml(s.name || 'Untitled') + '</strong>'
+            + '<span style=\"float:right;color:var(--text-muted);font-size:12px\">' + (s.branch || 'main') + '</span>'
+            + '<br><span style=\"color:var(--text-muted);font-size:13px\">' + (s.created || '') + ' · ' + (s.msg_count || 0) + ' messages</span>'
+            + '</div>';
+        }).join('');
+      }).catch(function() {
+        container.innerHTML = '<p style=\"color:var(--text-muted)\">Search failed. Try again.</p>';
+      });
+  };
+
+  // ── Diff preview helper ──────────────────────────────
+  window.showDiffPreview = function(original, modified) {
+    var area = document.getElementById('messagesArea');
+    if (!area) return;
+    var diffHtml = '<div style=\"background:var(--bg-card);border:1px solid var(--border-main);border-radius:12px;padding:16px;margin:8px 0;max-height:400px;overflow-y:auto;font-family:var(--font-mono);font-size:12px\">'
+      + '<h4 style=\"margin:0 0 8px\">Diff Preview</h4>'
+      + '<pre style=\"margin:0;white-space:pre-wrap\">';
+    var lines1 = original.split('\n');
+    var lines2 = modified.split('\n');
+    var maxLen = Math.max(lines1.length, lines2.length);
+    for (var i = 0; i < maxLen; i++) {
+      var l1 = lines1[i] || '';
+      var l2 = lines2[i] || '';
+      if (l1 !== l2) {
+        if (l1) diffHtml += '<span style=\"background:rgba(240,72,72,0.15);display:block\">- ' + escapeHtml(l1) + '</span>\n';
+        if (l2) diffHtml += '<span style=\"background:rgba(72,240,144,0.15);display:block\">+ ' + escapeHtml(l2) + '</span>\n';
+      } else {
+        diffHtml += '<span style=\"display:block\">  ' + escapeHtml(l1) + '</span>\n';
+      }
+    }
+    diffHtml += '</pre></div>';
+    area.insertAdjacentHTML('beforeend', diffHtml);
+  };
 });
