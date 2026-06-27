@@ -574,6 +574,15 @@ class AutonomousAgent:
         summary = f"Reached maximum iterations ({max_iter})."
         print_system_msg(summary)
         print_agent_done(self.steps, summary)
+        # ── ExecutionIntelligence: deep success analysis ──
+        try:
+            report = ei.analyze_success(None, '')
+            if report.success_pattern:
+                self._emit({"type": "text", "data": f"\n[📊 {report.success_pattern[:120]}]\n"})
+            if report.success_reason:
+                self._emit({"type": "text", "data": f"\n[💡 {report.success_reason[:200]}]\n"})
+        except Exception:
+            pass
         ts.clear()
         return self.steps, summary
 
@@ -672,6 +681,12 @@ class AutonomousAgent:
             result = core_tools.execute_with_skills(tc.name, tc.args)
             print_tool_msg(tc.name, result[:1000])
             self._emit({"type": "tool_result", "data": {"name": tc.name, "result": result[:500]}})
+            # ExecutionIntelligence: evaluate step quality
+            try:
+                ei.evaluate_step(len(self.steps) + 1, result, tc.name,
+                                 tc.args if hasattr(tc, 'args') else {})
+            except Exception:
+                pass
 
             normalized = (result or "").strip()
             if not normalized.startswith(("\ud83d\udeab", "❌", "⛔", "Error", "Failed")):
