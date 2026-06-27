@@ -37,6 +37,19 @@ class DecisionLayer:
     def evaluate(self, suggestion: str) -> DecisionScore:
         """Score a suggestion against all knowledge sources."""
         result = DecisionScore(suggestion=suggestion)
+
+        # ── PreDecisionForce: actively block deprecated suggestions ──
+        try:
+            from core.learning.pre_decision_force import get_pre_decision_force
+            blocked, reason = get_pre_decision_force().is_suggestion_blocked(suggestion)
+            if blocked:
+                result.blocked = True
+                result.reason = reason
+                result.score = 0.0
+                return result
+        except Exception:
+            pass
+
         s = suggestion.lower()
 
         # ── 1. ADR check (block if rejected) ──────────

@@ -121,7 +121,22 @@ class DecisionRouter:
         """
         steps: list[DecisionStep] = []
 
-        # --- Step 0: Learning — query patterns for routing hints ---
+        # --- Step 0: PreDecisionForce — modify mode weights by learning ──
+        try:
+            from core.learning.pre_decision_force import get_pre_decision_force
+            pdf = get_pre_decision_force()
+            mode_weights = pdf.get_router_weights(classification.task_type.value)
+            steps.append(DecisionStep(
+                component="PreDecisionForce",
+                input_summary=f"weights for {classification.task_type.value}",
+                output=", ".join(f"{k}={v:.2f}" for k, v in mode_weights.items()),
+                score=0.8,
+                detail=f"Router weights modified by learning history",
+            ))
+        except Exception:
+            pass
+
+        # --- Step 0.5: Learning — query patterns for routing hints ---
         try:
             from core.learning.pattern_library import UnifiedPatternStore
             store = UnifiedPatternStore()

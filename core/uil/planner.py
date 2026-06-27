@@ -222,6 +222,32 @@ class TaskPlanner:
         is_minimal: bool
         decision_steps: list[DecisionStep] = []
 
+        # ── PreDecisionForce: actively constrain planning ──
+        try:
+            from core.learning.pre_decision_force import get_pre_decision_force
+            pdf = get_pre_decision_force()
+            constraints = pdf.get_planner_constraints(task_type.value)
+            # Block deprecated patterns
+            for avoided in constraints.get("avoided_patterns", [])[:3]:
+                decision_steps.append(DecisionStep(
+                    component="PreDecisionForce",
+                    input_summary=f"avoided={avoided[:60]}",
+                    output="BLOCKED",
+                    score=0.0,
+                    detail=f"PreDecisionForce blocked deprecated pattern: {avoided[:100]}",
+                ))
+            # Prefer proven patterns
+            for pref in constraints.get("preferred_patterns", [])[:2]:
+                decision_steps.append(DecisionStep(
+                    component="PreDecisionForce",
+                    input_summary=f"prefer={pref['name']}",
+                    output=f"preferred (conf={pref['confidence']:.2f})",
+                    score=pref['confidence'],
+                    detail=f"PreDecisionForce prefers: {pref['solution'][:100]}",
+                ))
+        except Exception:
+            pass
+
         # ── Learning: query proven planning patterns ──
         try:
             from core.learning.pattern_library import UnifiedPatternStore
