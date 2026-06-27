@@ -118,20 +118,35 @@ class WebLearningLoop:
                 summary = f"Web search '{query[:60]}...' found {len(patterns)} relevant results. "
                 summary += " | ".join(p["solution"][:80] for p in patterns[:3])
 
-            # Store learned patterns
+            # ── Immediate Knowledge Injection ──
+            # Store AND immediately inject into runtime context
+            context_injection = ""
             if patterns:
                 self._store_patterns(patterns, query)
+                # Build context for immediate injection into current execution
+                context_injection = self._build_injection_context(patterns, query)
 
             return {
                 "found": len(patterns) > 0,
                 "patterns": patterns,
                 "summary": summary,
                 "sources": sources,
+                "injection": context_injection,  # ⚡ Immediate context for Planner
             }
 
         except Exception as e:
             logger.warning("Web search failed: %s", e)
-            return {"found": False, "patterns": [], "summary": f"Search unavailable: {e}", "sources": []}
+            return {"found": False, "patterns": [], "summary": f"Search unavailable: {e}", "sources": [], "injection": ""}
+
+    def _build_injection_context(self, patterns: list[dict], query: str) -> str:
+        """Build immediate context for hot-reload into current Planner execution."""
+        lines = ["<web_knowledge_injection>",
+                 f"Search: {query[:150]}",
+                 "New knowledge acquired — use this NOW:"]
+        for p in patterns[:3]:
+            lines.append(f"- {p['solution'][:200]}")
+        lines.append("</web_knowledge_injection>")
+        return "\n".join(lines)
 
     def _extract_pattern(self, text: str, context: str) -> dict:
         """Extract a learnable pattern from web search result."""

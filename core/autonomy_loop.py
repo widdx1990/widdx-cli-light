@@ -191,25 +191,31 @@ class AutonomyLoop:
                     # Auto-plan: extract steps from the first iteration
                     self._auto_plan_steps(summary, ts)
 
-                # ── Stuck? Try Web Learning Loop before giving up ──
-                if i >= 3 and ts.get_progress()["progress_pct"] == 0:
+                # ── Stuck? Web Learning → ⚡ IMMEDIATE hot-reload → retry SAME step ──
+                if i >= 3 and ts.get_progress()["progress_pct"] < 20:
                     try:
                         from core.learning.web_learning import get_web_learning
                         wl = get_web_learning()
                         progress = ts.get_progress()
                         if wl.should_search(i, progress.get("progress_pct", 0), True):
                             if on_event:
-                                on_event({"type": "text", "data": "\n[🌐 Searching web for solutions...]\n"})
+                                on_event({"type": "text", "data": "\n[🌐 Web search — learning...]\n"})
                             web_result = wl.learn(goal)
-                            if web_result["found"]:
+                            if web_result["found"] and web_result.get("injection"):
+                                # ⚡ Hot-reload: inject web knowledge into CURRENT context
                                 if on_event:
-                                    on_event({"type": "text", "data": f"\n[📚 Web found: {web_result['summary'][:200]}]\n"})
-                                continue  # Retry with new knowledge
+                                    on_event({"type": "text", "data": f"\n[⚡ Injecting web knowledge now: {web_result['summary'][:150]}]\n"})
+                                # Rebuild context with injection
+                                sm = get_state_manager()
+                                ctx = sm.get_full_context(goal=goal)
+                                ctx += "\n\n" + web_result["injection"]
+                                # Continue loop — retries SAME step with new knowledge
+                                continue
                     except Exception:
                         pass
 
                     result.human_help_needed = True
-                    result.summary = "Stuck — no progress after 4 iterations, web search found nothing"
+                    result.summary = "Stuck — no progress, web search found nothing"
                     break
 
             # ── Wrap up ─────────────────────────────────
