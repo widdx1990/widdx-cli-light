@@ -134,6 +134,14 @@ def get_sandbox():
 
 # ── Routes ──────────────────────────────────────────────────
 
+@app.post("/api/new-session")
+async def api_new_session():
+    """Start a new chat session."""
+    chat = get_chat()
+    sid = chat.new_session()
+    return {"session_id": sid}
+
+
 @app.get("/")
 async def index():
     """Serve the main Web UI page (no-cache)."""

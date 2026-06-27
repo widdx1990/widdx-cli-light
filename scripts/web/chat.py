@@ -40,6 +40,11 @@ class ChatHandler:
         self._session_id: str | None = None
         self._init_uil()
 
+    def new_session(self):
+        """Force-create a new session, abandoning the current one."""
+        self._session_id = None
+        return self._ensure_session()
+
     def _ensure_session(self):
         """Get or create the current session ID."""
         if self._session_id:

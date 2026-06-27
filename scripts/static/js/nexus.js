@@ -161,7 +161,6 @@ const SLASH_COMMANDS = [
 // ── New Session ──
 
 window.newSession = function() {
-  // Save current session if it has messages
   S.messages = [];
   S._activeAIWrapper = null;
   S._activeAIBody = null;
@@ -172,11 +171,11 @@ window.newSession = function() {
   S._toolCount = 0;
   S.streaming = false;
   S._processing = false;
-  // Clear the chat area
+  // Clear UI
   var area = document.getElementById('messagesArea');
-  if (area) restoreOnboarding();
-  // Tell backend to start fresh
-  fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({new_session: true})}).catch(function(){});
+  if (area) { area.innerHTML = ''; restoreOnboarding(); }
+  // Tell backend to create new session
+  fetch('/api/new-session', {method:'POST'}).catch(function(){});
   showView('chat');
   showToast('New session started', 'info');
   setActivity('Ready', '—');
