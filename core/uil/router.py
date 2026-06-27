@@ -121,6 +121,27 @@ class DecisionRouter:
         """
         steps: list[DecisionStep] = []
 
+        # --- Step 0: Learning — query patterns for routing hints ---
+        try:
+            from core.learning.pattern_library import UnifiedPatternStore
+            store = UnifiedPatternStore()
+            routing_patterns = store.search(
+                category="workflow",
+                tags=[classification.task_type.value],
+                min_confidence=0.5, limit=1,
+            )
+            if routing_patterns:
+                best = routing_patterns[0]
+                steps.append(DecisionStep(
+                    component="PatternLibrary",
+                    input_summary=f"query=workflow,tag={classification.task_type.value}",
+                    output=f"found: {best.name} (conf={best.confidence:.2f})",
+                    score=best.confidence,
+                    detail=f"Routed with learned pattern: {best.solution[:100]}",
+                ))
+        except Exception:
+            pass
+
         # --- Step 1: Select ExecutionMode ---
         mode = _MODE_MAP.get(
             classification.task_type,

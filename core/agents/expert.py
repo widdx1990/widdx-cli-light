@@ -335,6 +335,15 @@ class ExpertTeam:
         ctx = "\n--- PROJECT DIRECTORY ---\n%s\n\n--- ORCHESTRATOR PLAN ---\n%s\n" % (project_dir, plan)
         if lang_hints:
             ctx += "\n--- PROJECT LANGUAGES ---\n%s\n" % ", ".join(lang_hints)
+        # ── Learning: inject proven architectural patterns ──
+        try:
+            from core.learning.pattern_library import UnifiedPatternStore
+            store = UnifiedPatternStore()
+            expert_patterns = store.search(category="architectural", min_confidence=0.5, limit=3)
+            if expert_patterns:
+                ctx += "\n--- PROVEN PATTERNS ---\n" + "\n".join(f"- {p.solution[:120]}" for p in expert_patterns)
+        except Exception:
+            pass
         n = 2
 
         # Phase 2: Researcher for medium+ complexity (or KG-detected needs)

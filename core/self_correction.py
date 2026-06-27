@@ -91,6 +91,7 @@ class SelfCorrection:
         brain: Any = None,
     ) -> dict:
         """Apply targeted corrections based on verification findings.
+        Queries PatternLibrary for proven fix strategies.
 
         Returns: {"fixed": bool, "strategies_applied": [...], "output": new_output}
         """
@@ -100,19 +101,35 @@ class SelfCorrection:
         strategies_applied = []
         fixed_output = current_output
 
-        for f in findings[:5]:  # max 5 findings per correction round
+        for f in findings[:5]:
             error_type = self.classify(f)
             strategy = self.get_strategy(error_type)
+
+            # ── Learning: check for proven fix pattern ──
+            learned_fix = None
+            try:
+                from core.learning.pattern_library import UnifiedPatternStore
+                msg = getattr(f, "message", str(f))
+                patterns = UnifiedPatternStore().search(query=msg, category="debugging", min_confidence=0.4, limit=1)
+                if patterns:
+                    learned_fix = patterns[0].solution[:200]
+                    strategy["action"] = f"learned_{patterns[0].name}"
+                    strategy["prompt"] = learned_fix
+            except Exception:
+                pass
+
             strategies_applied.append({
                 "error_type": error_type,
                 "action": strategy["action"],
                 "finding": getattr(f, "message", str(f))[:100],
+                "learned": learned_fix is not None,
             })
 
             logger.info(
-                "SelfCorrection: %s → %s (%s)",
+                "SelfCorrection: %s → %s (%s) %s",
                 error_type, strategy["action"],
                 getattr(f, "message", "")[:80],
+                "📚 learned" if learned_fix else "",
             )
 
         # Record for SelfImprove

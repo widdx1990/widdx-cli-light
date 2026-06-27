@@ -38,6 +38,18 @@ class VerifyLoop:
     def __init__(self, max_retries: int = 3):
         self._max_retries = max_retries
 
+    def get_learned_strategy(self, error_msg: str) -> dict | None:
+        """Query PatternLibrary for a proven fix strategy for this error."""
+        try:
+            from core.learning.pattern_library import UnifiedPatternStore
+            store = UnifiedPatternStore()
+            patterns = store.search(query=error_msg, category="debugging", min_confidence=0.4, limit=1)
+            if patterns:
+                return {"name": patterns[0].name, "solution": patterns[0].solution, "confidence": patterns[0].confidence}
+        except Exception:
+            pass
+        return None
+
     def run(
         self,
         output: object,  # ExecutionResult or raw text
