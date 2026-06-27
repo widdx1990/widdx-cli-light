@@ -120,12 +120,25 @@ def _write(file_path: str, content: str):
     if not _is_safe_path(p):
         return f"Sandbox: write to {file_path} denied — not inside {_SAFE_DIR}"
     p = p.resolve()
-    p.parent.mkdir(parents=True, exist_ok=True)
+
+    # ── RuntimeGuard: disk check + transactional write ──
     try:
-        p.write_text(content, encoding="utf-8")
+        from core.runtime_guard import TransactionalWrite, get_runtime_guard
+        guard = get_runtime_guard()
+        if not guard.before_write(p):
+            return f"❌ Disk full — cannot write to {file_path}"
+        with TransactionalWrite(p) as tx:
+            tx.write(content)
+        if not guard.after_write(p, len(content.encode('utf-8'))):
+            return f"❌ Write verification failed for {file_path}"
         return f"Written {len(content.encode('utf-8'))} bytes to {file_path}"
-    except Exception as e:
-        return f"Error writing {file_path}: {e}"
+    except ImportError:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            p.write_text(content, encoding="utf-8")
+            return f"Written {len(content.encode('utf-8'))} bytes to {file_path}"
+        except Exception as e:
+            return f"Error writing {file_path}: {e}"
 
 
 def _edit(file_path: str, old_string: str, new_string: str,

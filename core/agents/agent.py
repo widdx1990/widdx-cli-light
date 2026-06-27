@@ -335,11 +335,24 @@ class AutonomousAgent:
 
         print_system_msg("Starting autonomous execution...")
 
+        # ── RuntimeGuard: task-level safety ──
+        from core.runtime_guard import get_runtime_guard, ProviderTimeoutError, WallClockExceededError
+        guard = get_runtime_guard()
+        guard.start_task()
+
         for iteration in range(start_iteration, max_iter):
             # Check cancel flag (set by TUI escape key)
             cancel = self.cfg.get("_cancel_flag")
             if cancel and cancel():
                 print_system_msg("🛑 Agent cancelled by user")
+                break
+
+            # ── RuntimeGuard: check safety before LLM call ──
+            if not guard.before_provider_call():
+                print_system_msg("⚠️ RuntimeGuard: pausing due to memory pressure")
+                self._emit({"type": "error", "data": "Paused — high memory usage. Task state saved."})
+                ts.set_messages(messages)
+                ts.set_agent_steps([s.to_dict() for s in self.steps])
                 break
 
             # ── Provider call with Reliability Layer ──────
@@ -356,6 +369,14 @@ class AutonomousAgent:
 
             model = self.state.get("model", "").split("/")[-1] or "unknown"
             self.state["cost"] += estimate_turn_cost(model, 500, 1000)
+
+            # ── RuntimeGuard: detect loops ──
+            if not guard.after_provider_call(content or ""):
+                print_system_msg("⚠️ RuntimeGuard: repetitive loop detected — aborting")
+                self._emit({"type": "error", "data": "Loop detected. Task state saved for review."})
+                ts.set_messages(messages)
+                ts.set_agent_steps([s.to_dict() for s in self.steps])
+                break
 
             # ── Process tool calls if AI decided to use tools ──
             if tool_calls:
