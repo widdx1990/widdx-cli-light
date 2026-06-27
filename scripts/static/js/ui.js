@@ -230,6 +230,43 @@ function _sanitizeHtml(html) {
     .replace(/javascript\s*:/gi, 'blocked:');
 }
 
+// ── Table renderer ──
+function _renderTables(h) {
+  var lines = h.split('\n'), out = [], rows = [], inTbl = false;
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].trim();
+    if (l.startsWith('|') && l.endsWith('|')) {
+      if (!inTbl) { inTbl = true; rows = []; }
+      rows.push(l);
+    } else {
+      if (inTbl) { out.push(_buildTable(rows)); rows = []; inTbl = false; }
+      out.push(lines[i]);
+    }
+  }
+  if (inTbl) out.push(_buildTable(rows));
+  return out.join('\n');
+}
+function _buildTable(rows) {
+  if (rows.length < 2) return rows.join('\n');
+  var h = '<table class="md-table"><thead><tr>';
+  var hc = rows[0].split('|').filter(function(c) { return c.trim(); });
+  h += hc.map(function(c) { return '<th>' + c.trim() + '</th>'; }).join('') + '</tr></thead><tbody>';
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i].match(/^\|[-: |]+\|$/)) continue;
+    var c = rows[i].split('|').filter(function(x) { return x.trim(); });
+    h += '<tr>' + c.map(function(x) { return '<td>' + x.trim() + '</td>'; }).join('') + '</tr>';
+  }
+  return h + '</tbody></table>';
+}
+// ── Collapsible sections ──
+function _renderCollapsibleSections(h) {
+  return h.replace(/(<h[34]>)(.+?)(<\/h[34]>)([\s\S]*?)(?=<h[34]>|$)/g, function(_, ot, title, ct, body) {
+    if (!body.trim() || body.length < 100) return ot + title + ct + body;
+    var id = 'sec-' + Math.random().toString(36).substr(2, 9);
+    return ot + title + ct + '<details class="collapsible-section" open><summary class="section-summary">' + title.replace(/<[^>]+>/g,'') + '</summary><div class="section-body">' + body + '</div></details>';
+  });
+}
+
 function parseMarkdown(text) {
   if (!text) return '';
   // First pass: strip any raw HTML tags / event handlers before escaping
@@ -262,6 +299,12 @@ function parseMarkdown(text) {
 
   // Blockquote
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+
+  // Tables (pipe format)
+  html = _renderTables(html);
+
+  // Collapsible sections
+  html = _renderCollapsibleSections(html);
 
   // Horizontal rule
   html = html.replace(/^---$/gm, '<hr>');

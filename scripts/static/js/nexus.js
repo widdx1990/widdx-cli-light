@@ -755,6 +755,23 @@ function scrollBottom() {
   }
 }
 
+// Monitor scroll to show/hide bottom button
+var _scrollMonitor = setInterval(function() {
+  var area = document.getElementById('messagesArea');
+  var btn = document.getElementById('scrollBottomBtn');
+  if (!area || !btn) return;
+  var distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;
+  if (distFromBottom > 200) { btn.classList.add('visible'); }
+  else { btn.classList.remove('visible'); }
+  // Tool pill timeout: mark running pills stuck after 30s
+  var pills = document.querySelectorAll('.tool-pill.running');
+  pills.forEach(function(p) {
+    var start = parseInt(p.dataset.start || '0');
+    if (!start) { p.dataset.start = Date.now(); return; }
+    if (Date.now() - start > 30000) { p.classList.add('stuck'); }
+  });
+}, 3000);
+
 // ═══════════════ ACTIVITY ═══════════════════
 
 function setActivity(label, tool) {
