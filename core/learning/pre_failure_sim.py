@@ -155,6 +155,41 @@ class PreFailureSim:
 
         return alternatives[:5]
 
+    # ── Creative Strategy Mode (Level 5) ──────────────────
+
+    def needs_creative_mode(self, plan_risk: PlanRisk) -> bool:
+        """Return True when all known strategies are exhausted and the LLM
+        must invent a completely new approach."""
+        return (
+            plan_risk.risk_level in ("high", "critical")
+            and len(plan_risk.alternative_strategies) == 0
+        )
+
+    def build_creative_prompt(self, plan_steps: list[str], task_type: str,
+                              failures: list[str]) -> str:
+        """Build a prompt asking the LLM to invent a novel strategy.
+
+        This is Level 5 autonomy: when all known patterns fail,
+        the system asks the LLM to create something entirely new.
+        """
+        return f"""<creative_strategy_mode>
+ALL KNOWN STRATEGIES HAVE BEEN EXHAUSTED.
+
+Task type: {task_type}
+Proposed plan (HIGH RISK): {' → '.join(plan_steps)}
+Historical failures with this approach:
+{chr(10).join(f'- {f}' for f in failures[:5])}
+
+INVENT A COMPLETELY NEW STRATEGY. Do NOT reuse any of the above.
+Think differently:
+- Can we solve this with a completely different architecture?
+- Can we use a tool combination we haven't tried before?
+- Can we break the problem into different sub-problems?
+- Is there a simpler approach that bypasses the failing components entirely?
+
+Describe your NEW strategy step by step.
+</creative_strategy_mode>"""
+
     # ── Strategy Shifter ──────────────────────────────────
 
     def shift_strategy(self, plan_risk: PlanRisk) -> dict:

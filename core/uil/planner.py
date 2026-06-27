@@ -317,6 +317,18 @@ class TaskPlanner:
                     score=0.5,
                     detail=strategy["recommendation"][:200],
                 ))
+                # Level 5: Creative Strategy Mode
+                if pfs.needs_creative_mode(plan_risk):
+                    creative_prompt = pfs.build_creative_prompt(
+                        step_descs, task_type.value, plan_risk.matched_failures,
+                    )
+                    decision_steps.append(DecisionStep(
+                        component="CreativeStrategyMode",
+                        input_summary="ALL strategies exhausted",
+                        output="triggering creative invention mode (Level 5)",
+                        score=0.3,
+                        detail=creative_prompt[:200],
+                    ))
         except Exception:
             pass
 
