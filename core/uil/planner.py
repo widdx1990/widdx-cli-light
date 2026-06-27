@@ -294,6 +294,32 @@ class TaskPlanner:
         else:
             avg_diff = 0.0
 
+        # ── PreFailureSim: evaluate plan risk BEFORE returning ──
+        try:
+            from core.learning.pre_failure_sim import get_pre_failure_sim
+            pfs = get_pre_failure_sim()
+            step_descs = [s.description for s in steps]
+            tool_hints = [h for s in steps if s.tool_hints for h in s.tool_hints]
+            plan_risk = pfs.evaluate_plan(step_descs, task_type.value, tool_hints)
+            decision_steps.append(DecisionStep(
+                component="PreFailureSim",
+                input_summary=f"evaluated plan with {len(steps)} steps",
+                output=f"risk={plan_risk.risk_level} (score={plan_risk.risk_score:.2f})",
+                score=1.0 - plan_risk.risk_score,
+                detail=plan_risk.reasoning[:200],
+            ))
+            if plan_risk.should_avoid:
+                strategy = pfs.shift_strategy(plan_risk)
+                decision_steps.append(DecisionStep(
+                    component="StrategyShifter",
+                    input_summary=f"risk={plan_risk.risk_level}",
+                    output=f"shift recommended: {strategy['shift']}",
+                    score=0.5,
+                    detail=strategy["recommendation"][:200],
+                ))
+        except Exception:
+            pass
+
         return Plan(
             steps=steps,
             estimated_complexity=round(avg_diff, 2),
