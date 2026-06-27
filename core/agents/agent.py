@@ -343,7 +343,12 @@ class AutonomousAgent:
         # ── ExecutionIntelligence: 4-layer monitoring ──
         from core.execution_intelligence import get_execution_intelligence
         ei = get_execution_intelligence()
-        ei.start_task(None, user_input)  # plan is built later in brain
+        ei.start_task(None, user_input)
+
+        # ── ESC: deterministic layer controller ──
+        from core.execution_state_controller import get_execution_state_controller
+        esc = get_execution_state_controller()
+        esc.signal_complete()  # Reset to L1 at start
 
         for iteration in range(start_iteration, max_iter):
             # Check cancel flag (set by TUI escape key)
@@ -363,9 +368,21 @@ class AutonomousAgent:
             # ── Provider call with Reliability Layer ──────
             try:
                 content, tool_calls = self._call_provider_with_retry(messages, temperature, ts)
+                # ESC: provider succeeded → signal recovery
+                try:
+                    esc.signal_recovery()
+                except Exception:
+                    pass
             except Exception as e:
                 print_system_msg(f"❌ Agent halted: {e}")
                 self._emit({"type": "error", "data": f"All providers exhausted: {e}"})
+                # ESC: signal error + check if should escalate
+                try:
+                    esc.signal_error(str(e))
+                    action = esc.get_action()
+                    self._emit({"type": "text", "data": f"\n[🎛 ESC: {action['layer']} — {action['action']} (escalation #{action['escalation']})]\n"})
+                except Exception:
+                    pass
                 # Save final state for resume
                 if ts:
                     ts.set_messages(messages)
@@ -379,6 +396,13 @@ class AutonomousAgent:
             if not guard.after_provider_call(content or ""):
                 print_system_msg("⚠️ RuntimeGuard: repetitive loop detected — aborting")
                 self._emit({"type": "error", "data": "Loop detected. Task state saved for review."})
+                # ESC: signal stuck
+                try:
+                    esc.signal_stuck(["Loop detected: repetitive responses"])
+                    action = esc.get_action()
+                    self._emit({"type": "text", "data": f"\n[🎛 ESC: {action['layer']} — {action['action']}]\n"})
+                except Exception:
+                    pass
                 ts.set_messages(messages)
                 ts.set_agent_steps([s.to_dict() for s in self.steps])
                 break
