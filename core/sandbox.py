@@ -431,9 +431,26 @@ class SandboxExecutor:
         if env:
             env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items()) + " "
 
-        full_cmd = wsl_args + ["--cd", wsl_path, "--exec", "bash", "-c", f"{env_str}{command}"]
+        bash_cmd = f"{env_str}{command}"
+        full_cmd = wsl_args + ["--cd", wsl_path, "--exec", "bash", "-c", bash_cmd]
         try:
-            return self._run(full_cmd, timeout, env, mode="wsl")
+            proc = subprocess.Popen(
+                full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                return SandboxResult(
+                    stdout=stdout or "", stderr=stderr or "",
+                    exit_code=proc.returncode, mode="wsl",
+                )
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate(timeout=5)
+                return SandboxResult(
+                    stdout=stdout or "", stderr=stderr or "",
+                    exit_code=-1, was_timeout=True, was_killed=True, mode="wsl",
+                )
         except Exception as e:
             logger.warning("WSL execution failed, falling back to subprocess: %s", e)
             return self._execute_subprocess(command, timeout, env)
