@@ -256,8 +256,19 @@ def classify_exception(e: Exception) -> Exception:
 class ReliableProvider(Provider):
     """Production-grade provider with pool, retry, backoff, and checkpointing."""
 
-    def __init__(self, name: str = "reliable-provider", model: str = "reliability-pool", base_url: str = "", api_key: str = ""):
-        super().__init__(name, model, base_url, api_key)
+    def __init__(self, name: str = "", model: str = "", base_url: str = "", api_key: str = ""):
+        # Use primary provider's identity, not "reliability-pool"
+        from core.config.settings import load as _load_cfg
+        cfg = _load_cfg()
+        p_cfg = cfg.get("provider", {})
+        super().__init__(
+            name=name or p_cfg.get("name", "opencode-zen"),
+            model=model or p_cfg.get("model", "deepseek-v4-flash-free"),
+            base_url=base_url or p_cfg.get("base_url", ""),
+            api_key=api_key or p_cfg.get("api_key", ""),
+        )
+        self._active_name = self.name
+        self._active_model = self.model
         self._pool = ProviderPool()
         self._checkpoint = CheckpointManager()
         self._max_retries = 3
@@ -365,6 +376,11 @@ class ReliableProvider(Provider):
                 result.attempts = attempt + 1
                 result.recovered = attempt > 0
                 self._pool.mark_success(provider.name)
+                # Update identity to reflect active provider
+                self._active_name = provider.name
+                self._active_model = getattr(provider, "model", self.model)
+                self.name = provider.name
+                self.model = getattr(provider, "model", self.model)
                 break
 
             except Exception as raw_e:
