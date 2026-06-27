@@ -79,10 +79,29 @@ class ExecutionStateController:
 
     # ── Signal Inputs (called by external components) ──────
 
-    def signal_error(self, error_msg: str = ""):
-        """An error occurred in execution. ESC may escalate to L2."""
+    def signal_error(self, error_msg: str = "", steps: list[str] | None = None, tool: str = ""):
+        """An error occurred. ESC asks World Model before escalating.
+
+        If World Model says 'architecture problem — retry won't help',
+        ESC skips L2/L3 and jumps directly to L4 (redesign).
+        """
         self._error_count += 1
         self._consecutive_errors += 1
+
+        # ── World Model: diagnose BEFORE escalating ──
+        try:
+            from core.world_model import get_world_model
+            wm = get_world_model()
+            diagnosis = wm.diagnose_failure(error_msg, steps or [], tool)
+            if diagnosis.skip_retry:
+                # Architecture problem — retry won't fix it
+                logger.warning("ESC: WorldModel says skip retry — %s", diagnosis.root_cause)
+                self._maybe_transition(AutonomyLayer.L4_PREDICT,
+                                      f"WorldModel: {diagnosis.root_cause} — {diagnosis.reasoning[:100]}")
+                return
+        except Exception:
+            pass
+
         if self._consecutive_errors >= 1:
             self._maybe_transition(AutonomyLayer.L2_RETRY, f"Error: {error_msg[:80]}")
 

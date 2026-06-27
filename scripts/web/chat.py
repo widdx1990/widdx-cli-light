@@ -293,6 +293,16 @@ class ChatHandler:
             except Exception:
                 pass
 
+            # ── Inject Strategy Memory (World Model) ──
+            try:
+                from core.world_model import get_world_model
+                wm = get_world_model()
+                strat_ctx = wm.strategies.get_context_for_prompt(message)
+                if strat_ctx:
+                    uil_history.insert(0, {"role": "system", "content": strat_ctx})
+            except Exception:
+                pass
+
             # ── Inject User Preferences ──
             try:
                 from core.learning.pattern_extractor import UserPreferenceLearner

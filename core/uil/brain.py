@@ -707,6 +707,21 @@ class UnifiedIntelligenceLayer:
         except Exception:
             pass
 
+        # ── World Model: learn WHY, not just WHAT ──
+        try:
+            from core.world_model import get_world_model
+            wm = get_world_model()
+            success = getattr(result, "success", True)
+            summary = getattr(raw, "summary", "") if hasattr(raw, "summary") else str(raw)
+            wm.learn_from_outcome(
+                strategy_name=f"{classification.task_type.value}_{'success' if success else 'fail'}",
+                context=user_input[:200],
+                outcome="success" if success else "failure",
+                why=f"Tools used: {result.tools_used}. {summary[:200]}" if success else f"Failed: {summary[:200]}",
+            )
+        except Exception:
+            pass
+
         # ── Learning: extract patterns + promote ──
         try:
             from core.learning.pattern_extractor import PatternExtractor
