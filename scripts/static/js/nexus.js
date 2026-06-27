@@ -158,6 +158,30 @@ const SLASH_COMMANDS = [
   { cmd: '/dashboard', icon: 'fa-gauge-high', desc: 'Mission Control', action: function() { showView('dashboard'); } },
 ];
 
+// ── New Session ──
+
+window.newSession = function() {
+  // Save current session if it has messages
+  S.messages = [];
+  S._activeAIWrapper = null;
+  S._activeAIBody = null;
+  S._activeAITextEl = null;
+  S._activeThinking = null;
+  S._activeThinkingStrip = null;
+  S._activeToolCard = null;
+  S._toolCount = 0;
+  S.streaming = false;
+  S._processing = false;
+  // Clear the chat area
+  var area = document.getElementById('messagesArea');
+  if (area) restoreOnboarding();
+  // Tell backend to start fresh
+  fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({new_session: true})}).catch(function(){});
+  showView('chat');
+  showToast('New session started', 'info');
+  setActivity('Ready', '—');
+};
+
 // ── Slash command popup ──
 
 var _slashPopupVisible = false;

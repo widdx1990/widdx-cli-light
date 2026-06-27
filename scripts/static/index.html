@@ -54,7 +54,7 @@
     <span class="brand-badge" data-i18n="brand_badge">v3</span>
   </div>
 
-  <div class="sidebar-new-task" onclick="showView('chat'); if(window.innerWidth<820)toggleSidebar()">
+  <div class="sidebar-new-task" onclick="if(typeof newSession==='function')newSession(); else showView('chat'); if(window.innerWidth<820)toggleSidebar()">
     <i class="fa-solid fa-plus"></i>
     <span data-i18n="new_chat">New chat</span>
   </div>
@@ -86,6 +86,10 @@
     <div class="nav-item" data-view="docs" data-tooltip="Project Docs">
       <i class="fa-solid fa-book"></i>
       <span>Project Docs</span>
+    </div>
+    <div class="nav-item" data-view="sessions" data-tooltip="All Sessions">
+      <i class="fa-solid fa-clock-rotate-left"></i>
+      <span>Sessions</span>
     </div>
     <div class="nav-item" data-view="search" data-tooltip="Search Sessions">
       <i class="fa-solid fa-magnifying-glass"></i>
