@@ -60,9 +60,15 @@ class LayerAction:
 
 
 class ExecutionStateController:
-    """Deterministic controller for L1→L5 transitions.
+    """Constraint-based controller for L1→L5 transitions.
+
+    World Model does NOT advise ESC — it CONSTRAINS ESC's state space.
+    ESC can ONLY transition to states that World Model has not removed.
+    This is the difference between advisory intelligence and
+    deterministic cognitive control.
 
     The CONTROL PLANE. LLM operates inside layers — ESC decides the layer.
+    World Model removes invalid options before ESC chooses.
     """
 
     def __init__(self):
@@ -76,26 +82,59 @@ class ExecutionStateController:
         self._risk_score: float = 0.0
         self._alternatives_available: bool = True
         self._transition_log: list[dict] = []
+        # ── Constraint Engine ──
+        self._disabled_transitions: set[str] = set()  # transitions World Model removed
+        self._forced_action: str = ""                 # if set, MUST use this action
 
     # ── Signal Inputs (called by external components) ──────
 
-    def signal_error(self, error_msg: str = "", steps: list[str] | None = None, tool: str = ""):
-        """An error occurred. ESC asks World Model before escalating.
+    # ── Constraint API (called by World Model) ─────────────
 
-        If World Model says 'architecture problem — retry won't help',
-        ESC skips L2/L3 and jumps directly to L4 (redesign).
+    def disable_transition(self, from_layer: str, to_layer: str, reason: str):
+        """World Model removes this transition from ESC's available options.
+        ESC CANNOT choose this transition. It is removed from state space."""
+        key = f"{from_layer}→{to_layer}"
+        self._disabled_transitions.add(key)
+        logger.warning("ESC constrained: %s DISABLED — %s", key, reason[:100])
+
+    def force_action(self, action: str, reason: str):
+        """World Model forces ESC to use a specific action.
+        ESC MUST use this. No choice."""
+        self._forced_action = action
+        logger.warning("ESC constrained: FORCED action '%s' — %s", action, reason[:100])
+
+    def clear_constraints(self):
+        """Reset all constraints (called at task start)."""
+        self._disabled_transitions.clear()
+        self._forced_action = ""
+
+    # ── Signal Inputs ──────────────────────────────────────
+
+    def signal_error(self, error_msg: str = "", steps: list[str] | None = None, tool: str = ""):
+        """An error occurred. ESC asks World Model BEFORE escalating.
+
+        World Model now CONSTRAINS ESC — it can REMOVE options from ESC's
+        state space. If World Model determines 'retry won't fix this',
+        the L2_RETRY transition is disabled and ESC MUST go to L4.
         """
         self._error_count += 1
         self._consecutive_errors += 1
 
-        # ── World Model: diagnose BEFORE escalating ──
+        # ── World Model: diagnose and CONSTRAIN ──
         try:
             from core.world_model import get_world_model
             wm = get_world_model()
             diagnosis = wm.diagnose_failure(error_msg, steps or [], tool)
             if diagnosis.skip_retry:
-                # Architecture problem — retry won't fix it
-                logger.warning("ESC: WorldModel says skip retry — %s", diagnosis.root_cause)
+                # CONSTRAINT: remove L2_RETRY and L3_ADAPT from state space
+                self.disable_transition("L2_RETRY", "L3_ADAPT",
+                                       f"WorldModel: {diagnosis.root_cause}")
+                self.disable_transition("L1_EXECUTE", "L2_RETRY",
+                                       f"WorldModel: {diagnosis.root_cause}")
+                # Force redesign path
+                self.force_action("redesign",
+                                 f"{diagnosis.root_cause} requires architectural change")
+                logger.warning("ESC constrained: retry paths DISABLED — %s", diagnosis.root_cause)
                 self._maybe_transition(AutonomyLayer.L4_PREDICT,
                                       f"WorldModel: {diagnosis.root_cause} — {diagnosis.reasoning[:100]}")
                 return
@@ -130,19 +169,34 @@ class ExecutionStateController:
                               "All known strategies exhausted")
 
     def signal_complete(self):
-        """Task completed successfully. ESC resets to L1."""
+        """Task completed successfully. ESC resets to L1 + clears constraints."""
         self._current_layer = AutonomyLayer.L1_EXECUTE
         self._error_count = 0
         self._consecutive_errors = 0
         self._escalation_count = 0
         self._iteration_in_layer = 0
+        self.clear_constraints()
 
     # ── Internal Transition Logic ─────────────────────────
 
     def _maybe_transition(self, target: AutonomyLayer, reason: str):
-        """Transition to target layer if it's an escalation."""
+        """Transition to target layer if it's an escalation AND not constrained.
+
+        World Model constraints are checked: if a transition was disabled,
+        ESC CANNOT use it. This is the difference between advisory and
+        deterministic control.
+        """
+        # ── CONSTRAINT CHECK ──
+        transition_key = f"{self._current_layer.name}→{target.name}"
+        if transition_key in self._disabled_transitions:
+            logger.warning("ESC: transition %s BLOCKED by World Model constraint", transition_key)
+            return  # Cannot make this transition
+
+        if self._forced_action and target != AutonomyLayer.L4_PREDICT and target != AutonomyLayer.L5_CREATE:
+            logger.warning("ESC: transition to %s blocked — forced action is '%s'", target.name, self._forced_action)
+            return  # Must use forced action path
+
         if target.value > self._current_layer.value:
-            # Escalation: only go UP
             old = self._current_layer
             self._current_layer = target
             self._escalation_count += 1
@@ -150,12 +204,13 @@ class ExecutionStateController:
             entry = {
                 "from": old.name, "to": target.name,
                 "reason": reason, "escalation": self._escalation_count,
+                "forced": bool(self._forced_action),
             }
             self._transition_log.append(entry)
-            logger.warning("ESC: %s → %s (escalation #%d: %s)",
-                          old.name, target.name, self._escalation_count, reason[:100])
+            logger.warning("ESC: %s → %s (escalation #%d: %s) %s",
+                          old.name, target.name, self._escalation_count, reason[:100],
+                          "[FORCED]" if self._forced_action else "")
         elif target.value < self._current_layer.value:
-            # De-escalation: go DOWN (recovery)
             old = self._current_layer
             self._current_layer = target
             self._iteration_in_layer = 0

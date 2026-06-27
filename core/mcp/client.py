@@ -136,6 +136,8 @@ DEFAULT_MCP_SERVERS = [
      "args": ["{PROJECT_ROOT}/node_modules/@playwright/mcp/cli.js"]},
     {"name": "sqlite", "command": "uvx",
      "args": ["mcp-server-sqlite", "--db-path", "{CWD}/.widdx/data/mcp_data.db"]},
+    {"name": "chrome-devtools", "command": "npx",
+     "args": ["-y", "chrome-devtools-mcp@latest"]},
 ]
 
 # Cache for discovered servers (refreshed on demand)
