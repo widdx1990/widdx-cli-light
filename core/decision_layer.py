@@ -38,15 +38,14 @@ class DecisionLayer:
         """Score a suggestion against all knowledge sources."""
         result = DecisionScore(suggestion=suggestion)
 
-        # ── PreDecisionForce: actively block deprecated suggestions ──
+        # ── PreDecisionForce: 3-tier influence (not hard block) ──
         try:
             from core.learning.pre_decision_force import get_pre_decision_force
-            blocked, reason = get_pre_decision_force().is_suggestion_blocked(suggestion)
-            if blocked:
-                result.blocked = True
-                result.reason = reason
-                result.score = 0.0
-                return result
+            influence = get_pre_decision_force().evaluate(suggestion)
+            result.components["pre_decision"] = influence["weight"]
+            if influence["level"] == "warn":
+                result.score *= 0.5  # Reduce but don't block
+                result.reason = influence["reason"]
         except Exception:
             pass
 

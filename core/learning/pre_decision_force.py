@@ -1,29 +1,18 @@
-"""Pre-Decision Memory Force — learning that actively constrains future decisions.
+"""Pre-Decision Influence Engine — learning that influences (not dictates) decisions.
 
-This module solves the critical gap: learning that happens AFTER execution
-must feed back into decision weights BEFORE the next execution.
+3-tier influence system:
+  🟢 BOOST   (confidence > 0.7) → increase weight, prefer this pattern
+  🟡 SUGGEST (confidence 0.4-0.7) → recommend but don't force
+  🔴 WARN    (confidence < 0.3 or deprecated) → caution, reduce weight
 
-It modifies Planner, Router, and DecisionLayer weights based on:
-  - Pattern success/failure history
-  - Deprecated patterns (block immediately)
-  - Low-confidence patterns (penalize in routing)
-  - High-confidence patterns (prefer in planning)
+Key principle: Learning INFLUENCES decision probability — never DECIDES instead of LLM.
+The LLM remains free to choose, but with adjusted weights based on history.
 
 Usage:
     from core.learning.pre_decision_force import PreDecisionForce
     pdf = PreDecisionForce()
-
-    # Before planning:
-    constraints = pdf.get_planner_constraints(task_type)
-    # → {"preferred_tools": [...], "avoided_patterns": [...], "suggested_steps": [...]}
-
-    # Before routing:
-    mode_weights = pdf.get_router_weights(task_type)
-    # → {"autonomous": 0.9, "expert_team": 0.3, ...}  ← modified by learning
-
-    # Before any decision:
-    blocked = pdf.get_blocked_suggestions()
-    # → ["Use WebSocket directly", "Raw SQL without ORM", ...]
+    influence = pdf.evaluate('Use raw WebSocket')
+    # → {"level": "warn", "weight": 0.15, "reason": "Deprecated: use Socket.io"}
 """
 
 from __future__ import annotations
@@ -158,30 +147,56 @@ class PreDecisionForce:
 
         return weights
 
-    # ── DecisionLayer Blocking ─────────────────────────────
+    # ── 3-Tier Influence Engine ─────────────────────────────
 
-    def is_suggestion_blocked(self, suggestion: str) -> tuple[bool, str]:
-        """Check if a suggestion should be blocked based on learning.
+    INFLUENCE_LEVELS = {"boost": 0.9, "suggest": 0.5, "warn": 0.15, "none": 0.0}
 
-        Returns (blocked: bool, reason: str).
+    def evaluate(self, suggestion: str) -> dict:
+        """Evaluate a suggestion using 3-tier influence.
+
+        Returns {"level": "boost"|"suggest"|"warn"|"none",
+                 "weight": 0.0-1.0,
+                 "reason": str,
+                 "patterns": [...]}
         """
         self._refresh()
         s = suggestion.lower()
 
-        for blocked in self._blocked_patterns:
-            if blocked.lower() in s or s in blocked.lower():
-                return True, f"Pattern '{blocked}' was deprecated — blocked by PreDecisionForce"
+        # Check for matching patterns
+        try:
+            from core.learning.pattern_library import UnifiedPatternStore
+            store = UnifiedPatternStore()
+            patterns = store.search(query=s[:80], min_confidence=0.2, limit=5)
+        except Exception:
+            patterns = []
 
-        for penalized, confidence in self._penalized_tools.items():
-            if penalized.lower() in s and confidence < 0.3:
-                return True, f"Pattern '{penalized}' has low confidence ({confidence:.2f})"
+        if not patterns:
+            return {"level": "none", "weight": 1.0, "reason": "No matching patterns — free to explore",
+                    "patterns": []}
 
-        return False, ""
+        best = patterns[0]
+        matched = [{"name": p.name, "confidence": p.confidence, "status": p.status} for p in patterns[:3]]
 
-    def get_blocked_suggestions(self) -> list[str]:
-        """Return all suggestions that should never be made."""
-        self._refresh()
-        return list(self._blocked_patterns)
+        # 🔴 WARN: deprecated or very low confidence
+        if best.status == "deprecated":
+            return {"level": "warn", "weight": 0.15,
+                    "reason": f"Pattern '{best.name}' was deprecated: {best.superseded_by or 'no replacement'}",
+                    "patterns": matched}
+        if best.confidence < 0.3:
+            return {"level": "warn", "weight": 0.2,
+                    "reason": f"Pattern '{best.name}' has low confidence ({best.confidence:.2f}) — caution advised",
+                    "patterns": matched}
+
+        # 🟢 BOOST: high confidence, proven success
+        if best.confidence > 0.7 and best.usage_count >= 2:
+            return {"level": "boost", "weight": 1.0,
+                    "reason": f"Pattern '{best.name}' is proven (conf={best.confidence:.2f}, used={best.usage_count}x)",
+                    "patterns": matched}
+
+        # 🟡 SUGGEST: moderate confidence
+        return {"level": "suggest", "weight": 0.6,
+                "reason": f"Pattern '{best.name}' has moderate confidence ({best.confidence:.2f})",
+                "patterns": matched}
 
     # ── Expert Selection ───────────────────────────────────
 

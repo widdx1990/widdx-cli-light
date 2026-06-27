@@ -191,10 +191,25 @@ class AutonomyLoop:
                     # Auto-plan: extract steps from the first iteration
                     self._auto_plan_steps(summary, ts)
 
-                # Check if stuck (no progress after 3 iterations)
-                if i >= 4 and ts.get_progress()["progress_pct"] == 0:
+                # ── Stuck? Try Web Learning Loop before giving up ──
+                if i >= 3 and ts.get_progress()["progress_pct"] == 0:
+                    try:
+                        from core.learning.web_learning import get_web_learning
+                        wl = get_web_learning()
+                        progress = ts.get_progress()
+                        if wl.should_search(i, progress.get("progress_pct", 0), True):
+                            if on_event:
+                                on_event({"type": "text", "data": "\n[🌐 Searching web for solutions...]\n"})
+                            web_result = wl.learn(goal)
+                            if web_result["found"]:
+                                if on_event:
+                                    on_event({"type": "text", "data": f"\n[📚 Web found: {web_result['summary'][:200]}]\n"})
+                                continue  # Retry with new knowledge
+                    except Exception:
+                        pass
+
                     result.human_help_needed = True
-                    result.summary = "Stuck — no progress after 4 iterations"
+                    result.summary = "Stuck — no progress after 4 iterations, web search found nothing"
                     break
 
             # ── Wrap up ─────────────────────────────────
