@@ -398,11 +398,16 @@ class Database:
 
 
 _db = None
+_db_path: str | None = None
+
 
 def get_db():
-    global _db
-    if _db is None:
+    global _db, _db_path
+    from pathlib import Path as _P
+    current_cwd = str(_P.cwd().resolve())
+    if _db is None or _db_path != current_cwd:
         _db = Database()
+        _db_path = current_cwd
     return _db
 
 

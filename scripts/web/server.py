@@ -193,13 +193,19 @@ async def api_tools():
 
 @app.get("/api/project/session")
 async def api_project_session():
-    """Load current project session (same store as CLI/TUI)."""
+    """Load current project session from SQLite database."""
     try:
-        from core.project import state as project_state
-        session = project_state.load_session()
-        if session:
-            return session
-        return {"messages": [], "state": {}}
+        from core.database import get_db
+        db = get_db()
+        sessions = db.list_sessions(limit=1)
+        if not sessions:
+            return {"messages": [], "state": {}}
+        sid = sessions[0]["id"]
+        msgs = db.get_messages(sid)
+        return {
+            "messages": [{"role": m["role"], "content": m["content"]} for m in msgs],
+            "state": {"model": sessions[0].get("name", ""), "session_id": sid},
+        }
     except Exception as e:
         return {"messages": [], "state": {}, "error": str(e)}
 
