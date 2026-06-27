@@ -222,6 +222,23 @@ class TaskPlanner:
         is_minimal: bool
         decision_steps: list[DecisionStep] = []
 
+        # ── Learning: query proven planning patterns ──
+        try:
+            from core.learning.pattern_library import UnifiedPatternStore
+            store = UnifiedPatternStore()
+            patterns = store.search(category="planning", min_confidence=0.5, limit=2)
+            if patterns:
+                best = patterns[0]
+                decision_steps.append(DecisionStep(
+                    component="PatternLibrary",
+                    input_summary=f"query=planning,conf>0.5",
+                    output=f"found: {best.name} (conf={best.confidence:.2f}, used={best.usage_count}x)",
+                    score=best.confidence,
+                    detail=f"Pattern: {best.solution[:120]}",
+                ))
+        except Exception:
+            pass
+
         if task_type in _DECOMPOSERS:
             decomposer = _DECOMPOSERS[task_type]
             steps = decomposer(classification)

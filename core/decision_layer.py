@@ -78,6 +78,28 @@ class DecisionLayer:
         except Exception:
             result.components["memory"] = 0.5
 
+        # ── 2.5. Pattern Library check (new) ────────────
+        try:
+            from core.learning.pattern_library import UnifiedPatternStore
+            store = UnifiedPatternStore()
+            patterns = store.search(query=suggestion, min_confidence=0.5, limit=5)
+            if patterns:
+                confidences = [p.confidence for p in patterns]
+                result.components["patterns"] = sum(confidences) / len(confidences)
+                # Block if a pattern explicitly contradicts this suggestion
+                for p in patterns:
+                    if p.status == "deprecated" and p.superseded_by:
+                        _check = suggestion.lower()
+                        if p.name.replace("-", " ") in _check or p.solution[:30].lower() in _check:
+                            result.blocked = True
+                            result.reason = f"Pattern '{p.name}' was deprecated in favor of '{p.superseded_by}'"
+                            result.components["patterns"] = 0.0
+                            return result
+            else:
+                result.components["patterns"] = 0.3
+        except Exception:
+            result.components["patterns"] = 0.5
+
         # ── 3. KnowledgeGraph check ────────────────────
         try:
             from core.knowledge_graph import get_knowledge_graph
@@ -108,7 +130,7 @@ class DecisionLayer:
             result.components["plan"] = 0.5
 
         # ── 5. Weighted sum ────────────────────────────
-        weights = {"adr": 0.3, "memory": 0.3, "kg": 0.2, "plan": 0.2}
+        weights = {"adr": 0.25, "memory": 0.2, "patterns": 0.2, "kg": 0.2, "plan": 0.15}
         result.score = sum(
             result.components.get(k, 0.5) * w for k, w in weights.items()
         )
