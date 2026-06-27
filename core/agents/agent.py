@@ -336,9 +336,14 @@ class AutonomousAgent:
         print_system_msg("Starting autonomous execution...")
 
         # ── RuntimeGuard: task-level safety ──
-        from core.runtime_guard import get_runtime_guard, ProviderTimeoutError, WallClockExceededError
+        from core.runtime_guard import get_runtime_guard
         guard = get_runtime_guard()
         guard.start_task()
+
+        # ── ExecutionIntelligence: 4-layer monitoring ──
+        from core.execution_intelligence import get_execution_intelligence
+        ei = get_execution_intelligence()
+        ei.start_task(None, user_input)  # plan is built later in brain
 
         for iteration in range(start_iteration, max_iter):
             # Check cancel flag (set by TUI escape key)
@@ -391,6 +396,16 @@ class AutonomousAgent:
                     ts.set_messages(messages)
 
                 for tc in tool_calls:
+                    # ── ExecutionIntelligence: preventive check ──
+                    try:
+                        check = ei.check_before_action(tc.name, tc.args if hasattr(tc, 'args') else {})
+                        if check["warning"]:
+                            self._emit({"type": "text", "data": f"\n[⚠️ {check['warning']}]\n"})
+                            if check["suggestion"]:
+                                self._emit({"type": "text", "data": f"\n[💡 {check['suggestion']}]\n"})
+                    except Exception:
+                        pass
+
                     # Emit tool start event for live Web UI
                     self._emit({"type": "tool", "data": {"name": tc.name, "args": tc.args}})
 
