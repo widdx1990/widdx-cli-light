@@ -222,6 +222,37 @@ class TaskPlanner:
         is_minimal: bool
         decision_steps: list[DecisionStep] = []
 
+        # ── Architecture Intelligence Layer: generate + select architecture ──
+        try:
+            from core.architecture.generator import ArchitectureGenerator
+            from core.architecture.scorer import ArchitectureScorer
+            from core.architecture.compiler import ArchitectureCompiler
+            gen = ArchitectureGenerator()
+            scorer = ArchitectureScorer()
+            compiler = ArchitectureCompiler()
+
+            # Detect domain from user input
+            domain = "web"
+            if "api" in user_input.lower() or "rest" in user_input.lower():
+                domain = "api"
+            elif "cli" in user_input.lower() or "terminal" in user_input.lower():
+                domain = "cli"
+
+            architectures = gen.generate(goal=user_input, domain=domain)
+            if architectures:
+                best = scorer.select_best(architectures, goal=user_input, domain=domain)
+                if best:
+                    compiled = compiler.compile(best, goal=user_input)
+                    decision_steps.append(DecisionStep(
+                        component="ArchitectureLayer",
+                        input_summary=f"generated {len(architectures)} candidates",
+                        output=f"selected: {best.name} (score={scorer.score(best).get('total', 0):.2f})",
+                        score=scorer.score(best).get("total", 0.5),
+                        detail=f"Architecture: {best.components}, {best.communication}, {best.storage}",
+                    ))
+        except Exception:
+            pass
+
         # ── PreDecisionForce: actively constrain planning ──
         try:
             from core.learning.pre_decision_force import get_pre_decision_force

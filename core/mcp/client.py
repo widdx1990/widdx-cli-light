@@ -149,7 +149,7 @@ _MAX_RECONNECT_ATTEMPTS = 3
 _RECONNECT_BACKOFF = [1, 3, 10]  # seconds
 
 
-_ALLOWED_MCP_COMMANDS = {"node", "uvx", "uv", "python3", "python", "bash", "npx", "docker"}
+_ALLOWED_MCP_COMMANDS = {"node", "uvx", "uv", "python3", "python", "bash", "npx", "npx.cmd", "docker"}
 
 class MCPServerConnection:
     """A single MCP server connected via stdio using direct subprocess communication."""
