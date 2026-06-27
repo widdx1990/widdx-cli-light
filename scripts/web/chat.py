@@ -283,6 +283,26 @@ class ChatHandler:
             except Exception:
                 pass
 
+            # ── Inject Learning: proven patterns ──
+            try:
+                from core.learning.pattern_library import UnifiedPatternStore
+                store = UnifiedPatternStore()
+                pattern_ctx = store.get_context_for_prompt(query=message)
+                if pattern_ctx:
+                    uil_history.insert(0, {"role": "system", "content": pattern_ctx})
+            except Exception:
+                pass
+
+            # ── Inject User Preferences ──
+            try:
+                from core.learning.pattern_extractor import UserPreferenceLearner
+                upl = UserPreferenceLearner()
+                pref_ctx = upl.get_context_for_prompt()
+                if pref_ctx:
+                    uil_history.insert(0, {"role": "system", "content": pref_ctx})
+            except Exception:
+                pass
+
             # ── Inject Knowledge Graph context ──
             try:
                 from core.knowledge_graph import get_knowledge_graph

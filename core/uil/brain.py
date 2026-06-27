@@ -707,6 +707,19 @@ class UnifiedIntelligenceLayer:
         except Exception:
             pass
 
+        # ── Learning: extract patterns + promote ──
+        try:
+            from core.learning.pattern_extractor import PatternExtractor
+            pe = PatternExtractor()
+            pe.extract_from_execution(
+                result=raw, task_type=classification.task_type,
+                user_input=user_input, steps=getattr(plan, "steps", []),
+                success=getattr(result, "success", True),
+            )
+            pe.local_lib.promote_all_ready()
+        except Exception:
+            pass
+
         # Step 6: Knowledge — record execution outcome
         self.knowledge.record(
             classification=classification,
