@@ -60,6 +60,10 @@ function toggleStep(head) {
 document.addEventListener('click', function(e) {
   var step = e.target.closest('.step-head');
   if (step) toggleStep(step);
+  var copyCode = e.target.closest('[data-click="copy-code"]');
+  if (copyCode) copyCodeBlock(copyCode);
+  var copyCard = e.target.closest('[data-click="copy-card-path"]');
+  if (copyCard) copyCardPath(copyCard);
 });
 
 document.addEventListener('keydown', function(e) {
@@ -221,13 +225,17 @@ function escapeHtml(str) {
 // Canonical markdown parser — used by both ui.js and nexus.js
 // NOTE: Every regex callback MUST escape captured groups before inserting into HTML.
 
-/** Very basic tag-stripping sanitizer — removes any leftover <script>, <style>, on*= */
+/** Tag-stripping sanitizer — removes script, style, event handlers, and XSS vectors */
 function _sanitizeHtml(html) {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    // Event handlers: onfocus, onerror, onload, onmouseover, onclick, etc.
     .replace(/\bon\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/javascript\s*:/gi, 'blocked:');
+    // javascript: URI — handles line breaks and HTML entities between 'java' and 'script'
+    .replace(/j[\s\n]*a[\s\n]*v[\s\n]*a[\s\n]*s[\s\n]*c[\s\n]*r[\s\n]*i[\s\n]*p[\s\n]*t\s*:/gi, 'blocked:')
+    // data: URIs that could execute (e.g. data:text/html)
+    .replace(/data\s*:\s*text\/html/gi, 'blocked:');
 }
 
 // ── Table renderer ──
@@ -250,11 +258,11 @@ function _buildTable(rows) {
   if (rows.length < 2) return rows.join('\n');
   var h = '<table class="md-table"><thead><tr>';
   var hc = rows[0].split('|').filter(function(c) { return c.trim(); });
-  h += hc.map(function(c) { return '<th>' + c.trim() + '</th>'; }).join('') + '</tr></thead><tbody>';
+  h += hc.map(function(c) { return '<th>' + escapeHtml(c.trim()) + '</th>'; }).join('') + '</tr></thead><tbody>';
   for (var i = 1; i < rows.length; i++) {
     if (rows[i].match(/^\|[-: |]+\|$/)) continue;
     var c = rows[i].split('|').filter(function(x) { return x.trim(); });
-    h += '<tr>' + c.map(function(x) { return '<td>' + x.trim() + '</td>'; }).join('') + '</tr>';
+    h += '<tr>' + c.map(function(x) { return '<td>' + escapeHtml(x.trim()) + '</td>'; }).join('') + '</tr>';
   }
   return h + '</tbody></table>';
 }
@@ -263,42 +271,42 @@ function _renderCollapsibleSections(h) {
   return h.replace(/(<h[34]>)(.+?)(<\/h[34]>)([\s\S]*?)(?=<h[34]>|$)/g, function(_, ot, title, ct, body) {
     if (!body.trim() || body.length < 100) return ot + title + ct + body;
     var id = 'sec-' + Math.random().toString(36).substr(2, 9);
-    return ot + title + ct + '<details class="collapsible-section" open><summary class="section-summary">' + title.replace(/<[^>]+>/g,'') + '</summary><div class="section-body">' + body + '</div></details>';
+    return ot + title + ct + '<details class="collapsible-section" open><summary class="section-summary">' + escapeHtml(title.replace(/<[^>]+>/g,'')) + '</summary><div class="section-body">' + body + '</div></details>';
   });
 }
 
 function parseMarkdown(text) {
   if (!text) return '';
-  // First pass: strip any raw HTML tags / event handlers before escaping
+  // Strip raw dangerous HTML before anything else
   var html = _sanitizeHtml(text);
-  // Second pass: escape HTML entities so any remaining < > & become harmless
-  html = escapeHtml(html);
 
-  // Strip thinking tags (both bracketed and XML forms)
+  // Strip thinking tags (both bracketed and XML literal/escaped forms)
   html = html.replace(/\[?\/?thinking\]?/gi, '');
+  html = html.replace(/<thinking>/gi, '').replace(/<\/thinking>/gi, '');
   html = html.replace(/&lt;thinking&gt;/gi, '').replace(/&lt;\/thinking&gt;/gi, '');
 
-  // Fenced code blocks — content is already escaped; labels are re-escaped for safety
+  // Fenced code blocks — escape captured groups in callback for safety
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(match, lang, code) {
-    var escaped = code.trimEnd();
+    var escaped = escapeHtml(code.trimEnd());
     var langLabel = lang ? '<span class="code-lang-label">' + escapeHtml(lang) + '</span>' : '';
-    return '<div class="code-block-wrapper">' + langLabel + '<button class="copy-code-btn" onclick="copyCodeBlock(this)" title="Copy code"><i class="fa-solid fa-copy"></i></button><pre><code>' + escaped + '</code></pre></div>';
+    return '<div class="code-block-wrapper">' + langLabel + '<button class="copy-code-btn" data-click="copy-code" title="Copy code"><i class="fa-solid fa-copy"></i></button><pre><code>' + escaped + '</code></pre></div>';
   });
 
   // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/`([^`]+)`/g, function(_, c) { return '<code>' + escapeHtml(c) + '</code>'; });
 
-  // Bold & italic
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Bold & italic — escape captured content
+  html = html.replace(/\*\*(.+?)\*\*/g, function(_, t) { return '<strong>' + escapeHtml(t) + '</strong>'; });
+  html = html.replace(/\*(.+?)\*/g, function(_, t) { return '<em>' + escapeHtml(t) + '</em>'; });
 
-  // Headings
-  html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+  // Headings — escape captured content
+  html = html.replace(/^### (.+)$/gm, function(_, t) { return '<h4>' + escapeHtml(t) + '</h4>'; });
+  html = html.replace(/^## (.+)$/gm, function(_, t) { return '<h3>' + escapeHtml(t) + '</h3>'; });
+  html = html.replace(/^# (.+)$/gm, function(_, t) { return '<h2>' + escapeHtml(t) + '</h2>'; });
 
-  // Blockquote
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+  // Blockquote — handle both literal > and already-escaped &gt;
+  html = html.replace(/^&gt; (.+)$/gm, function(_, t) { return '<blockquote>' + escapeHtml(t) + '</blockquote>'; });
+  html = html.replace(/^> (.+)$/gm, function(_, t) { return '<blockquote>' + escapeHtml(t) + '</blockquote>'; });
 
   // Tables (pipe format)
   html = _renderTables(html);
@@ -310,7 +318,7 @@ function parseMarkdown(text) {
   html = html.replace(/^---$/gm, '<hr>');
 
   // Unordered lists
-  html = html.replace(/^[\*\-] (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^[\*\-] (.+)$/gm, function(_, t) { return '<li>' + escapeHtml(t) + '</li>'; });
   html = html.replace(/(<li>[\s\S]*?<\/li>)/g, function(match) {
     if (match.indexOf('</li>') !== -1 && match.indexOf('<li>') === 0) {
       return '<ul>' + match + '</ul>';
@@ -319,7 +327,7 @@ function parseMarkdown(text) {
   });
 
   // Ordered lists
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^\d+\. (.+)$/gm, function(_, t) { return '<li>' + escapeHtml(t) + '</li>'; });
 
   // Links — both label and URL are passed through escapeHtml in callback for safety
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, url) {
@@ -350,6 +358,15 @@ function parseMarkdown(text) {
   // Clean up empty paragraphs
   html = html.replace(/<p><br><\/p>/g, '');
   html = html.replace(/<p>\s*<\/p>/g, '');
+
+  // Final XSS sanitization via DOMPurify (CDN loaded in index.html)
+  if (typeof DOMPurify !== 'undefined') {
+    html = DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ['p','br','strong','em','h2','h3','h4','ul','ol','li','pre','code','blockquote','hr','a','table','thead','tbody','tr','th','td','div','span','img','details','summary'],
+      ALLOWED_ATTR: ['href','target','rel','class','id','style','src','alt','width','height','open','tabindex','role','aria-expanded','data-raw','data-start'],
+      ALLOW_DATA_ATTR: true,
+    });
+  }
 
   return html;
 }
@@ -508,7 +525,7 @@ function addToolCard(stepCard, type, path) {
   var tc = document.createElement('div');
   tc.className = 'tool-card';
   var iconMap = { 'Read': 'fa-file-lines', 'Glob': 'fa-folder', 'Edit': 'fa-pen', 'Write': 'fa-pen-to-square', 'Bash': 'fa-terminal', 'Grep': 'fa-magnifying-glass', 'WebFetch': 'fa-globe' };
-  tc.innerHTML = '<i class="fa-solid ' + (iconMap[type] || 'fa-file-lines') + ' tool-card-icon"></i><div class="tool-card-info"><div class="tool-card-name">' + type + '</div><div class="tool-card-path">' + escapeHtml(path) + '</div></div><button class="copy-card-btn" onclick="copyCardPath(this)" title="Copy path"><i class="fa-solid fa-copy"></i></button>';
+  tc.innerHTML = '<i class="fa-solid ' + (iconMap[type] || 'fa-file-lines') + ' tool-card-icon"></i><div class="tool-card-info"><div class="tool-card-name">' + type + '</div><div class="tool-card-path">' + escapeHtml(path) + '</div></div><button class="copy-card-btn" data-click="copy-card-path" title="Copy path"><i class="fa-solid fa-copy"></i></button>';
   inner.appendChild(tc);
 }
 
