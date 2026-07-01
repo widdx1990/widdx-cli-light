@@ -1,12 +1,14 @@
 """Skills system for WIDDX — hybrid prompt templates + optional Python tool extensions."""
 
-import re, sys, importlib.util, logging
+import sys
+import importlib.util
+import logging
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger("widdx.skills")
 
-from .utils import parse_frontmatter
+from .utils import parse_frontmatter  # noqa: E402
 
 SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
@@ -54,7 +56,7 @@ _BLOCKED_MODULES: set[str] = {
 class SkillTool:
     """A callable tool associated with a skill, with OpenAI-compatible schema."""
 
-    def __init__(self, name: str, description: str, parameters: dict, handler: callable):
+    def __init__(self, name: str, description: str, parameters: dict, handler: Callable):
         self.name = name
         self.description = description
         self.parameters = parameters
@@ -81,7 +83,7 @@ class Skill:
     """A single skill with prompt template and optional custom tools."""
 
     def __init__(self, name: str, description: str, icon: str,
-                 prompt: str, tools: dict = None, path: Path = None):
+                 prompt: str, tools: dict | None = None, path: Path | None = None):
         self.name = name
         self.description = description
         self.icon = icon
@@ -129,13 +131,14 @@ def _load_skill_tools(skill_dir: Path) -> dict:
         mod = importlib.util.module_from_spec(spec)
 
         # ── Sandbox: restrict builtins at module level ──
-        mod.__builtins__ = _SAFE_BUILTINS.copy()
+        mod.__builtins__ = _SAFE_BUILTINS.copy()  # type: ignore[attr-defined]
 
         # ── Sandbox: install import hook to block dangerous modules ──
         _install_skill_import_blocker(mod)
 
         sys.modules[f"_skill_{skill_dir.name}"] = mod
-        spec.loader.exec_module(mod)
+        if spec.loader:
+            spec.loader.exec_module(mod)
 
         # ── Collect all callable public functions ──
         tools = {}

@@ -6,7 +6,8 @@ Saves/loads from <project-dir>/.widdx/ :
 """
 
 import json
-import re, logging
+import re
+import logging
 from pathlib import Path
 
 logger = logging.getLogger("widdx.project.state")
@@ -453,7 +454,7 @@ def build_project_context(project_dir: str | Path | None = None) -> str | None:
     if session:
         msg_count = len(session.get("messages", []))
         st = session.get("state", {})
-        parts.append(f"\n=== PREVIOUS SESSION ===")
+        parts.append("\n=== PREVIOUS SESSION ===")
         parts.append(f"Messages: {msg_count} | Cost: ${st.get('cost', 0):.4f} | Turns: {st.get('turns', 0)}")
         # Show last exchange
         msgs = session["messages"]

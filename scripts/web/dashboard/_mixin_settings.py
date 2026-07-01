@@ -123,7 +123,9 @@ class SettingsMixin:
                 from core.providers.providers import get_available_models
                 result = []
                 t = threading.Thread(target=lambda: result.extend(get_available_models(provider_id)))
-                t.daemon = True; t.start(); t.join(timeout=2.0)
+                t.daemon = True
+                t.start()
+                t.join(timeout=2.0)
                 if result:
                     return result[:50]
             except Exception:
@@ -133,7 +135,6 @@ class SettingsMixin:
 
     def get_provider_models(self, provider_id: str) -> dict:
         """Get models for a specific provider (for live refresh)."""
-        import threading
         result = []
         thread = threading.Thread(target=lambda: result.extend(self._fetch_models(provider_id)))
         thread.daemon = True

@@ -1,6 +1,7 @@
 """Dashboard mixin — gateway."""
 from __future__ import annotations
 import logging
+from typing import Any
 
 logger = logging.getLogger("widdx.web.dashboard")
 
@@ -61,19 +62,20 @@ class GatewayMixin:
     def mcp_status(self) -> list[dict]:
         """List all MCP servers and their status."""
         try:
-            from core.mcp.client import MCPClient
-            client = MCPClient()
-            return client.list_servers()
+            from core.mcp.client import get_mcp_manager
+            mgr = get_mcp_manager()
+            return [s.to_dict() if hasattr(s, 'to_dict') else {"name": str(k), "status": "unknown"}
+                    for k, s in getattr(mgr, '_connections', {}).items()]
         except Exception:
             return []
 
 
-    def mcp_add(self, name: str, command: str, args: list = None) -> dict:
+    def mcp_add(self, name: str, command: str, args: list[Any] | None = None) -> dict:
         """Add a new MCP server."""
         try:
-            from core.mcp.client import MCPClient
-            client = MCPClient()
-            client.add_server(name, command, args or [])
+            from core.mcp.client import get_mcp_manager
+            mgr = get_mcp_manager()
+            mgr.add_server(name, command, args or [])
             return {"status": "added", "name": name}
         except Exception as e:
             return {"error": str(e)}
@@ -82,9 +84,9 @@ class GatewayMixin:
     def mcp_remove(self, name: str) -> dict:
         """Remove an MCP server."""
         try:
-            from core.mcp.client import MCPClient
-            client = MCPClient()
-            client.remove_server(name)
+            from core.mcp.client import get_mcp_manager
+            mgr = get_mcp_manager()
+            mgr.remove_server(name)
             return {"status": "removed", "name": name}
         except Exception as e:
             return {"error": str(e)}
@@ -93,9 +95,9 @@ class GatewayMixin:
     def mcp_restart(self, name: str) -> dict:
         """Restart an MCP server."""
         try:
-            from core.mcp.client import MCPClient
-            client = MCPClient()
-            client.restart_server(name)
+            from core.mcp.client import get_mcp_manager
+            mgr = get_mcp_manager()
+            mgr.restart_server(name)  # type: ignore[attr-defined]
             return {"status": "restarted", "name": name}
         except Exception as e:
             return {"error": str(e)}

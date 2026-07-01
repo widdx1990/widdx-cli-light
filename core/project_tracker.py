@@ -12,7 +12,6 @@ AI update them as work progresses.
 """
 
 from pathlib import Path
-from typing import Optional
 import logging
 
 logger = logging.getLogger("widdx.project_tracker")
@@ -164,15 +163,15 @@ def build_context_block(project_dir: Path) -> str | None:
     # ── RAG augmentation: search project docs ─────────────────
     try:
         from core.rag import RAGStore
-        rag = RAGStore(project_dir)
+        rag = RAGStore(str(project_dir))
         # Build a query from the concatenated docs
         query = " ".join(docs.get(n, "")[:200] for n in _DOC_NAMES if docs.get(n, "").strip())
         if query:
             rags = rag.search(query, top_k=3)
             if rags:
                 lines.append("\n=== RAG Context ===")
-                for r in rags:
-                    snippet = r.get("content", "")[:300]
+                for _score, doc in rags:
+                    snippet = doc.get("content", "")[:300]
                     if snippet:
                         lines.append(f"  • {snippet}")
     except Exception:

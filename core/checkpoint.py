@@ -17,8 +17,12 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+import shutil
 import time
 from pathlib import Path
+
+logger = logging.getLogger("widdx.checkpoint")
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +51,7 @@ class CheckpointManager:
 
         Returns the checkpoint ID (timestamp) or None on failure.
         """
-        import hashlib, json
+        import hashlib
         ts = time.strftime("%Y%m%d_%H%M%S")
         cid = ts
         cdir = self._repo / ".widdx" / "checkpoints" / cid
@@ -58,7 +62,6 @@ class CheckpointManager:
             return None
 
         # Build manifest: scan all tracked files and hash them
-        import hashlib
         manifest: dict[str, str] = {}
         file_count = 0
         for f in self._repo.rglob("*"):
@@ -77,7 +80,6 @@ class CheckpointManager:
                 continue
 
         # Save manifest
-        import json
         meta = {
             "id": cid,
             "description": description or "",
@@ -93,7 +95,8 @@ class CheckpointManager:
 
     def _save_manifest(self, cdir, meta):
         """Write manifest.json atomically."""
-        import json, os
+        import json
+        import os
         try:
             tmp = str(cdir / "manifest.json.tmp")
             with open(tmp, "w", encoding="utf-8") as fh:
@@ -200,7 +203,7 @@ class CheckpointManager:
         dirs = sorted([d for d in cdir.iterdir() if d.is_dir()], reverse=True)
         return dirs[0].name if dirs else None
 
-    def _cleanup(self):
+    def _cleanup_old(self):
         """Remove old checkpoints beyond MAX_CHECKPOINTS."""
         cdir = self._repo / ".widdx" / "checkpoints"
         if not cdir.exists():

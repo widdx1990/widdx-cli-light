@@ -11,9 +11,9 @@ Usage:
     errors = error_collector.report() # see what failed silently
 """
 
-import time, threading
+import time
+import threading
 from collections import defaultdict
-from typing import Callable, Optional
 
 
 class ErrorCollector:
@@ -51,7 +51,6 @@ class ErrorCollector:
     def disable(self):
         """Stop collecting."""
         self._enabled = False
-        import logging
         for name, logger in self._original_loggers.items():
             logger.removeFilter(self._filter)
 

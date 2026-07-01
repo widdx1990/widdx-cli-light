@@ -13,7 +13,6 @@ Zero LLM calls. Zero network I/O. Pure deterministic pattern matching.
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 from . import patterns as _patterns_lib
 from .classifier import ClassificationResult
@@ -104,7 +103,7 @@ class PatternAwarePlanner:
         if task_type in self._pattern_index:
             pattern_names = self._pattern_index[task_type]
             for name in pattern_names:
-                pattern = _patterns_lib.get_pattern(name)
+                pattern = _patterns_lib.get_pattern(name)  # type: ignore[assignment]
                 if pattern and pattern.complexity <= complexity:
                     logger.debug("Fallback pattern: %s", name)
                     return self._plan_from_pattern(pattern)
@@ -116,7 +115,6 @@ class PatternAwarePlanner:
         """Convert a software pattern into an execution plan."""
         steps = []
         for i, pstep in enumerate(pattern.steps):
-            tool_hints = list(pstep.tools)
             step = PlanStep(
                 step_id=i + 1,
                 description=pstep.description,

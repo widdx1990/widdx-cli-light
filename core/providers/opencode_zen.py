@@ -1,11 +1,12 @@
 """OpenCode Zen provider — free models with proxy rotation."""
 from __future__ import annotations
 
-import json, time
+import json
+import time
 import httpx
 
 from .openai_compatible import OpenAICompatibleProvider
-from .base import ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS
+from .base import _clean_surrogates, _DEFAULT_MAX_TOKENS
 from .free_models import fetch_free_models
 from ..proxy import proxy_manager
 

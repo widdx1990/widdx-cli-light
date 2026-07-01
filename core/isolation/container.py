@@ -10,10 +10,7 @@ import logging
 import os
 import shutil
 import subprocess
-import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+from dataclasses import dataclass
 
 from .profiles import IsolationProfile, get_profile
 
@@ -94,7 +91,7 @@ class ContainerManager:
 
     def execute(self, command: str,
                 profile: str = "bash",
-                timeout: int = None) -> ContainerResult:
+                timeout: int | None = None) -> ContainerResult:
         """Execute a command with container isolation.
 
         Args:
@@ -108,6 +105,7 @@ class ContainerManager:
         prof = get_profile(profile)
         if prof is None:
             prof = get_profile("bash")
+        assert prof is not None
 
         timeout = timeout or prof.timeout
 
@@ -122,6 +120,7 @@ class ContainerManager:
                            timeout: int) -> ContainerResult:
         """Execute command inside a Docker/podman container."""
         rt = self._runtime
+        assert rt is not None
 
         # Build docker run command
         args = [
@@ -156,16 +155,14 @@ class ContainerManager:
         args.extend(["sh", "-c", command])
 
         try:
-            t0 = time.perf_counter()
             proc = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
             )
             stdout, stderr = proc.communicate(timeout=timeout)
-            elapsed = time.perf_counter() - t0
 
             return ContainerResult(
                 success=proc.returncode == 0,
@@ -195,7 +192,6 @@ class ContainerManager:
         """Fallback: execute with subprocess + resource limits."""
         import shlex
         try:
-            t0 = time.perf_counter()
             cmd_parts = shlex.split(command)
             proc = subprocess.Popen(
                 cmd_parts,
@@ -203,10 +199,9 @@ class ContainerManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
             )
             stdout, stderr = proc.communicate(timeout=timeout)
-            elapsed = time.perf_counter() - t0
 
             return ContainerResult(
                 success=proc.returncode == 0,

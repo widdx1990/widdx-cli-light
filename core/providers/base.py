@@ -8,17 +8,14 @@ Each provider wraps the LLM API with a consistent interface:
 Includes fallback logic: if one provider fails, the router tries the next.
 """
 
-import json, time, uuid, threading
+import json
+import uuid
 from abc import ABC, abstractmethod
-import httpx
-from pathlib import Path
 from typing import Optional
 
 import logging as _logging
 logger = _logging.getLogger("widdx.providers")
 
-from ..proxy import proxy_manager, ZEN_BASE
-from ..config.keychain import get_key
 
 # ── Surrogate sanitizer ───────────────────────────────────────────────
 _SURROGATE_RE = None  # lazy-compiled

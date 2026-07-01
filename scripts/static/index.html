@@ -10,6 +10,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- DOMPurify: XSS sanitizer for rendered markdown content -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"></script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
 <link rel="stylesheet" href="/static/css/style.css?v=1781965833">
 <script>
@@ -54,7 +56,7 @@
     <span class="brand-badge" data-i18n="brand_badge">v3</span>
   </div>
 
-  <div class="sidebar-new-task" onclick="if(typeof newSession==='function')newSession(); else showView('chat'); if(window.innerWidth<820)toggleSidebar()">
+  <div class="sidebar-new-task" id="sidebarNewTask" onclick="if(typeof newSession==='function')newSession(); else showView('chat'); if(window.innerWidth<820)toggleSidebar()">
     <i class="fa-solid fa-plus"></i>
     <span data-i18n="new_chat">New chat</span>
   </div>
@@ -118,7 +120,7 @@
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="if(window.innerWidth<820)toggleSidebar()"></div>
 
 <!-- Floating sidebar toggle -->
-<button class="sidebar-floating-toggle" onclick="toggleSidebar()" title="Toggle sidebar (Ctrl+B)">
+<button class="sidebar-floating-toggle" id="sidebarFloatingToggle" onclick="toggleSidebar()" title="Toggle sidebar (Ctrl+B)">
   <i class="fa-solid fa-chevron-left"></i>
 </button>
 
@@ -130,7 +132,7 @@
 
       <!-- Chat Header -->
       <header class="chat-header">
-        <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Open navigation">
+        <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Open navigation">
           <i class="fa-solid fa-bars"></i>
         </button>
         <div class="model-selector" id="modelSelector" onclick="toggleModelDropdown(event)">
@@ -140,7 +142,7 @@
         <div class="model-dropdown" id="modelDropdown" style="display:none">
           <div class="model-dropdown-header" data-i18n="header_switch_model">Switch Model</div>
           <div class="model-dropdown-list" id="modelDropdownList"></div>
-          <div class="model-dropdown-footer" onclick="showView('settings')" data-i18n="header_open_settings">Open Settings</div>
+          <div class="model-dropdown-footer" id="modelDropdownFooter" onclick="showView('settings')" data-i18n="header_open_settings">Open Settings</div>
         </div>
         <div class="chat-header-spacer"></div>
         <div class="chat-header-actions">
@@ -272,6 +274,7 @@
         <div class="right-panel-tab" onclick="switchTab(this, 'browser')"><i class="fa-solid fa-globe"></i> <span data-i18n="tab_browser">Browser</span></div>
         <div class="right-panel-tab" onclick="switchTab(this, 'files')"><i class="fa-solid fa-folder"></i> <span data-i18n="tab_files">Files</span></div>
         <div class="right-panel-tab" onclick="switchTab(this, 'screenshot')"><i class="fa-solid fa-camera"></i> <span>Screenshot</span></div>
+        <div class="right-panel-tab" onclick="switchTab(this, 'processes')"><i class="fa-solid fa-microchip"></i> <span>Processes</span></div>
       </div>
       <div class="right-panel-body" id="panelBody">
         <div class="panel-desktop-view">

@@ -10,7 +10,10 @@ Three primitives:
 Synchronous (no asyncio) — parallelism uses threading for I/O-bound LLM calls.
 """
 
-import json, threading, time, traceback
+import json
+import threading
+import time
+import traceback
 from typing import Any, Callable, Optional
 
 
@@ -127,8 +130,8 @@ class WorkflowEngine:
             elif step_type == "parallel":
                 tasks = step.get("tasks", [])
                 thunks = [lambda t=task: self.agent(t, label=f"step-{i+1}-p") for task in tasks]
-                res = self.parallel(thunks)
-                results.extend(res)
+                parallel_res: list[str] = self.parallel(thunks)  # type: ignore[arg-type]
+                results.extend(parallel_res)
 
         try:
             from core.activity import add as add_event
@@ -227,7 +230,7 @@ class WorkflowEngine:
                 original = items[idx] if idx < len(items) else item
                 try:
                     new_results.append(stage(prev, original, idx))
-                except Exception as e:
+                except Exception:
                     new_results.append(None)
             results = new_results
         return results
@@ -293,7 +296,7 @@ class WorkflowEngine:
                 lambda t=task: self.agent(t, label=f"parallel-{i}")
                 for i, task in enumerate(tasks)
             ]
-            results = self.parallel(thunks)
+            results = self.parallel(thunks)  # type: ignore[arg-type]
             parts = [f"=== Parallel Results ({len(results)} tasks) ==="]
             for i, (task, res) in enumerate(zip(tasks, results)):
                 parts.append(f"\n--- Task {i+1}: {task[:60]} ---")

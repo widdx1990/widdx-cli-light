@@ -13,9 +13,8 @@ Usage:
 
 from __future__ import annotations
 
-import json
+import importlib
 import logging
-import sys
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -79,7 +78,7 @@ class ChatHandler:
             from core.uil import UnifiedIntelligenceLayer
 
             self._cfg = load_cfg()
-            provider_cfg = self._cfg.get("provider", {})
+            self._cfg.get("provider", {})
 
             # ── Auto-setup: create planning docs + index project ──
             try:
@@ -92,15 +91,13 @@ class ChatHandler:
             except Exception:
                 self._project_context = ""
 
-            # ── Web UI: PERMISSIVE to avoid blocking agent tools ──
+            # ── Web UI: non-blocking permission mode ──
             # The Web UI has no stdin for interactive Rich prompts.
-            # Permission is handled via the UI's own confirmation system.
+            # Safe tools auto-allow, dangerous tools auto-allow (logged).
+            # Users can change levels via Settings UI; no blocking prompts.
             try:
-                import core.permissions as _perms
-                if _perms._permission_manager is None:
-                    pm = _perms.PermissionManager()
-                    pm._level = _perms.PermissionLevel.PERMISSIVE
-                    _perms._permission_manager = pm
+                from core.permissions import enable_web_mode
+                enable_web_mode()
             except Exception:
                 pass
 
@@ -177,8 +174,107 @@ class ChatHandler:
             if found_final:
                 clean = '\n'.join(kept).strip()
             else:
-                clean = '\n'.join(l for l in lines if l.strip()).strip()
+                clean = '\n'.join(line for line in lines if line.strip()).strip()
         return clean
+
+    def _build_context(self, message: str, history: list[dict]) -> tuple[list[dict], list[dict[str, str]]]:
+        """Inject context messages into history for UIL Brain processing.
+
+        Adds working directory, project context, ADR, StateManager, DecisionLayer,
+        learning patterns, strategy memory, preferences, knowledge graph, and
+        learned improvements as system messages.
+
+        Returns:
+            Tuple of (enriched_history, suggested_skills)
+        """
+        uil_history = list(history or [])
+        # Strip any previously injected context markers from incoming history
+        uil_history = [
+            m for m in uil_history
+            if not m.get('_cwd_context')
+            and not m.get('_project_context')
+        ]
+        suggested_skills: list[dict[str, str]] = []
+
+        # ── Working directory context ──────────────────
+        from pathlib import Path as _P
+        cwd = str(_P.cwd().resolve())
+        uil_history.insert(0, {
+            "role": "system",
+            "content": (
+                f"<working_directory>\n"
+                f"  You are working in: {cwd}\n"
+                f"  ALL files you create MUST go in this directory.\n"
+                f"  Use relative paths. This is the project root.\n"
+                f"  Do NOT use /tmp, /workspace, or any Linux paths.\n"
+                f"</working_directory>"
+            ),
+            "_cwd_context": True,
+        })
+
+        # ── Project context ──
+        if self._project_context:
+            uil_history.insert(0, {
+                "role": "system",
+                "content": (
+                    "<project_context>\n"
+                    f"{self._project_context}\n"
+                    "Use this context to understand the project goals, "
+                    "architecture, current tasks, and roadmap.\n"
+                    "Update these docs via the project_tracker when you "
+                    "complete tasks or make design decisions.\n"
+                    "</project_context>"
+                ),
+                "_project_context": True,
+            })
+
+        # ── Context injectors: lazy-loaded with individual try/except ──
+        injectors = [
+            # Learned improvements (SelfImprove)
+            ("core.self_improve", "get_improver", lambda imp: imp.suggest_prompt_improvements()[:5] if imp.suggest_prompt_improvements() else None,
+             lambda sug: (
+                 "<learned_improvements>\nBased on past errors, follow these rules:\n"
+                 + "\n".join(f"- {s}" for s in sug) + "\n</learned_improvements>")),
+            # Architecture Decision Records
+            ("core.adr", "adr_manager", lambda mgr: mgr.get_context_for_prompt(),
+             lambda ctx: f"{ctx}\n\nDO NOT suggest alternatives listed as 'Rejected' above. They were already evaluated and discarded."),
+            # StateManager
+            ("core.state_manager", "get_state_manager", lambda sm: sm.get_full_context(goal=message), None),
+            # DecisionLayer
+            ("core.decision_layer", "get_decision_layer", lambda dl: dl.get_context_for_prompt(), None),
+            # Pattern Library
+            ("core.learning.pattern_library", "UnifiedPatternStore", lambda ps: ps().get_context_for_prompt(query=message), None),
+            # World Model strategies
+            ("core.world_model", "get_world_model", lambda wm: wm.strategies.get_context_for_prompt(message), None),
+            # User Preferences
+            ("core.learning.pattern_extractor", "UserPreferenceLearner", lambda upl: upl().get_context_for_prompt(), None),
+            # Knowledge Graph
+            ("core.knowledge_graph", "get_knowledge_graph", lambda kg: kg.get_context_snippet(), None),
+        ]
+
+        for mod_name, attr_name, getter, formatter in injectors:
+            try:
+                mod = importlib.import_module(mod_name)
+                obj = getattr(mod, attr_name)
+                context = getter(obj)
+                if context:
+                    content = formatter(context) if formatter else context
+                    uil_history.insert(0, {"role": "system", "content": content})
+            except Exception:
+                pass
+
+        # ── Skill suggestions ──
+        try:
+            from core.skills import skill_manager, Skill
+            skill_suggestions: list[Skill] = skill_manager.suggest_skills(message)
+            suggested_skills = [
+                {"name": s.name, "icon": s.icon, "description": s.description[:80]}
+                for s in skill_suggestions[:3]
+            ]
+        except Exception:
+            pass
+
+        return uil_history, suggested_skills
 
     def chat(self, message: str, history: list[dict] | None = None) -> dict:
         """Send a message through the UIL Brain pipeline.
@@ -194,146 +290,8 @@ class ChatHandler:
             return {"content": "", "error": "UIL Brain not initialized"}
 
         try:
-            # Convert history to UIL format
-            uil_history = list(history or [])
-
-            # ── Inject working directory context ──────────────────
-            from pathlib import Path
-            cwd = str(Path.cwd().resolve())
-            cwd_msg = {
-                "role": "system",
-                "content": (
-                    f"<working_directory>\n"
-                    f"  You are working in: {cwd}\n"
-                    f"  ALL files you create MUST go in this directory.\n"
-                    f"  Use relative paths. This is the project root.\n"
-                    f"  Do NOT use /tmp, /workspace, or any Linux paths.\n"
-                    f"</working_directory>"
-                ),
-                "_cwd_context": True,
-            }
-            uil_history.insert(0, cwd_msg)
-
-            # ── Inject project context (PLAN/DESIGN/TASKS/ROADMAP) ──
-            if self._project_context:
-                uil_history.insert(0, {
-                    "role": "system",
-                    "content": (
-                        "<project_context>\n"
-                        f"{self._project_context}\n"
-                        "Use this context to understand the project goals, "
-                        "architecture, current tasks, and roadmap.\n"
-                        "Update these docs via the project_tracker when you "
-                        "complete tasks or make design decisions.\n"
-                        "</project_context>"
-                    ),
-                    "_project_context": True,
-                })
-
-            # ── Inject learned improvements from SelfImprove ──
-            try:
-                from core.self_improve import get_improver
-                improver = get_improver()
-                suggestions = improver.suggest_prompt_improvements()
-                if suggestions:
-                    uil_history.insert(0, {
-                        "role": "system",
-                        "content": (
-                            "<learned_improvements>\n"
-                            "Based on past errors, follow these rules:\n"
-                            + "\n".join(f"- {s}" for s in suggestions[:5]) +
-                            "\n</learned_improvements>"
-                        ),
-                    })
-            except Exception:
-                pass
-
-            # ── Inject Architecture Decision Records ──
-            try:
-                from core.adr import adr_manager
-                adr_context = adr_manager.get_context_for_prompt()
-                if adr_context:
-                    uil_history.insert(0, {
-                        "role": "system",
-                        "content": (
-                            f"{adr_context}\n\n"
-                            "DO NOT suggest alternatives listed as 'Rejected' above. "
-                            "They were already evaluated and discarded."
-                        ),
-                    })
-            except Exception:
-                pass
-
-            # ── Level 5: Unified StateManager context ──
-            try:
-                from core.state_manager import get_state_manager
-                sm = get_state_manager()
-                unified = sm.get_full_context(goal=message)
-                if unified:
-                    uil_history.insert(0, {"role": "system", "content": unified})
-            except Exception:
-                pass
-
-            # ── Inject Decision Layer guidance ──
-            try:
-                from core.decision_layer import get_decision_layer
-                guidance = get_decision_layer().get_context_for_prompt()
-                if guidance:
-                    uil_history.insert(0, {"role": "system", "content": guidance})
-            except Exception:
-                pass
-
-            # ── Inject Learning: proven patterns ──
-            try:
-                from core.learning.pattern_library import UnifiedPatternStore
-                store = UnifiedPatternStore()
-                pattern_ctx = store.get_context_for_prompt(query=message)
-                if pattern_ctx:
-                    uil_history.insert(0, {"role": "system", "content": pattern_ctx})
-            except Exception:
-                pass
-
-            # ── Inject Strategy Memory (World Model) ──
-            try:
-                from core.world_model import get_world_model
-                wm = get_world_model()
-                strat_ctx = wm.strategies.get_context_for_prompt(message)
-                if strat_ctx:
-                    uil_history.insert(0, {"role": "system", "content": strat_ctx})
-            except Exception:
-                pass
-
-            # ── Inject User Preferences ──
-            try:
-                from core.learning.pattern_extractor import UserPreferenceLearner
-                upl = UserPreferenceLearner()
-                pref_ctx = upl.get_context_for_prompt()
-                if pref_ctx:
-                    uil_history.insert(0, {"role": "system", "content": pref_ctx})
-            except Exception:
-                pass
-
-            # ── Inject Knowledge Graph context ──
-            try:
-                from core.knowledge_graph import get_knowledge_graph
-                kg = get_knowledge_graph()
-                kg_snippet = kg.get_context_snippet()
-                if kg_snippet:
-                    uil_history.insert(0, {"role": "system", "content": kg_snippet})
-            except Exception:
-                pass
-
-            # ── Auto-suggest relevant skills ──────────────────────
-            suggested_skills = []
-            try:
-                from core.skills import skill_manager
-                suggestions = skill_manager.suggest_skills(message)
-                suggested_skills = [
-                    {"name": s.name, "icon": s.icon, "description": s.description[:80]}
-                    for s in suggestions[:3]
-                ]
-            except Exception:
-                pass
+            # Build context via extracted method
+            uil_history, suggested_skills = self._build_context(message, history or [])
 
             # Process through UIL Brain (pass cfg for engine feature flags)
             result, _routing = self._uil.process(
@@ -406,14 +364,8 @@ class ChatHandler:
 
         def _run():
             try:
-                uil_history = list(history or [])
-
-                # ── Inject working directory + project context ──
-                from pathlib import Path as _P
-                cwd = str(_P.cwd().resolve())
-                uil_history.insert(0, {"role": "system", "content": f"<working_directory>\n  You are working in: {cwd}\n  ALL files you create MUST go in this directory.\n  Use relative paths. This is the project root.\n</working_directory>", "_cwd_context": True})
-                if self._project_context:
-                    uil_history.insert(0, {"role": "system", "content": f"<project_context>\n{self._project_context}\nUse this context to understand the project goals, architecture, current tasks, and roadmap.\n</project_context>", "_project_context": True})
+                # Reuse _build_context for consistent context injection
+                uil_history, _ = self._build_context(message, history or [])
 
                 def _on_event(event):
                     if event["type"] == "text":

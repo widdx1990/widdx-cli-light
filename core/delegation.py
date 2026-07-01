@@ -36,11 +36,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from core import tools as core_tools
-from core.skills import skill_manager
 
 logger = logging.getLogger("widdx.delegation")
 
@@ -270,10 +268,11 @@ class DelegationManager:
             task_ids.append(tid)
 
         # Wait for all to complete
-        results = []
+        results: list[SubAgentResult] = []
         for tid in task_ids:
             result = self.wait(tid, timeout=120)
-            results.append(result)
+            if result is not None:
+                results.append(result)
         return results
 
     def status(self, task_id: str) -> SubAgentResult | None:

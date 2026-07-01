@@ -14,7 +14,6 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Optional
 
 
 class TFIDFEmbedder:
@@ -130,7 +129,7 @@ class EmbeddingStore:
     so they survive restarts.
     """
 
-    def __init__(self, cache_path: Path | str = None):
+    def __init__(self, cache_path: Path | str | None = None):
         self._cache_path = Path(cache_path) if cache_path else None
         self._cache: dict[str, dict[str, float]] = {}
         if self._cache_path and self._cache_path.exists():

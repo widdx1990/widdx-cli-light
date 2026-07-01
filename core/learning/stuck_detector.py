@@ -20,7 +20,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger("widdx.stuck_detector")
 
@@ -108,7 +108,7 @@ class StuckDetector:
                       any(w in r["result"].lower() for w in ("error", "failed", "no response")))
         if failures >= 3:
             return StuckSignal(type="no_progress", detected=True,
-                              detail=f"3 consecutive failures with no progress",
+                              detail="3 consecutive failures with no progress",
                               severity=0.9)
         return StuckSignal(type="no_progress", detected=False)
 
@@ -143,7 +143,7 @@ class StuckDetector:
             return StuckSignal(type="error_loop", detected=False)
 
         # Group errors by type (first word)
-        groups = {}
+        groups: dict[str, int] = {}
         for e in self._error_history[-5:]:
             key = e.split()[0] if e.split() else e[:20]
             groups[key] = groups.get(key, 0) + 1

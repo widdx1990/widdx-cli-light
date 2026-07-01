@@ -18,7 +18,7 @@ async function showPluginsView(area) {
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
           + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(desc.slice(0, 60)) + '</span></div>'
           + '<div><span style="color:' + (enabled ? 'var(--success)' : 'var(--text-muted)') + '">' + (enabled ? '\u25cf Enabled' : '\u25cb Disabled') + '</span>'
-          + ' <button style="background:none;border:none;color:' + (enabled ? 'var(--warning)' : 'var(--success)') + ';cursor:pointer" onclick="togglePlugin(\'' + escapeHtml(name) + '\',' + enabled + ')">' + (enabled ? 'Disable' : 'Enable') + '</button></div></div>';
+          + ' <button style="background:none;border:none;color:' + (enabled ? 'var(--warning)' : 'var(--success)') + ';cursor:pointer" onclick="togglePlugin(\'' + encodeURIComponent(name) + '\',' + enabled + ')">' + (enabled ? 'Disable' : 'Enable') + '</button></div></div>';
       }).join('');
     } else {
       el.innerHTML = '<span style="color:var(--text-muted)">No plugins installed</span>';
@@ -31,7 +31,9 @@ async function showPluginsView(area) {
   }
 }
 
-window.togglePlugin = async function(name, isEnabled) {
+// Toggle plugin handler with safe decoding
+window.togglePlugin = async function(nameEncoded, isEnabled) {
+  const name = decodeURIComponent(nameEncoded);
   const action = isEnabled ? 'disable' : 'enable';
   try {
     await fetch('/api/plugins/' + encodeURIComponent(name) + '/' + action, { method:'POST' });

@@ -1,6 +1,6 @@
 @echo off
 title WIDDX Nexus — Web UI
-cd /d "E:\deepseek\chat-tool"
+cd /d "%~dp0"
 echo ============================================
 echo   WIDDX Nexus — Mission Control
 echo   By MUHAMMAD MUSLIH (widdx.com)

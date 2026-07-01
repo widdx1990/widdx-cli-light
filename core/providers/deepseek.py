@@ -5,7 +5,7 @@ import json
 import httpx
 
 from .openai_compatible import OpenAICompatibleProvider
-from .base import ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS
+from .base import _DEFAULT_MAX_TOKENS
 
 import logging as _logging
 logger = _logging.getLogger("widdx.providers")

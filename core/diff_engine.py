@@ -23,10 +23,9 @@ Usage:
 
 from __future__ import annotations
 
-import difflib, os
+import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -175,8 +174,8 @@ class DiffEngine:
         patched_text = "".join(patched_lines)
 
         patch_display = DiffEngine.generate(original, patched_text, filename=path.name)
-        added = sum(1 for l in patch_display.splitlines() if l.startswith("+") and not l.startswith("+++"))
-        removed = sum(1 for l in patch_display.splitlines() if l.startswith("-") and not l.startswith("---"))
+        added = sum(1 for line in patch_display.splitlines() if line.startswith("+") and not line.startswith("+++"))
+        removed = sum(1 for line in patch_display.splitlines() if line.startswith("-") and not line.startswith("---"))
 
         result = DiffResult(
             ok=True,

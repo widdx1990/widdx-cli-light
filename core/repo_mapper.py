@@ -20,10 +20,13 @@ Usage:
 
 from __future__ import annotations
 
-import ast, json, os, re, time
+import ast
+import json
+import os
+import re
+import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Constants

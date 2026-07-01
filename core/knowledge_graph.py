@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("widdx.kg")
 
@@ -157,7 +156,7 @@ class KnowledgeGraph:
         lines.append(f"Files: {len([n for n in self._nodes.values() if n['type'] == 'file'])}")
 
         # Top files by connections
-        conn_counts = defaultdict(int)
+        conn_counts: defaultdict[str, int] = defaultdict(int)
         for e in self._edges:
             conn_counts[e["from"]] += 1
             conn_counts[e["to"]] += 1
@@ -183,7 +182,7 @@ class KnowledgeGraph:
 
     def _get_symbols(self, file_path: str) -> list[dict]:
         """Extract class/function names from a file."""
-        symbols = []
+        symbols: list[dict] = []
         fp = self._root / file_path
         if not fp.exists():
             return symbols

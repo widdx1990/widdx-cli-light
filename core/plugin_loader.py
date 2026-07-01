@@ -18,9 +18,11 @@ Usage:
 
 from __future__ import annotations
 
-import os, threading, time
+import os
+import threading
+import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -1,7 +1,8 @@
 """OpenAI-compatible provider — base for OpenAI-like APIs."""
 from __future__ import annotations
 
-import json, uuid
+import json
+import uuid
 import httpx
 
 from .base import Provider, ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS

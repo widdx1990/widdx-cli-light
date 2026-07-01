@@ -4,7 +4,10 @@ Phase 2.3: Persistent KnowledgeBase that saves/loads from .widdx/knowledge.json.
 Provides historical execution stats for knowledge-informed routing.
 """
 
-import json, time, statistics, logging
+import json
+import time
+import statistics
+import logging
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Optional

@@ -1,7 +1,9 @@
 """Free model discovery and cost tracking."""
 from __future__ import annotations
 
-import json, time, threading
+import time
+import threading
+from typing import Any
 import httpx
 
 from ..proxy import ZEN_BASE
@@ -30,7 +32,7 @@ def _get_fallback_model() -> str:
 # Free Models Cache
 # ---------------------------------------------------------------------------
 
-FREE_MODELS_CACHE = {"models": [], "timestamp": 0}
+FREE_MODELS_CACHE: dict[str, Any] = {"models": [], "timestamp": 0}
 _FREE_MODELS_LOCK = threading.Lock()
 
 def fetch_free_models(force_refresh: bool = False) -> list[str]:

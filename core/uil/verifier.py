@@ -19,13 +19,10 @@ Design:
 import re
 import time
 import logging
-from pathlib import Path
-from typing import Any
 
 from .contract import (
     ClassificationResult, ExecutionResult,
-    VerificationReport, VerificationSeverity, VerificationFinding,
-    TaskType,
+    VerificationReport, VerificationSeverity, TaskType,
 )
 
 logger = logging.getLogger("widdx.verifier")
@@ -248,7 +245,6 @@ class HtmlVerifier(Verifier):
         """Check that CSS classes referenced in JS actually exist in CSS."""
         # Extract CSS class names from <style> blocks
         style_blocks = re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL)
-        css_text = "\n".join(style_blocks)
 
         # Extract all CSS selectors that start with a dot (class selectors)
         css_classes = set()
@@ -332,17 +328,10 @@ class HtmlVerifier(Verifier):
         for cls in hidden_classes:
             # Look for: classList.add("visible"), classList.toggle("visible"),
             # classList.remove("hidden"), etc.
-            reveal_patterns = [
-                f'classList\\.add\\(\\s*["\']{cls}["\']',
-                f'classList\\.remove\\(\\s*["\']{cls}["\']',
-                f'classList\\.toggle\\(\\s*["\']{cls}["\']',
-                f'className\\s*[=+]+\\s*["\'][^"\']*{cls}',
-                f'classList\\.add\\(\\s*["\']visible["\']',
-            ]
             # Also check: does JS add the parent's reveal class?
             # e.g. .stage.visible — if hidden class is "stage", JS should add "visible" somewhere
             reveal_by_visible = any(
-                f'classList\\.add\\(\\s*["\']visible["\']' in block
+                'classList\\.add\\(\\s*["\']visible["\']' in block
                 for block in script_blocks
             )
             reveal_by_toggle = any(
@@ -393,10 +382,10 @@ class HtmlVerifier(Verifier):
                         ),
                         location=f"class: .{cls}",
                         suggestion=(
-                            f"Add JS code like: "
-                            f"el.classList.add('visible') on scroll/event, "
-                            f"el.style.display = 'block', "
-                            f"OR remove opacity:0 from CSS"
+                            "Add JS code like: "
+                            "el.classList.add('visible') on scroll/event, "
+                            "el.style.display = 'block', "
+                            "OR remove opacity:0 from CSS"
                         ),
                         passed=False,
                     )
@@ -648,8 +637,8 @@ class CodeVerifier(Verifier):
             report.add(
                 check_name="possible_off_by_factor",
                 severity=VerificationSeverity.INFO,
-                message=f"Found '* 0.1' which may be an off-by-factor error "
-                        f"(often '* 1.1' is intended for 10% increase)",
+                message="Found '* 0.1' which may be an off-by-factor error "
+                        "(often '* 1.1' is intended for 10% increase)",
                 location=code[code.find(matches[0])-20:code.find(matches[0])+20]
                         if len(code) > 40 else "",
                 passed=True,

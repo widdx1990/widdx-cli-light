@@ -58,7 +58,12 @@ class TelegramAdapter:
             return
         async def _send():
             try:
-                await self._app.bot.send_message(
+                if self._app is None:
+                    return
+                bot = self._app.bot
+                if bot is None:
+                    return
+                await bot.send_message(
                     chat_id=reply.chat_id,
                     text=reply.text[:4000],
                     parse_mode="Markdown" if reply.parse_mode == "markdown" else None,

@@ -13,10 +13,8 @@ container-enforced isolation at appropriate permission levels.
 from __future__ import annotations
 import re
 import logging
-from dataclasses import dataclass
-from typing import Optional
 
-from .profiles import IsolationProfile, get_profile, resolve_profile
+from .profiles import get_profile, resolve_profile
 
 logger = logging.getLogger("widdx.isolation.policy")
 
@@ -101,7 +99,7 @@ class IsolationPolicy:
         return True, f"allowed (level {self.permission_level}, profile {profile_name})"
 
     def resolve_profile_for_task(self, task_type: str,
-                                  features: list[str] = None) -> str:
+                                  features: list[str] | None = None) -> str:
         """Get the appropriate isolation profile for a task."""
         # At strict levels, always use the most restrictive profile
         if self.permission_level <= 1:
@@ -131,7 +129,7 @@ class IsolationPolicy:
 _policy: IsolationPolicy | None = None
 
 
-def get_policy(permission_level: int = None) -> IsolationPolicy:
+def get_policy(permission_level: int | None = None) -> IsolationPolicy:
     """Get or create the isolation policy."""
     global _policy
     if _policy is None or permission_level is not None:

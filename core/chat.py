@@ -4,8 +4,10 @@ Display functions are organized in ``DisplayManager`` class.
 Module-level aliases kept for backward compatibility.
 """
 
-import json, uuid
+import json
+import uuid
 from datetime import datetime
+from typing import Any
 from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
@@ -30,17 +32,17 @@ class DisplayManager:
     substitute their own display logic (e.g., Web UI, TUI).
     """
 
-    def __init__(self, console: Console | None = None):
+    def __init__(self, console: Console | None = None) -> None:
         self.console = console or _console
 
-    def system_msg(self, text: str):
+    def system_msg(self, text: str) -> None:
         """Display a system message in a dim panel."""
         self.console.print(Panel(
             Text(text, style=_DIM),
             title="[dim]⚙ system[/]", border_style=_DIM, padding=(0, 1),
         ))
 
-    def ai_msg(self, text: str):
+    def ai_msg(self, text: str) -> None:
         """Display an AI message in an orange panel."""
         self.console.print(Panel(
             Text(text[:2000], style=_ORANGE),
@@ -49,14 +51,14 @@ class DisplayManager:
             border_style=_ORANGE, padding=(0, 1),
         ))
 
-    def tool_call(self, name: str, args_str: str):
+    def tool_call(self, name: str, args_str: str) -> None:
         """Display a tool call in a compact panel."""
         self.console.print(Panel(
             Text(f"{name}({args_str})", style=_GREEN),
             title="[bold green]🔧 tool[/]", border_style=_GREEN, padding=(0, 1),
         ))
 
-    def tool_msg(self, name: str, content: str):
+    def tool_msg(self, name: str, content: str) -> None:
         """Display a tool result (surrogates cleaned for Rich compatibility)."""
         from core.providers.base import _clean_surrogates
         safe = _clean_surrogates(str(content))[:500]
@@ -65,14 +67,14 @@ class DisplayManager:
             title=f"[dim]{name}[/]", border_style="gray50", padding=(0, 1),
         ))
 
-    def reasoning(self, text: str):
+    def reasoning(self, text: str) -> None:
         """Display reasoning/thinking text."""
         self.console.print(Panel(
             Text(text, style="#b388ff"),
             title="[#b388ff]🧠 reasoning[/]", border_style="#b388ff", padding=(0, 1),
         ))
 
-    def agent_done(self, steps: list, summary: str):
+    def agent_done(self, steps: list[Any], summary: str) -> None:
         """Display agent completion summary."""
         if not steps:
             self.console.print(f"  [dim]Agent: {summary[:200]}[/]")
@@ -194,7 +196,7 @@ def _sanitize_tool_call_ids(messages: list[dict]) -> list[dict]:
     return messages
 
 
-def _inject_skill_prompt(messages):
+def _inject_skill_prompt(messages: list[dict]) -> None:
     """Insert the active skill's system prompt at the front of messages."""
     if not skill_manager.active:
         return
@@ -210,7 +212,7 @@ def _get_model(state: dict) -> str:
     return full.split("/")[-1] if "/" in full else full
 
 
-def _build_tc_list(tool_calls) -> list[dict]:
+def _build_tc_list(tool_calls: list[Any]) -> list[dict]:
     """Convert ToolCall objects to OpenAI-compatible tool_calls dict list."""
     return [
         {"id": _valid_tool_call_id(tc.id), "type": "function",
@@ -220,7 +222,7 @@ def _build_tc_list(tool_calls) -> list[dict]:
     ]
 
 
-def _handle_tool_calls(tool_calls, content, messages, state):
+def _handle_tool_calls(tool_calls: list[Any], content: str, messages: list[dict], state: dict) -> list[dict]:
     """Shared: append assistant msg with tool_calls, print intents, execute tools."""
     tc_list = _build_tc_list(tool_calls)
     messages.append({
@@ -232,7 +234,7 @@ def _handle_tool_calls(tool_calls, content, messages, state):
     return process_tool_calls(tool_calls, messages, state)
 
 
-def process_tool_calls(tool_calls, messages, state):
+def process_tool_calls(tool_calls: list[Any], messages: list[dict], state: dict) -> list[dict]:
     """Execute each tool call and append results to messages.
 
     Shares tool-dispatch logic with agents via tools.execute_with_skills().
@@ -271,11 +273,11 @@ def process_tool_calls(tool_calls, messages, state):
     return messages
 
 
-def run_chat_turn(provider, messages, state, tool_defs, cfg):
+def run_chat_turn(provider: Any, messages: list[dict], state: dict, tool_defs: list[dict], cfg: dict) -> tuple[list[dict], dict]:
     """Run the inner AI conversation loop (max_turns iterations).
     Returns (messages, state)."""
     max_turns = cfg.get("max_turns", 10)
-    last_error = None
+    last_error: str | None = None
     for turn in range(max_turns):
         _sanitize_tool_call_ids(messages)  # ensure valid tool_call_ids before API call
         try:
@@ -318,7 +320,7 @@ def run_chat_turn(provider, messages, state, tool_defs, cfg):
     return messages, state
 
 
-def run_stream_turn(provider, messages, state, tool_defs, cfg):
+def run_stream_turn(provider: Any, messages: list[dict], state: dict, tool_defs: list[dict], cfg: dict) -> tuple[list[dict], dict]:
     """Run one conversation turn with live streaming display.
     Falls back to run_chat_turn() if provider does not support streaming."""
     if not hasattr(provider, "stream"):
@@ -396,7 +398,7 @@ def run_stream_turn(provider, messages, state, tool_defs, cfg):
     return messages, state
 
 
-def run_agent_turn(provider, messages, state, tool_defs, cfg, user_input):
+def run_agent_turn(provider: Any, messages: list[dict], state: dict, tool_defs: list[dict], cfg: dict, user_input: str) -> tuple[list[dict], dict]:
     """Run one turn using the autonomous agent (real-time tool-calling loop)."""
     from core.agents.agent import AutonomousAgent
     agent = AutonomousAgent(provider, tool_defs, cfg, state)

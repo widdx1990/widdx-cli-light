@@ -94,6 +94,23 @@ const _translations = {
     cmd_help: 'Help',
     cmd_shortcuts: 'Keyboard Shortcuts',
 
+    // Common dynamic UI strings (used by views/*.js)
+    dynamic_loading: 'Loading...',
+    dynamic_error: 'Error',
+    dynamic_no_data: 'No data',
+    dynamic_retry: 'Retry',
+    dynamic_refresh: 'Refresh',
+    dynamic_search: 'Search...',
+    dynamic_cancel: 'Cancel',
+    dynamic_save: 'Save',
+    dynamic_delete: 'Delete',
+    dynamic_enable: 'Enable',
+    dynamic_disable: 'Disable',
+    dynamic_configure: 'Configure',
+    dynamic_connected: 'Connected',
+    dynamic_disconnected: 'Disconnected',
+    dynamic_not_configured: 'Not configured',
+
     // Toast messages
     toast_copied: 'Copied to clipboard',
     toast_starred: 'Chat starred',
@@ -187,6 +204,23 @@ const _translations = {
     cmd_help: 'المساعدة',
     cmd_shortcuts: 'اختصارات لوحة المفاتيح',
 
+    // Common dynamic UI strings
+    dynamic_loading: 'جارٍ التحميل…',
+    dynamic_error: 'خطأ',
+    dynamic_no_data: 'لا توجد بيانات',
+    dynamic_retry: 'إعادة المحاولة',
+    dynamic_refresh: 'تحديث',
+    dynamic_search: 'بحث…',
+    dynamic_cancel: 'إلغاء',
+    dynamic_save: 'حفظ',
+    dynamic_delete: 'حذف',
+    dynamic_enable: 'تفعيل',
+    dynamic_disable: 'تعطيل',
+    dynamic_configure: 'تكوين',
+    dynamic_connected: 'متصل',
+    dynamic_disconnected: 'غير متصل',
+    dynamic_not_configured: 'غير مكوّن',
+
     // Toast messages
     toast_copied: 'تم النسخ إلى الحافظة',
     toast_starred: 'تم تمييز المحادثة',
@@ -232,6 +266,64 @@ const Lang = (() => {
     });
   }
 
+  /**
+   * Build a reverse-map: English string → translation key for all dynamic strings.
+   * This enables translation of dynamically generated HTML/text content.
+   * Only includes non-brand strings that appear in dynamic UI views.
+   */
+  let _reverseMap = null;
+  function _buildReverseMap() {
+    if (_reverseMap) return;
+    _reverseMap = {};
+    const english = _translations['en'];
+    // Keys that represent terminal/static labels, not dynamic content
+    // Only skip brand strings — UI view strings (nav_, panel_, tab_) ARE dynamic
+    const skipPrefixes = ['brand_'];
+    for (const key in english) {
+      const val = english[key];
+      if (!val || typeof val !== 'string') continue;
+      const skip = skipPrefixes.some(p => key.startsWith(p));
+      if (skip) continue;
+      // Only include strings >= 3 chars to avoid false matches
+      if (val.length >= 3) {
+        _reverseMap[val] = key;
+      }
+    }
+  }
+
+  /**
+   * Translate strings in dynamically generated HTML/text.
+   * Scans the input for known English patterns and replaces them
+   * with the current language's translation.
+   *
+   * @param {string} htmlOrText - HTML string or plain text
+   * @returns {string} - Translated string
+   *
+   * Usage in JS views:
+   *   area.innerHTML = Lang.translateDynamic('<h2>Settings</h2><p>Configure your provider</p>');
+   *   // In Arabic → '<h2>الإعدادات</h2><p>قم بتكوين المزود الخاص بك</p>'
+   */
+  function translateDynamic(htmlOrText) {
+    if (!htmlOrText || _lang === 'en') return htmlOrText;
+    _buildReverseMap();
+    let result = htmlOrText;
+    for (const english in _reverseMap) {
+      const key = _reverseMap[english];
+      const translation = t(key);
+      if (translation && translation !== english) {
+        // Case-insensitive replace with word boundaries to avoid false matches
+        const regex = new RegExp('\\b' + escapeRegex(english) + '\\b', 'gi');
+        result = result.replace(regex, translation);
+      }
+    }
+    return result;
+  }
+
+  /** Escape special regex characters in a string */
+  function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   /** Switch language and persist */
   function setLang(lang) {
     if (!_translations[lang]) return;
@@ -270,6 +362,7 @@ const Lang = (() => {
     setLang,
     toggle,
     init,
+    translateDynamic,
   };
 })();
 

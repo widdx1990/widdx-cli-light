@@ -126,9 +126,12 @@ class UserPreferenceLearner:
             try:
                 pkg = _j.loads((p / "package.json").read_text())
                 deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-                if "react" in deps: prefs["frontend"] = "react"
-                if "vue" in deps: prefs["frontend"] = "vue"
-                if "next" in deps: prefs["framework"] = "nextjs"
+                if "react" in deps:
+                    prefs["frontend"] = "react"
+                if "vue" in deps:
+                    prefs["frontend"] = "vue"
+                if "next" in deps:
+                    prefs["framework"] = "nextjs"
             except Exception:
                 pass
         if (p / "pyproject.toml").exists():
@@ -137,9 +140,12 @@ class UserPreferenceLearner:
                 cfg = _t.loads((p / "pyproject.toml").read_text())
                 deps = cfg.get("project", {}).get("dependencies", [])
                 deps_str = " ".join(deps)
-                if "fastapi" in deps_str: prefs["framework"] = "fastapi"
-                if "flask" in deps_str: prefs["framework"] = "flask"
-                if "django" in deps_str: prefs["framework"] = "django"
+                if "fastapi" in deps_str:
+                    prefs["framework"] = "fastapi"
+                if "flask" in deps_str:
+                    prefs["framework"] = "flask"
+                if "django" in deps_str:
+                    prefs["framework"] = "django"
             except Exception:
                 pass
 

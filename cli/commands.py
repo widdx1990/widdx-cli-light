@@ -230,7 +230,7 @@ class CLICommands:
         """Show the AI's last reasoning / thinking trace."""
         last = s.get("_last_reasoning")
         if last:
-            from .display import show_reasoning
+            from .display import show_reasoning  # type: ignore[attr-defined]
             show_reasoning(last)
         else:
             self.app.show_system("No reasoning from last turn")
@@ -349,9 +349,9 @@ class CLICommands:
                 avail = "متاح ✅" if status.get('ollama_available') else "غير متاح ❌"
                 self.app.show_system(f"   النموذج: {status.get('ollama_model')} ({avail})")
             self.app.show_system(f"   Pipeline: {status.get('pipeline_model')}")
-            self.app.show_system(f"\n   /vision mode pipeline|ollama|deepseek")
-            self.app.show_system(f"   /vision model <name>")
-            self.app.show_system(f"   /vision on|off")
+            self.app.show_system("\n   /vision mode pipeline|ollama|deepseek")
+            self.app.show_system("   /vision model <name>")
+            self.app.show_system("   /vision on|off")
             return
 
         parts = arg.split(None, 1)

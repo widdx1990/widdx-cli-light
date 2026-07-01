@@ -15,7 +15,7 @@ Every public executor in this module:
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from ..uil.contract import (
     ExecutionMode,
@@ -176,15 +176,18 @@ def simple_chat_executor(
 
         # Inject plan into context
         _, n_steps = _extract_plan(ctx, user_input)
-        plan_marker = None
+        plan_marker: dict[str, str] | None = None
         if n_steps > 0:
             plan = getattr(ctx, "task_plan", None) or getattr(ctx, "plan", None)
-            steps_text = "\n".join(f"  {s.id}: {s.description}" for s in plan.steps)
+            if plan is not None and hasattr(plan, 'steps'):
+                steps_text = "\n".join(f"  {s.id}: {s.description}" for s in plan.steps)
+            else:
+                steps_text = ""
             plan_marker = {
                 "role": "system",
                 "content": f"[PLAN — {n_steps} steps]\n{steps_text}",
-                "_plan": True,
             }
+        if plan_marker is not None:
             msgs.append(plan_marker)
 
         # Use streaming path if callback is provided
@@ -437,7 +440,7 @@ def delegation_executor(
 # Executor Map — replaces brain._DEFAULT_EXECUTORS stubs
 # ---------------------------------------------------------------------------
 
-EXECUTOR_MAP: dict[ExecutionMode, callable] = {
+EXECUTOR_MAP: dict[ExecutionMode, Callable] = {
     ExecutionMode.SIMPLE_CHAT: simple_chat_executor,
     ExecutionMode.AUTONOMOUS: autonomous_executor,
     ExecutionMode.EXPERT_TEAM: expert_team_executor,

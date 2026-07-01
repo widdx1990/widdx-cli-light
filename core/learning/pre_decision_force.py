@@ -70,7 +70,7 @@ class PreDecisionForce:
             from core.learning.pattern_library import UnifiedPatternStore
             store = UnifiedPatternStore()
 
-            constraints = {
+            constraints: dict[str, Any] = {
                 "preferred_patterns": [],
                 "avoided_patterns": list(self._blocked_patterns)[:10],
                 "suggested_steps": [],
@@ -209,11 +209,16 @@ class PreDecisionForce:
             expert_patterns = store.search(category="architectural", tags=["success"], min_confidence=0.6, limit=10)
             preferred = []
             for p in expert_patterns:
-                if "orchestrator" in p.solution.lower(): preferred.append("orchestrator")
-                if "coder" in p.solution.lower(): preferred.append("coder")
-                if "reviewer" in p.solution.lower(): preferred.append("reviewer")
-                if "researcher" in p.solution.lower(): preferred.append("researcher")
-                if "debugger" in p.solution.lower(): preferred.append("debugger")
+                if "orchestrator" in p.solution.lower():
+                    preferred.append("orchestrator")
+                if "coder" in p.solution.lower():
+                    preferred.append("coder")
+                if "reviewer" in p.solution.lower():
+                    preferred.append("reviewer")
+                if "researcher" in p.solution.lower():
+                    preferred.append("researcher")
+                if "debugger" in p.solution.lower():
+                    preferred.append("debugger")
             return list(dict.fromkeys(preferred))  # unique, preserve order
         except Exception:
             return []

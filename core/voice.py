@@ -20,7 +20,6 @@ import logging
 import os
 import subprocess
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -136,10 +135,10 @@ class TTSEngine:
                     # Use winsound (built-in) for WAV, or start MP3 via system
                     if filepath.suffix == ".wav":
                         import winsound
-                        winsound.PlaySound(str(filepath), winsound.SND_FILENAME)
+                        winsound.PlaySound(str(filepath), winsound.SND_FILENAME)  # type: ignore[attr-defined]
                     else:
                         # Start default player for MP3
-                        os.startfile(str(filepath))
+                        os.startfile(str(filepath))  # type: ignore[attr-defined]
                 elif system == "darwin":
                     subprocess.run(["afplay", str(filepath)], capture_output=True, timeout=60)
                 else:

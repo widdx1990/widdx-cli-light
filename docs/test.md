@@ -1,8 +1,8 @@
-PS E:\deepseek\chat-tool> python -m pytest tests/ -v
+PS &lt;project-dir&gt;> python -m pytest tests/ -v
 ================================================= test session starts =================================================
-platform win32 -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\widdx\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
+platform win32 -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0 -- &lt;python-path&gt;
 cachedir: .pytest_cache
-rootdir: E:\deepseek\chat-tool
+rootdir: &lt;project-dir&gt;
 configfile: pyproject.toml
 plugins: anyio-4.12.1, asyncio-1.4.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
@@ -555,7 +555,7 @@ assert 'none' in ('html', 'generic')
 FAILED tests/test_verifier.py::TestBrainVerifierIntegration::test_brain_passes_clean - AssertionError: Expected 0 criticals, got 999
 assert 999 == 0
 ============================================================================ 4 failed, 503 passed, 1 skipped in 1444.36s (0:24:04) =============================================================================
-PS E:\deepseek\chat-tool>
+PS &lt;project-dir&gt;>
 
 
 4 failures واضحة جداً — ثلاثة منها مترابطة. إليك التشخيص الدقيق لكل واحدة:

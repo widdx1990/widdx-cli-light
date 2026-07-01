@@ -1,7 +1,7 @@
 """Memory Learner — auto-extract facts from conversations using the LLM."""
 
-import json, time
-from typing import Optional
+import json
+import time
 from .memory import MemoryStore
 from .utils import to_slug
 

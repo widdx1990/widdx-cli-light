@@ -20,21 +20,21 @@ from typing import Any, Callable
 
 logger = logging.getLogger("widdx.uil.brain")
 
-from .analyzer import TaskAnalyzer
-from .router import DecisionRouter
-from .planner import TaskPlanner
-from .contract import (ExecutionMode, ExecutionPlan, RoutingDecision,
+from .analyzer import TaskAnalyzer  # noqa: E402
+from .router import DecisionRouter  # noqa: E402
+from .planner import TaskPlanner  # noqa: E402
+from .contract import (ExecutionMode, RoutingDecision,  # noqa: E402
                        DecisionStep, ExecutionContext, ExecutionResult,
-                       StepResult, ExecutionMetrics,
+                       StepResult, ExecutionMetrics, TaskType,
                        VerificationSeverity, VerificationFinding)
-from .knowledge import KnowledgeBase
-from .verifier import get_verifier
+from .knowledge import KnowledgeBase  # noqa: E402
+from .verifier import get_verifier  # noqa: E402
 
 # ── v4.0 Engine adapters (feature-flagged, safe by default) ──
 try:
     from core.engine_adapters import (
-        engine_enabled, engine_flags_summary,
-        adapt_classification, adapt_plan, adapt_validation,
+        engine_enabled,
+        adapt_classification, adapt_validation,
     )
     _ENGINES_AVAILABLE = True
 except ImportError:
@@ -55,10 +55,10 @@ except ImportError:
 # dependency issues at module-load time.
 # -------------------------------------------------------------------
 
-_EXECUTOR_MAP: dict[ExecutionMode, callable] | None = None
+_EXECUTOR_MAP: dict[ExecutionMode, Callable] | None = None
 
 
-def _get_executor_map() -> dict[ExecutionMode, callable]:
+def _get_executor_map() -> dict[ExecutionMode, Callable]:
     """Lazy-load EXECUTOR_MAP from executor_adapter on first call.
 
     Returns an empty dict (with a logged warning) if the import fails,
@@ -138,7 +138,7 @@ class UnifiedIntelligenceLayer:
 
     def process(self, user_input: str,
                 messages: list | None = None,
-                executors: dict[ExecutionMode, callable] | None = None,
+                executors: dict[ExecutionMode, Callable] | None = None,
                 cfg: dict | None = None,
                 state: dict | None = None,
                 project_card: Any | None = None,
@@ -229,8 +229,10 @@ class UnifiedIntelligenceLayer:
                 "forcing CHAT to prevent cascading errors.",
                 classification.confidence,
             )
-            classification.task_type = classification.task_type.__class__.CHAT \
-                if hasattr(classification.task_type, '__class__') else TaskType.CHAT
+            if hasattr(classification.task_type, '__class__'):
+                classification.task_type = classification.task_type.__class__.CHAT
+            else:
+                classification.task_type = None  # type: ignore[assignment]
             try:
                 from core.uil.contract import TaskType as _TT
                 classification.task_type = _TT.CHAT
@@ -319,6 +321,12 @@ class UnifiedIntelligenceLayer:
                 f"Execution Plan ({len(plan.steps)} steps):\n{plan_text}\n\n"
                 f"Follow this plan step by step."
             )
+
+        # Inject project context for code tasks so the AI follows existing patterns
+        if classification.task_type in (TaskType.CODE_WRITE, TaskType.CODE_MODIFY):
+            project_ctx = self._get_project_context_snippet()
+            if project_ctx:
+                enriched_input = enriched_input + project_ctx
 
         try:
             if on_event:
@@ -627,7 +635,7 @@ class UnifiedIntelligenceLayer:
             )
             if tool_failures > 0:
                 score -= 0.1 * (tool_failures / result.steps_completed)
-        result.quality_score = round(max(0.0, min(1.0, score)), 2)
+        result.quality_score = round(max(0.0, min(1.0, score)), 2)  # type: ignore[attr-defined]
 
         # Mark step_results as completed/failed based on execution outcome
         if ctx.step_results:
@@ -664,7 +672,7 @@ class UnifiedIntelligenceLayer:
                     loop_result.passed_all, loop_result.iterations, loop_result.findings_fixed,
                 )
                 if loop_result.passed_all:
-                    verification_report = loop_result.final_report or verification_report
+                    verification_report = loop_result.final_report or verification_report  # type: ignore[assignment]
             except Exception as e:
                 logger.debug("VerifyLoop unavailable: %s", e)
 
@@ -759,8 +767,8 @@ class UnifiedIntelligenceLayer:
     @staticmethod
     def _resolve_executor(
         decision: RoutingDecision,
-        executors: dict[ExecutionMode, callable] | None,
-    ) -> callable:
+        executors: dict[ExecutionMode, Callable] | None,
+    ) -> Callable:
         """Find the right executor for this decision."""
         mode = decision.plan.mode
         if executors and mode in executors:
@@ -801,7 +809,7 @@ def _resolve_engine_disagreement(
                 old_classification=old_classification,
                 new_classification=new_classification,
                 user_input=user_input,
-                executor=None,      # lightweight: arbiter records disagreement
+                executor=None,      # type: ignore[arg-type]  # lightweight: arbiter records disagreement
                 old_ctx=None,
                 new_ctx=None,
                 messages=messages,

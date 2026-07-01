@@ -6,12 +6,9 @@ Keyword-based classifiers serve as fast-path fallback.
 
 import re
 import time
-import logging
-from typing import Optional
 
 from .contract import (
     ClassificationResult, DecisionStep, TaskType, Domain,
-    ExecutionMode,
 )
 
 # -------------------------------------------------------------------
@@ -161,7 +158,7 @@ class LLMClassifier:
                     content = (content[:th_start] + content[th_end + len("[/thinking]"):]).strip()
                 self._set_cached(user_input, content)
 
-            lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
+            lines = [line.strip() for line in content.strip().split("\n") if line.strip()]
             if len(lines) < 3:
                 return None
 
@@ -227,15 +224,15 @@ class LLMClassifier:
                 keywords=[task_type_str, execution_mode, complexity_str],
                 detected_features={
                     "execution_mode": execution_mode,
-                    "is_complex": task_type == TaskType.COMPLEX,
-                    "is_background": execution_mode == "background",
-                    "is_cron": execution_mode == "cron",
-                    "is_delegation": execution_mode == "delegation",
-                    "web": parsed_features.get("web", False),
-                    "api": parsed_features.get("api", False),
-                    "database": parsed_features.get("database", False),
-                    "cli": parsed_features.get("cli", False),
-                    "testing": parsed_features.get("testing", False),
+                    "is_complex": str(task_type == TaskType.COMPLEX).lower(),
+                    "is_background": str(execution_mode == "background").lower(),
+                    "is_cron": str(execution_mode == "cron").lower(),
+                    "is_delegation": str(execution_mode == "delegation").lower(),
+                    "web": str(parsed_features.get("web", False)).lower(),
+                    "api": str(parsed_features.get("api", False)).lower(),
+                    "database": str(parsed_features.get("database", False)).lower(),
+                    "cli": str(parsed_features.get("cli", False)).lower(),
+                    "testing": str(parsed_features.get("testing", False)).lower(),
                 },
                 decision_path=[step],
                 is_fallback=False,
@@ -421,11 +418,11 @@ class TaskAnalyzer:
             keywords=[],
             detected_features={
                 "execution_mode": "direct",
-                "is_complex": task_type == TaskType.COMPLEX,
-                "is_background": False,
-                "is_cron": False,
-                "is_delegation": task_type == TaskType.COMPLEX,
-                **fallback_features,
+                "is_complex": str(task_type == TaskType.COMPLEX).lower(),
+                "is_background": "false",
+                "is_cron": "false",
+                "is_delegation": str(task_type == TaskType.COMPLEX).lower(),
+                **{k: str(v).lower() for k, v in fallback_features.items()},
             },
             is_fallback=True,
             decision_path=[step],

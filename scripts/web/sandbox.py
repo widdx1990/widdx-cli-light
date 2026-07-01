@@ -10,10 +10,7 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -44,11 +41,6 @@ class SandboxHandler:
             result = self._fallback_execute(command, timeout)
         else:
             result = self._sandbox.execute(command, timeout)
-            # Refresh sandbox mode for next call
-            try:
-                self._sandbox = self._sandbox.__class__(mode="auto")
-            except Exception:
-                pass
 
         return {
             "stdout": result.stdout if hasattr(result, 'stdout') else (result or ""),
@@ -59,7 +51,8 @@ class SandboxHandler:
 
     def _fallback_execute(self, command: str, timeout: int) -> Any:
         """Fallback using subprocess directly — security: uses shell=False with split."""
-        import subprocess, shlex
+        import subprocess
+        import shlex
         try:
             cmd_parts = shlex.split(command)
             proc = subprocess.run(
@@ -88,7 +81,6 @@ class SandboxHandler:
 
     def file_tree(self, path: str = ".") -> dict:
         """Get file tree of a project directory."""
-        import os as _os
         base = Path(path).resolve()
         if not base.exists():
             return {"error": f"Path not found: {path}"}
@@ -101,7 +93,7 @@ class SandboxHandler:
                 for child in sorted(dir_path.iterdir()):
                     if child.name.startswith(".") or child.name == "__pycache__":
                         continue
-                    entry = {
+                    entry: dict[str, object] = {
                         "name": child.name,
                         "type": "directory" if child.is_dir() else "file",
                         "path": str(child.relative_to(base)),

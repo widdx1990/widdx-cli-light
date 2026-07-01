@@ -78,6 +78,15 @@ markers = [
     "asyncio: mark test as async (uses asyncio event loop)",
 ]
 
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+warn_unused_ignores = true
+exclude = ["tests/"]
+
 [tool.coverage.run]
 source = ["core", "tui"]
 omit = ["tests/*", "node_modules*"]

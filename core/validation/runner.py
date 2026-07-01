@@ -63,8 +63,8 @@ class CodeRunner:
         self.timeout_default = timeout_default
 
     def run_python(self, code: str,
-                   test_inputs: list[str] = None,
-                   timeout: int = None) -> RunResult:
+                   test_inputs: list[str] | None = None,
+                   timeout: int | None = None) -> RunResult:
         """Execute Python code and capture output.
 
         Args:
@@ -103,7 +103,7 @@ class CodeRunner:
                     stderr=subprocess.PIPE,
                     text=True,
                     env=self._clean_env(),
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,  # type: ignore[attr-defined]
                 )
                 stdout, stderr = proc.communicate(
                     timeout=timeout,
@@ -136,7 +136,7 @@ class CodeRunner:
                     language="python",
                 )
 
-    def run_bash(self, command: str, timeout: int = None) -> RunResult:
+    def run_bash(self, command: str, timeout: int | None = None) -> RunResult:
         """Execute a bash command and capture output.
 
         Args:
@@ -160,7 +160,7 @@ class CodeRunner:
                     stderr=subprocess.PIPE,
                     text=True,
                     env=self._clean_env(),
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,  # type: ignore[attr-defined]
                 )
                 stdout, stderr = proc.communicate(timeout=timeout)
                 elapsed = time.perf_counter() - t0
@@ -299,7 +299,7 @@ def get_runner() -> CodeRunner:
 
 
 def run_code(code: str, language: str = "python",
-             timeout: int = None) -> RunResult:
+             timeout: int | None = None) -> RunResult:
     """Run code in the validation harness.
 
     Args:

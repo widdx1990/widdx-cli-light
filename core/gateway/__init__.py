@@ -17,14 +17,11 @@ Architecture:
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Callable, Optional
 
 logger = logging.getLogger("widdx.gateway")
@@ -127,7 +124,7 @@ class GatewayCore:
             logger.warning("No adapter for platform: %s", reply.platform.value)
             return
         try:
-            adapter.send(reply)
+            adapter.send(reply)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Gateway send error: %s", e)
 

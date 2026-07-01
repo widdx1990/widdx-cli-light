@@ -23,10 +23,9 @@ Each memory is a markdown file with frontmatter:
 MEMORY.md serves as the index with one-line pointers.
 """
 
-import os, json
 from pathlib import Path
-from typing import Optional
 from datetime import datetime
+from typing import Any
 
 from .utils import parse_frontmatter, strip_frontmatter, to_slug
 
@@ -44,7 +43,7 @@ class MemoryStore:
                      (global — shared across all projects).
     """
 
-    def __init__(self, project_dir: str | Path | None = None):
+    def __init__(self, project_dir: str | Path | None = None) -> None:
         if project_dir is None:
             # Global memory — shared across ALL projects
             self.root = Path.home() / ".widdx"
@@ -94,7 +93,7 @@ class MemoryStore:
                 pass
 
         meta = metadata or {}
-        from datetime import datetime, timezone
+        from datetime import timezone
         now = datetime.now(timezone.utc).isoformat()
 
         # ── Versioning frontmatter fields ──
@@ -173,14 +172,14 @@ class MemoryStore:
             try:
                 from core.vector_memory import VectorMemoryStore
                 vstore = VectorMemoryStore()
-                results = vstore.search(query, top_k=10)
-                if results:
+                vmatches = vstore.search(query, top_k=10)
+                if vmatches:
                     return [{
                         "name": r.get("name", "?"),
                         "description": r.get("content", "")[:80],
                         "snippet": r.get("content", "")[:200],
                         "score": r.get("score", 0.0),
-                    } for r in results]
+                    } for _, r in vmatches]
             except Exception:
                 pass
 
@@ -200,35 +199,35 @@ class MemoryStore:
                 embedder.index(contents)
                 matches = embedder.search(query, top_k=5, min_score=0.08)
                 if matches:
-                    results = []
+                    vec_results: list[dict[str, Any]] = []
                     for score, matched_text in matches:
                         idx = contents.index(matched_text)
                         f = file_map[idx]
                         meta, _ = parse_frontmatter(f.read_text(encoding="utf-8"), nested_metadata=True)
-                        results.append({
+                        vec_results.append({
                             "name": meta.get("name", f.stem),
                             "description": meta.get("description", "")[:80],
                             "snippet": matched_text[:200],
                             "score": round(score, 3),
                         })
-                    return results
+                    return vec_results
         except Exception:
             pass
 
         # ── Keyword fallback ────────────────────────────────
         query_lower = query.lower()
-        results = []
+        kw_results: list[dict[str, Any]] = []
         for f in self.memory_dir.glob("*.md"):
             text = f.read_text(encoding="utf-8")
             if query_lower in text.lower():
                 meta, _ = parse_frontmatter(text, nested_metadata=True)
                 body = strip_frontmatter(text)
-                results.append({
+                kw_results.append({
                     "name": meta.get("name", f.stem),
                     "description": meta.get("description", "")[:80],
                     "snippet": body[:200],
                 })
-        return results
+        return kw_results
 
     # ── Versioning API ──────────────────────────────────────────
 
@@ -279,7 +278,7 @@ class MemoryStore:
         existing = filepath.read_text(encoding="utf-8")
         meta, body = parse_frontmatter(existing, nested_metadata=True)
         md = meta.get("metadata", {})
-        from datetime import datetime, timezone
+        from datetime import timezone
         md["last_validated"] = datetime.now(timezone.utc).isoformat()
         new_conf = min(1.0, float(meta.get("confidence", 0.5)) + 0.1)
         return self.save(
@@ -320,7 +319,7 @@ class MemoryStore:
 
     # ── Index management ──────────────────────────────────────────────
 
-    def _update_index(self, slug: str, description: str):
+    def _update_index(self, slug: str, description: str) -> None:
         """Append or update one line in MEMORY.md."""
         line = f"- [{slug}]({MEMORY_DIR_NAME}/{slug}.md) — {description.strip()}"
         if self.index_path.exists():
@@ -338,7 +337,7 @@ class MemoryStore:
         else:
             self.index_path.write_text(line + "\n", encoding="utf-8")
 
-    def _rebuild_index(self):
+    def _rebuild_index(self) -> None:
         """Regenerate MEMORY.md from all memory files."""
         lines = []
         for f in sorted(self.memory_dir.glob("*.md")):

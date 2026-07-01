@@ -13,9 +13,10 @@ from __future__ import annotations
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
-from .runner import RunResult, run_code, get_runner
+from typing import Any
+
+from .runner import get_runner
 
 logger = logging.getLogger("widdx.validation.reporter")
 
@@ -80,9 +81,9 @@ class ValidationReporter:
         self._runner = get_runner()
 
     def validate(self,
-                 result: any,  # ExecutionResult from UIL
-                 classification: any,  # ClassificationResult
-                 context: dict = None) -> ValidationReport:
+                 result: Any,  # ExecutionResult from UIL
+                 classification: Any,  # ClassificationResult
+                 context: dict | None = None) -> ValidationReport:
         """Validate an execution result.
 
         Args:
@@ -205,9 +206,9 @@ class ValidationReporter:
 
         return findings
 
-    def _check_runtime(self, code: str, classification: any) -> list[Finding]:
+    def _check_runtime(self, code: str, classification: object) -> list[Finding]:
         """Actually run the code and check for runtime errors."""
-        findings = []
+        findings: list[Finding] = []
 
         task_type = getattr(classification, 'task_type', '')
         if hasattr(task_type, 'value'):
@@ -233,7 +234,7 @@ class ValidationReporter:
             if run_result.was_timeout:
                 findings.append(Finding(
                     severity="warning", check_name="runtime_timeout",
-                    message=f"Code execution timed out after 10s",
+                    message="Code execution timed out after 10s",
                     passed=False,
                 ))
             elif run_result.errors:
@@ -251,7 +252,7 @@ class ValidationReporter:
 
         return findings
 
-    def _check_quality(self, text: str, classification: any) -> list[Finding]:
+    def _check_quality(self, text: str, classification: Any) -> list[Finding]:
         """Check output quality — length, completeness, anti-patterns."""
         findings = []
         if not text or not text.strip():
@@ -327,7 +328,7 @@ def get_reporter() -> ValidationReporter:
     return _reporter
 
 
-def validate_result(result, classification,
-                    context: dict = None) -> ValidationReport:
+def validate_result(result: Any, classification: Any,
+                    context: dict | None = None) -> ValidationReport:
     """Validate an execution result. Main entry point."""
     return get_reporter().validate(result, classification, context)

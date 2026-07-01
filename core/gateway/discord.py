@@ -44,14 +44,14 @@ class DiscordAdapter:
 
         @self._bot.event
         async def on_ready():
-            logger.info("Discord bot logged in as %s", self._bot.user)
+            logger.info("Discord bot logged in as %s", self._bot.user)  # type: ignore[union-attr]
 
         @self._bot.event
         async def on_message(message):
-            if message.author == self._bot.user:
+            if message.author == self._bot.user:  # type: ignore[union-attr]
                 return
             if message.content.startswith("!"):
-                await self._bot.process_commands(message)
+                await self._bot.process_commands(message)  # type: ignore[union-attr]
                 return
 
             msg = Message(
@@ -94,7 +94,7 @@ class DiscordAdapter:
         if self._bot is None or self._loop is None:
             return
         async def _send():
-            channel = self._bot.get_channel(int(reply.chat_id))
+            channel = self._bot.get_channel(int(reply.chat_id))  # type: ignore[union-attr]
             if channel:
                 try:
                     await channel.send(reply.text[:2000])

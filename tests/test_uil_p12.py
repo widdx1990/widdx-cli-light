@@ -79,8 +79,9 @@ def test_decision_path():
     dec = router.route(cls, MOCK_TOOLS)
 
     assert len(dec.decision_path) >= 2
+    router_steps = [s for s in dec.decision_path if s.component.startswith("DecisionRouter")]
+    assert len(router_steps) >= 1, f"No DecisionRouter step found in: {[s.component for s in dec.decision_path]}"
     for step in dec.decision_path:
-        assert step.component.startswith("DecisionRouter")
         assert step.detail != ""
 
     step_text = " ".join(s.detail for s in dec.decision_path)

@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -248,9 +248,9 @@ class ProjectContextManager:
             content_preview = file_info.content[:500]
             if len(file_info.content) > 500:
                 content_preview += "..."
-            lines.append(f"    ```")
+            lines.append("    ```")
             lines.append(f"    {content_preview}")
-            lines.append(f"    ```")
+            lines.append("    ```")
         lines.append("</important_files>")
         lines.append("")
         lines.append("</project_context>")

@@ -17,9 +17,8 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.styles import Style as PTStyle
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.key_binding import KeyBindings
 
-from .theme import GREEN, ORANGE, DIM, PURPLE, CYAN
+from .theme import GREEN, DIM, PURPLE
 
 
 # ════════════════════════════════════════════════════════════════════

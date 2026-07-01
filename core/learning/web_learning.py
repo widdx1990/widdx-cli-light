@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
 
 logger = logging.getLogger("widdx.web_learning")
 
@@ -64,9 +63,12 @@ class WebLearningLoop:
 
         if goal:
             # Add technology context
-            if "flask" in goal.lower(): parts.append("flask")
-            if "react" in goal.lower(): parts.append("react")
-            if "api" in goal.lower(): parts.append("API development")
+            if "flask" in goal.lower():
+                parts.append("flask")
+            if "react" in goal.lower():
+                parts.append("react")
+            if "api" in goal.lower():
+                parts.append("API development")
 
         if not parts:
             parts.append(goal[:200])

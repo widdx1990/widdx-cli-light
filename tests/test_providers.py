@@ -15,30 +15,30 @@ def _cfg(name: str, model: str = "", base_url: str = "") -> dict:
 class TestCreateProvider:
 
     def test_opencode_zen(self):
-        p = create_provider(_cfg("opencode-zen"))
+        p = create_provider(_cfg("opencode-zen"), raw=True)
         assert isinstance(p, OpenCodeZenProvider)
 
     def test_ollama(self):
-        p = create_provider(_cfg("ollama"))
+        p = create_provider(_cfg("ollama"), raw=True)
         assert isinstance(p, OllamaProvider)
 
     def test_openai(self):
-        p = create_provider(_cfg("openai", model="gpt-4"))
+        p = create_provider(_cfg("openai", model="gpt-4"), raw=True)
         assert isinstance(p, OpenAICompatibleProvider)
 
     def test_deepseek(self):
-        p = create_provider(_cfg("deepseek", model="deepseek-chat"))
+        p = create_provider(_cfg("deepseek", model="deepseek-chat"), raw=True)
         assert isinstance(p, DeepSeekProvider)
 
 
 class TestResolveModel:
 
     def test_explicit_model(self):
-        p = create_provider(_cfg("opencode-zen", model="deepseek-v4-flash-free"))
+        p = create_provider(_cfg("opencode-zen", model="deepseek-v4-flash-free"), raw=True)
         assert p.model == "deepseek-v4-flash-free"
 
     def test_empty_model_has_default(self):
-        p = create_provider(_cfg("opencode-zen"))
+        p = create_provider(_cfg("opencode-zen"), raw=True)
         assert p.model, "Model should not be empty"
 
 
@@ -74,14 +74,14 @@ class TestProviderConfig:
 
     def test_custom_base_url(self):
         url = "http://custom-proxy:8080/v1"
-        p = create_provider(_cfg("opencode-zen", base_url=url))
+        p = create_provider(_cfg("opencode-zen", base_url=url), raw=True)
         assert p.base_url == url
 
     def test_deepseek_model(self):
-        p = create_provider(_cfg("deepseek", model="deepseek-chat"))
+        p = create_provider(_cfg("deepseek", model="deepseek-chat"), raw=True)
         assert p.model, "DeepSeek should have a model"
 
     def test_ollama_with_explicit_url(self):
         url = "http://192.168.1.100:11434"
-        p = create_provider(_cfg("ollama", base_url=url))
+        p = create_provider(_cfg("ollama", base_url=url), raw=True)
         assert p.base_url == url

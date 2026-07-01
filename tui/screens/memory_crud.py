@@ -8,7 +8,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
 
-from core.ui_visual import CYAN, ORANGE, RED, BLUE, DIM
+from core.ui_visual import CYAN, ORANGE, BLUE, DIM
 from core.memory import MemoryStore
 
 
@@ -153,7 +153,7 @@ class MemoryEditScreen(ModalScreen):
                 yield Label("Name (slug):")
                 yield Input(value=self._meta.get("name", self._original_name), id="mem-edit-name", placeholder="my-memory-name")
                 yield Label("Type:")
-                yield Select([(l, v) for v, l in MEMORY_TYPES], value=self._meta.get("type", "user"), id="mem-edit-type")
+                yield Select([(label, v) for v, label in MEMORY_TYPES], value=self._meta.get("type", "user"), id="mem-edit-type")
                 yield Label("Content:")
                 yield TextArea(self._content, id="mem-edit-content", language="markdown", theme="monokai")
             with Horizontal(classes="dialog-actions"):
@@ -172,11 +172,14 @@ class MemoryEditScreen(ModalScreen):
             store.delete(self._original_name)
         self.dismiss(True)
 
-    def action_cancel(self): self.dismiss(None)
+    def action_cancel(self):
+        self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "mem-save": self.action_save()
-        elif event.button.id == "mem-cancel": self.action_cancel()
+        if event.button.id == "mem-save":
+            self.action_save()
+        elif event.button.id == "mem-cancel":
+            self.action_cancel()
 
 
 # ── Memory Picker (modal) ─────────────────────
@@ -204,7 +207,8 @@ class MemoryPickerScreen(ModalScreen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
-        if bid == "mem-picker-cancel": self.dismiss(None)
+        if bid == "mem-picker-cancel":
+            self.dismiss(None)
         elif bid and bid.startswith("pick-"):
             self.dismiss((bid[5:], self._action))
 

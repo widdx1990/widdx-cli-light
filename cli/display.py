@@ -4,19 +4,16 @@ CLI-specific additions only — no duplication with `core.ui_visual`.
 """
 
 from datetime import datetime
-from pathlib import Path
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
 from rich import box as rich_box
-from rich.rule import Rule
 
 from core.ui_visual import (
     CYAN, DIM, GREEN, ORANGE, PURPLE, RED, WHITE,
-    Panel, Table, console, header_bar, rich_box,
-    render_user_message, render_assistant_message, render_system_message, render_tool_message, render_error, render_reasoning, render_divider,
-    show_divider, show_table, show_panel, show_error, show_success,
+    console, header_bar,
+    render_user_message, render_assistant_message,
+    show_divider, show_table, show_panel, show_error, show_success,  # noqa: F401 — re-exported
 )
 
 

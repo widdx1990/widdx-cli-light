@@ -20,3 +20,23 @@ from core.cron.scheduler import CronScheduler
 from core.gateway import GatewayCore, Platform, Message, Reply
 from core.vision import describe_image, VisionMode, process_user_input_with_vision
 from core.tools import TOOL_DEFINITIONS, execute, execute_with_skills
+
+__all__ = [
+    "load", "get", "save",
+    "proxy_manager", "ProxyManager",
+    "Provider", "ToolCall",
+    "OllamaProvider", "OpenAICompatibleProvider", "OpenCodeZenProvider",
+    "DeepSeekProvider", "GGUFDirectProvider",
+    "fetch_free_models", "create_provider",
+    "get_available_models", "resolve_model", "estimate_turn_cost",
+    "MemoryStore",
+    "ActivityStore", "get_activity_store", "add",
+    "BackgroundTaskManager",
+    "DelegationManager",
+    "TTSEngine",
+    "CronScheduler",
+    "GatewayCore", "Platform", "Message", "Reply",
+    "describe_image", "VisionMode", "process_user_input_with_vision",
+    "TOOL_DEFINITIONS", "execute", "execute_with_skills",
+    "add_activity",
+]

@@ -7,9 +7,12 @@ Handles four capabilities the user requested:
   4. Proactive CLI tool installation when needed
 """
 
-import json, subprocess, sys, logging, re
+import json
+import subprocess
+import sys
+import logging
+import re
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("widdx.auto_setup")
 
@@ -180,7 +183,6 @@ def auto_install_deps(project_dir: Path, silent: bool = True) -> list[str]:
     """
     installed: list[str] = []
     deps = detect_project_deps(project_dir)
-    kwargs = {"capture_output": silent, "text": True, "timeout": 180}
 
     # ── pip ───────────────────────────────────────────────
     for req in deps["pip"]:
@@ -190,7 +192,7 @@ def auto_install_deps(project_dir: Path, silent: bool = True) -> list[str]:
         try:
             r = subprocess.run(
                 [sys.executable, "-m", "pip", "install"] + req.split(),
-                **kwargs,
+                capture_output=silent, text=True, timeout=180,
             )
             r.check_returncode()
             installed.append(f"pip {req}")
@@ -208,7 +210,7 @@ def auto_install_deps(project_dir: Path, silent: bool = True) -> list[str]:
             try:
                 r = subprocess.run(
                     ["npm", "install"],
-                    cwd=str(project_dir), **kwargs,
+                    cwd=str(project_dir), capture_output=silent, text=True, timeout=180,
                 )
                 r.check_returncode()
                 installed.append("npm install")
@@ -226,7 +228,7 @@ def auto_install_deps(project_dir: Path, silent: bool = True) -> list[str]:
             try:
                 r = subprocess.run(
                     ["go", "mod", "download"],
-                    cwd=str(project_dir), **kwargs,
+                    cwd=str(project_dir), capture_output=silent, text=True, timeout=180,
                 )
                 r.check_returncode()
                 installed.append("go mod download")
@@ -244,7 +246,7 @@ def auto_install_deps(project_dir: Path, silent: bool = True) -> list[str]:
             try:
                 r = subprocess.run(
                     ["cargo", "build"],
-                    cwd=str(project_dir), **kwargs,
+                    cwd=str(project_dir), capture_output=silent, text=True, timeout=180,
                 )
                 r.check_returncode()
                 installed.append("cargo build")
@@ -319,7 +321,7 @@ def learn_project(project_dir: Path) -> list[dict]:
         })
 
     # ── Detect databases ──────────────────────────────────
-    db_files = []
+    db_files: list[Path] = []
     for pattern in ("*.db", "*.sqlite", "*.sqlite3"):
         db_files.extend(root.rglob(pattern))
     if db_files:

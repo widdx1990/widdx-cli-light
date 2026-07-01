@@ -242,7 +242,7 @@ class TaskPlanner:
             if architectures:
                 best = scorer.select_best(architectures, goal=user_input, domain=domain)
                 if best:
-                    compiled = compiler.compile(best, goal=user_input)
+                    compiler.compile(best, goal=user_input)
                     decision_steps.append(DecisionStep(
                         component="ArchitectureLayer",
                         input_summary=f"generated {len(architectures)} candidates",
@@ -285,13 +285,13 @@ class TaskPlanner:
             store = UnifiedPatternStore()
             patterns = store.search(category="planning", min_confidence=0.5, limit=2)
             if patterns:
-                best = patterns[0]
+                pattern = patterns[0]
                 decision_steps.append(DecisionStep(
                     component="PatternLibrary",
-                    input_summary=f"query=planning,conf>0.5",
-                    output=f"found: {best.name} (conf={best.confidence:.2f}, used={best.usage_count}x)",
-                    score=best.confidence,
-                    detail=f"Pattern: {best.solution[:120]}",
+                    input_summary="query=planning,conf>0.5",
+                    output=f"found: {pattern.name} (conf={pattern.confidence:.2f}, used={pattern.usage_count}x)",
+                    score=pattern.confidence,
+                    detail=f"Pattern: {pattern.solution[:120]}",
                 ))
         except Exception:
             pass
@@ -314,7 +314,7 @@ class TaskPlanner:
             decision_steps.append(DecisionStep(
                 component="TaskPlanner",
                 input_summary=f"type={task_type.value}",
-                output=f"minimal: 1 step",
+                output="minimal: 1 step",
                 score=1.0,
                 detail=f"Minimal plan (simple task type: {task_type.value})",
             ))

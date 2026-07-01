@@ -6,7 +6,8 @@ Core components:
   - ``CommandHandler`` (commands.py) — slash commands
 """
 
-import sys, logging, json, time
+import sys
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -26,9 +27,8 @@ from textual.widgets import RichLog, Input, Static, Button, Select
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
 from textual import work
-from rich.text import Text
 
-from core import config, tools
+from typing import Any
 from core.ui_visual import (render_user_message, render_assistant_message, render_system_message, render_tool_message, render_reasoning, render_error, render_divider)
 from core.mcp.client import get_mcp_manager
 from core.skills import skill_manager
@@ -41,12 +41,13 @@ from .widgets import HeaderWidget
 from .screens.ubuntu_grid import UbuntuGrid
 from .theme_util import apply_app_theme
 
+from core.log_setup import setup_logging, _FORMAT
+setup_logging("widdx.tui", level=logging.DEBUG)
 logger = logging.getLogger("widdx.tui")
-logger.setLevel(logging.DEBUG)
-if not logger.handlers:
-    handler = logging.FileHandler(Path(ROOT) / "widdx-tui.log", encoding="utf-8")
-    handler.setFormatter(logging.Formatter('%(asctime)s [%(name)s] %(levelname)s %(message)s'))
-    logger.addHandler(handler)
+if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+    fh = logging.FileHandler(Path(ROOT) / "widdx-tui.log", encoding="utf-8")
+    fh.setFormatter(logging.Formatter(_FORMAT))
+    logger.addHandler(fh)
 
 _THINK_TAGS = ("[thinking]", "[/thinking]")
 
@@ -57,6 +58,14 @@ def _fix_rtl(text: str) -> str:
     if any("؀" <= c <= "ۿ" or "ݐ" <= c <= "ݿ" for c in text):
         return get_display(text)
     return text
+
+
+# Late import: bidi for RTL text support
+try:
+    from bidi.algorithm import get_display
+except ImportError:
+    def get_display(s: str) -> str:
+        return s
 
 
 # ── View Panel ──────────────────────────────────────────────
@@ -78,7 +87,7 @@ class MainScreen(Screen):
 
     _show_thinking: bool = False  # toggle for displaying reasoning content
     _anim_dots_count: int = 0  # counter for animated dots
-    _anim_timer: any = None     # timer reference for cleanup
+    _anim_timer: Any = None     # timer reference for cleanup
 
     BINDINGS = [
         Binding("ctrl+q", "app.quit", "Quit", show=False, priority=True),
@@ -386,7 +395,7 @@ class MainScreen(Screen):
             pass
 
     def _show_view(self, title: str):
-        body = self.query_one("#body", Horizontal)
+        self.query_one("#body", Horizontal)
         vp = self.query_one("#view-panel", ViewPanel)
         vp.display = True
         # Small delay to let display take effect before animation
@@ -473,10 +482,8 @@ class MainScreen(Screen):
             await self._do_doctor()
 
     async def _show_memories(self):
-        from rich.table import Table
         mem = MemoryStore()
         all_m = mem.list_all()
-        query = ""
         if not all_m:
             self._log_message("system", "No memories. Use /remember to save one.")
             return
@@ -555,8 +562,6 @@ class MainScreen(Screen):
             return
         text = _fix_rtl(msg.text)
         self._log_message("reasoning", text, elapsed=getattr(msg, "elapsed", None))
-        if self._chat_log:
-            self._chat_log.write(panel)
 
     # ── Navigation screens callbacks ───────────────────────
     def _on_help_result(self, cmd: str | None):
@@ -799,7 +804,7 @@ class MainScreen(Screen):
 class WIDDXTUI(App):
     TITLE = "WIDDX Nexus"
     CSS_PATH = "app.tcss"
-    SCREENS = {}
+    SCREENS: dict = {}
 
     def __init__(self):
         super().__init__()

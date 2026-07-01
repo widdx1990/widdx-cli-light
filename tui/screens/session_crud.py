@@ -1,6 +1,7 @@
 """Session CRUD — manage saved chat sessions (list, load, rename, delete)."""
 
-import json, logging
+import json
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -10,13 +11,12 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Static, Input, Button, Label, RichLog
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.binding import Binding
-from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
 from core.ui_visual import ROLE_META_ASCII, BLUE, DIM, RED
 
 # Import Session V2
-from core.session_v2 import SessionV2, create_new_session, load_session as load_v2_session
+from core.session_v2 import SessionV2, create_new_session
 
 
 SESSION_DIR = Path.cwd().resolve()
@@ -240,7 +240,8 @@ class SessionListScreen(Screen):
             self._show_error(f"Save failed: {e}")
 
     def action_export_md(self):
-        if not self._messages: return
+        if not self._messages:
+            return
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = SESSION_DIR / f"chat_export_{ts}.md"
         try:
@@ -305,7 +306,8 @@ class SessionListScreen(Screen):
             try:
                 (SESSION_DIR / old).rename(SESSION_DIR / new)
                 self._load_sessions()
-            except Exception as e: self._show_error(f"Rename failed: {e}")
+            except Exception as e:
+                self._show_error(f"Rename failed: {e}")
     
     def _on_sqlite_rename_result(self, r, session_id):
         if r:
@@ -314,17 +316,20 @@ class SessionListScreen(Screen):
                 sess = SessionV2(session_id)
                 sess.rename(new)
                 self._load_sessions()
-            except Exception as e: self._show_error(f"Rename failed: {e}")
+            except Exception as e:
+                self._show_error(f"Rename failed: {e}")
 
     def _on_delete_result(self, r):
-        if r: self._load_sessions()
+        if r:
+            self._load_sessions()
     
     def _on_sqlite_delete_result(self, r, session_id):
         if r:
             try:
                 SessionV2.delete(session_id)
                 self._load_sessions()
-            except Exception as e: self._show_error(f"Delete failed: {e}")
+            except Exception as e:
+                self._show_error(f"Delete failed: {e}")
     
     def _on_new_session_result(self, r):
         if r:
@@ -334,7 +339,8 @@ class SessionListScreen(Screen):
                 self._state["_messages"] = []
                 self._state["turns"] = 0
                 self.dismiss(("new", sess))
-            except Exception as e: self._show_error(f"Create failed: {e}")
+            except Exception as e:
+                self._show_error(f"Create failed: {e}")
 
     def _show_error(self, msg):
         self.query_one("#sess-preview", RichLog).write(Panel(
@@ -393,7 +399,8 @@ class SessionPickerScreen(ModalScreen):
 
     def on_button_pressed(self, event: Button.Pressed):
         bid = event.button.id
-        if bid == "sess-picker-cancel": self.dismiss(None)
+        if bid == "sess-picker-cancel":
+            self.dismiss(None)
         elif bid and bid.startswith("spick-"):
             self.dismiss((bid[6:], self._action))
 
@@ -447,12 +454,15 @@ class SessionDeleteScreen(ModalScreen):
     def action_confirm(self):
         path = SESSION_DIR / self._name
         try:
-            if path.exists(): path.unlink()
+            if path.exists():
+                path.unlink()
             self.dismiss(True)
         except Exception as e:
             logger.debug("Session delete failed: %s", e)
             self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "sess-delete-yes": self.action_confirm()
-        else: self.dismiss(None)
+        if event.button.id == "sess-delete-yes":
+            self.action_confirm()
+        else:
+            self.dismiss(None)

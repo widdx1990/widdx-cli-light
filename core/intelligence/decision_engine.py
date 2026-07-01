@@ -12,10 +12,8 @@ Pure Python — zero LLM calls, zero network I/O.
 from __future__ import annotations
 import json
 import logging
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("widdx.intelligence.decision")
 
@@ -73,7 +71,7 @@ class DecisionEngine:
     for a task type, it promotes SIMPLE_CHAT or DIRECT_TOOL.
     """
 
-    def __init__(self, knowledge_path: Path | str = None):
+    def __init__(self, knowledge_path: Path | str | None = None):
         """Initialize decision engine.
 
         Args:
@@ -125,7 +123,7 @@ class DecisionEngine:
             encoding="utf-8",
         )
 
-    def route(self, task_type: str, features: list[str] = None,
+    def route(self, task_type: str, features: list[str] | None = None,
               confidence: float = 0.5, complexity: int = 1) -> str:
         """Route a task to the best execution mode.
 
@@ -249,7 +247,7 @@ class DecisionEngine:
 
         self._save()
 
-    def get_stats(self, task_type: str = None) -> dict[str, DecisionStats]:
+    def get_stats(self, task_type: str | None = None) -> dict[str, DecisionStats]:
         """Get decision statistics, optionally filtered by task_type."""
         if task_type:
             return {k: v for k, v in self._stats.items()
@@ -267,7 +265,7 @@ class DecisionEngine:
 _engine: DecisionEngine | None = None
 
 
-def get_decision_engine(knowledge_path: Path | str = None) -> DecisionEngine:
+def get_decision_engine(knowledge_path: Path | str | None = None) -> DecisionEngine:
     """Get or create the decision engine."""
     global _engine
     if _engine is None:

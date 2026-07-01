@@ -20,9 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
-import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("widdx.exec_intel")
@@ -282,10 +280,10 @@ class ExecutionIntelligence:
         # ── What worked ──
         successful_tools = [s for s in t.step_details if s.success]
         if successful_tools:
-            tool_counts = {}
+            tool_counts: dict[str, int] = {}
             for s in successful_tools:
                 tool_counts[s.tool] = tool_counts.get(s.tool, 0) + 1
-            top_tool = max(tool_counts, key=tool_counts.get)
+            top_tool = max(tool_counts, key=lambda k: tool_counts[k])
             t.success_pattern = f"Most successful tool: {top_tool} ({tool_counts[top_tool]}x). "
             t.success_pattern += f"Avg quality: {t.avg_quality:.2f}. "
 

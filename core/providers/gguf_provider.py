@@ -1,18 +1,18 @@
 """GGUF direct provider — run .gguf files via llama-cpp-python."""
 from __future__ import annotations
 
-import json, time
+import json
+import uuid
 from pathlib import Path
 
 from .base import Provider, ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS
-from .gguf import read_gguf_metadata, list_imports
 
 import logging as _logging
 logger = _logging.getLogger("widdx.providers")
 
 _LLAMA_CPP_AVAILABLE = False
 try:
-    from llama_cpp import Llama  # type: ignore
+    from llama_cpp import Llama
     _LLAMA_CPP_AVAILABLE = True
 except ImportError:
     pass
@@ -23,7 +23,8 @@ def _auto_install_llama_cpp() -> bool:
     global _LLAMA_CPP_AVAILABLE
     if _LLAMA_CPP_AVAILABLE:
         return True
-    import subprocess, sys
+    import subprocess
+    import sys
     # Ask user before installing
     answer = input(
         "GGUF support requires llama-cpp-python. Install now? [y/N]: "
@@ -35,7 +36,6 @@ def _auto_install_llama_cpp() -> bool:
             [sys.executable, "-m", "pip", "install", "llama-cpp-python", "-q"],
             timeout=120,
         )
-        from llama_cpp import Llama  # type: ignore
         _LLAMA_CPP_AVAILABLE = True
         return True
     except Exception:
@@ -66,7 +66,7 @@ class GGUFDirectProvider(Provider):
         self._loaded = False
         self._template = "chatml"  # default, can be overridden via cfg
         self._n_ctx = 8192
-        self._n_threads = None  # auto: os.cpu_count() or 4
+        self._n_threads: int | None = None  # auto: os.cpu_count() or 4
 
     def _ensure_loaded(self):
         if self._loaded:
@@ -172,6 +172,8 @@ class GGUFDirectProvider(Provider):
                 full_prompt = tool_prefix + full_prompt
 
             content_chunks: list[str] = []
+            if self._llm is None:
+                raise RuntimeError("Model failed to load")
             stream = self._llm.create_completion(
                 full_prompt,
                 max_tokens=_DEFAULT_MAX_TOKENS,

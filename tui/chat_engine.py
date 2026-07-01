@@ -5,14 +5,18 @@ Synchronous core logic.  The UI layer (MainScreen) wraps calls in
 """
 
 from pathlib import Path
+from typing import Any
 from textual.message import Message
+from textual.screen import Screen
 from core import tools as core_tools
 from core.chat import _valid_tool_call_id, _build_tc_list, _sanitize_tool_call_ids
 from core.providers.providers import estimate_turn_cost
 from core.memory_learner import MemoryLearner
 from core.skills import skill_manager
 from core.uil import UnifiedIntelligenceLayer, ExecutionMode
+from core.uil.contract import RoutingDecision
 from core.project_tracker import build_context_block
+from .state import TUIState
 
 
 # ── UI Messages ──────────────────────────────────────────────
@@ -57,7 +61,7 @@ class ChatEngine:
     Uses ``self.app`` (the Textual App) for ``call_from_thread``.
     """
 
-    def __init__(self, screen):
+    def __init__(self, screen: Screen) -> None:
         self.screen = screen
         self._processing = False
 
@@ -66,7 +70,7 @@ class ChatEngine:
         return self.screen.app
 
     # ── Main entry ──────────────────────────────────────────
-    def start(self, text: str, state):
+    def start(self, text: str, state: TUIState) -> None:
         """Start a chat interaction.  Routes to the right executor."""
         if self._processing or not text.strip():
             return
@@ -145,12 +149,12 @@ class ChatEngine:
                                       tool_defs=state.tool_defs, cfg=state.cfg)
                     msg = f"🤖 Sub-agent spawned: {task_id[:8]} — decomposing task..."
                     self.app.call_from_thread(self.screen._log_message, "system", msg)
-                    result = dlg.wait(task_id, timeout=120)
-                    if result and result.status.value == "done":
-                        state.messages.append({"role": "assistant", "content": result.summary})
+                    agent_result = dlg.wait(task_id, timeout=120)
+                    if agent_result and agent_result.status.value == "done":
+                        state.messages.append({"role": "assistant", "content": agent_result.summary})
                         self.app.call_from_thread(
                             self.screen._log_message, "system",
-                            f"✅ Agent {task_id[:8]} completed ({result.steps} steps, {result.elapsed_seconds:.1f}s)"
+                            f"✅ Agent {task_id[:8]} completed ({agent_result.steps} steps, {agent_result.elapsed_seconds:.1f}s)"
                         )
                         self._finish()
                         return
@@ -249,11 +253,11 @@ class ChatEngine:
         else:
             self._run_chat(state, msgs)
 
-    def _finish(self):
+    def _finish(self) -> None:
         self._processing = False
 
     # ── Simple chat (streaming) ─────────────────────────────
-    def _run_chat(self, state, msgs):
+    def _run_chat(self, state: TUIState, msgs: list[dict]) -> None:
         cfg_t = state.cfg.get("temperature", 0.7)
         max_iter = state.cfg.get("max_turns", 10)
 
@@ -267,7 +271,7 @@ class ChatEngine:
         finally:
             self.app.call_from_thread(self._finish)
 
-    def _stream_loop(self, state, msgs, cfg_t, max_iter):
+    def _stream_loop(self, state: TUIState, msgs: list[dict], cfg_t: float, max_iter: int) -> None:
         model_name = state.model.split("/")[-1] or "unknown"
 
         for turn in range(max_iter):
@@ -327,7 +331,7 @@ class ChatEngine:
         state.messages = msgs
         state.save_session()
 
-    def _nonstream_loop(self, state, msgs, cfg_t, max_iter):
+    def _nonstream_loop(self, state: TUIState, msgs: list[dict], cfg_t: float, max_iter: int) -> None:
         model_name = state.model.split("/")[-1] or "unknown"
         for _ in range(max_iter):
             _sanitize_tool_call_ids(msgs)
@@ -345,7 +349,7 @@ class ChatEngine:
         self.app.post_message(ResultMsg("[Max iterations]"))
 
     # ── Tool execution ──────────────────────────────────────
-    def _execute_tools(self, tool_calls, content, msgs, model_name, state):
+    def _execute_tools(self, tool_calls: list[Any], content: str, msgs: list[dict], model_name: str, state: TUIState) -> list[dict]:
         tc_list = _build_tc_list(tool_calls)
         msgs.append({"role": "assistant", "content": content or None, "tool_calls": tc_list})
 
@@ -378,7 +382,7 @@ class ChatEngine:
         return msgs
 
     # ── Agent (AutonomousAgent) ─────────────────────────────
-    def _run_direct_tool(self, state, task, decision):
+    def _run_direct_tool(self, state: TUIState, task: str, decision: RoutingDecision) -> None:
         try:
             from core.uil.executors import run_direct_tool
             summary = run_direct_tool(decision, task)
@@ -390,7 +394,7 @@ class ChatEngine:
         finally:
             self.app.call_from_thread(self._finish)
 
-    def _run_agent(self, state, task):
+    def _run_agent(self, state: TUIState, task: str) -> None:
         try:
             from core.agents.agent import AutonomousAgent
             agent = AutonomousAgent(state.provider, state.tool_defs, state.cfg, {
@@ -411,7 +415,7 @@ class ChatEngine:
             self.app.call_from_thread(self._finish)
 
     # ── Expert Team ─────────────────────────────────────────
-    def _run_expert_team(self, state, task):
+    def _run_expert_team(self, state: TUIState, task: str) -> None:
         try:
             from core.agents.expert import ExpertTeam
             team = ExpertTeam(state.provider, state.tool_defs, state.cfg, {

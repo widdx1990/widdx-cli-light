@@ -92,7 +92,7 @@ class ClassificationResult:
     complexity: float           # 0.0-1.0 based on depth/ambiguity
     reasoning: str              # summary of why classified this way
     keywords: list[str] = field(default_factory=list)
-    detected_features: dict[str, bool] = field(default_factory=dict)
+    detected_features: dict[str, str] = field(default_factory=dict)
     decision_path: list[DecisionStep] = field(default_factory=list)
     # True when no classifier could determine the type with sufficient confidence
     is_fallback: bool = False

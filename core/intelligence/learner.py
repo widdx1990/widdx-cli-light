@@ -14,7 +14,6 @@ import json
 import logging
 from collections import Counter
 from pathlib import Path
-from typing import Optional
 
 from .patterns import SoftwarePattern, PatternStep, PATTERNS
 
@@ -24,7 +23,7 @@ logger = logging.getLogger("widdx.intelligence.learner")
 class PatternLearner:
     """Learns new patterns and improves existing ones from execution history."""
 
-    def __init__(self, data_dir: Path | str = None):
+    def __init__(self, data_dir: Path | str | None = None):
         """Initialize the pattern learner.
 
         Args:
@@ -149,8 +148,8 @@ class PatternLearner:
                 continue
 
             # Find common files created across observations
-            file_counter = Counter()
-            tool_counter = Counter()
+            file_counter: Counter = Counter()
+            tool_counter: Counter = Counter()
             for obs in observations:
                 for f in obs["files_created"]:
                     file_counter[f] += 1
@@ -225,7 +224,7 @@ class PatternLearner:
 _learner: PatternLearner | None = None
 
 
-def get_learner(data_dir: Path | str = None) -> PatternLearner:
+def get_learner(data_dir: Path | str | None = None) -> PatternLearner:
     """Get or create the pattern learner."""
     global _learner
     if _learner is None:

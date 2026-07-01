@@ -1,9 +1,9 @@
 # تقرير المقارنة: WIDDX Nexus vs OpenCode vs Codebuff
 **التاريخ**: 27 يونيو 2026  
 **المشاريع المقارنة**:
-- WIDDX Nexus (e:\deepseek\chat-tool)
-- OpenCode (E:\deepseek\widdx-dev\opencode)
-- Codebuff (E:\deepseek\widdx-dev\codebuff)
+- WIDDX Nexus (./)
+- OpenCode (./opencode)
+- Codebuff (./codebuff)
 
 ---
 

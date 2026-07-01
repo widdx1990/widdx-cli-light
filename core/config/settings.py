@@ -7,11 +7,99 @@ Resolution order (first found wins):
   4. <install>/config.json  (bundled default — read-only)
 """
 
-import json, os
+import json
+import logging
+import os
 from pathlib import Path
+
+logger = logging.getLogger("widdx.config")
 
 _INSTALL_DIR = Path(__file__).resolve().parent.parent.parent
 _USER_CONFIG_DIR = Path.home() / ".widdx"
+
+_VALID_PROVIDERS = {"ollama", "gguf", "opencode-zen", "opencode", "deepseek"}
+
+
+def validate_config(cfg: dict) -> dict:
+    """Validate config fields, apply defaults, warn on issues.
+    Returns a cleaned copy of the config.
+    """
+    validated = dict(cfg)
+    issues = []
+
+    # ── provider ───────────────────────────────────────────
+    provider = validated.get("provider")
+    if not isinstance(provider, dict):
+        issues.append("'provider' is missing or not an object — using defaults")
+        provider = {"name": "opencode-zen", "model": "deepseek-v4-flash-free"}
+        validated["provider"] = provider
+
+    pname = provider.get("name", "")
+    if not isinstance(pname, str) or not pname:
+        issues.append("'provider.name' is missing or empty — defaulting to 'opencode-zen'")
+        provider["name"] = "opencode-zen"
+    elif pname not in _VALID_PROVIDERS:
+        issues.append(f"'provider.name' = '{pname}' is not a known provider ({', '.join(sorted(_VALID_PROVIDERS))}) — will be treated as OpenAI-compatible")
+
+    pmodel = provider.get("model", "")
+    if not isinstance(pmodel, str) or not pmodel:
+        issues.append("'provider.model' is missing or empty — will be auto-resolved")
+        provider["model"] = ""
+
+    if "base_url" in provider and (not isinstance(provider["base_url"], str) or not provider["base_url"]):
+        issues.append("'provider.base_url' must be a non-empty string — removing")
+        del provider["base_url"]
+
+    # ── system_prompt ──────────────────────────────────────
+    sp = validated.get("system_prompt", "")
+    if not isinstance(sp, str):
+        issues.append("'system_prompt' must be a string — ignoring")
+        validated["system_prompt"] = ""
+
+    # ── max_turns ──────────────────────────────────────────
+    mt = validated.get("max_turns", 10)
+    if not isinstance(mt, int) or mt < 1:
+        issues.append(f"'max_turns' = {mt!r} is invalid — defaulting to 10")
+        mt = 10
+    validated["max_turns"] = mt
+
+    # ── temperature ────────────────────────────────────────
+    temp = validated.get("temperature", 0.7)
+    if not isinstance(temp, (int, float)) or temp < 0 or temp > 2:
+        issues.append(f"'temperature' = {temp!r} is invalid (must be 0–2) — defaulting to 0.7")
+        temp = 0.7
+    validated["temperature"] = temp
+
+    # ── mcp_servers ────────────────────────────────────────
+    mcp = validated.get("mcp_servers", [])
+    if not isinstance(mcp, list):
+        issues.append("'mcp_servers' must be a list — ignoring")
+        validated["mcp_servers"] = []
+    else:
+        clean = []
+        for i, s in enumerate(mcp):
+            if not isinstance(s, dict):
+                issues.append(f"'mcp_servers[{i}]' is not an object — skipping")
+                continue
+            sname = s.get("name", "")
+            scmd = s.get("command", "")
+            if not isinstance(sname, str) or not sname:
+                issues.append(f"'mcp_servers[{i}]' missing 'name' — skipping")
+                continue
+            if not isinstance(scmd, str) or not scmd:
+                issues.append(f"'mcp_servers[{i}].name={sname}' missing 'command' — skipping")
+                continue
+            sargs = s.get("args", [])
+            if not isinstance(sargs, list):
+                issues.append(f"'mcp_servers[{i}].name={sname}' 'args' must be a list — treating as empty")
+                sargs = []
+            clean.append({"name": sname, "command": scmd, "args": sargs})
+        validated["mcp_servers"] = clean
+
+    for issue in issues:
+        logger.warning("Config validation: %s", issue)
+
+    return validated
 
 
 def _find_config() -> tuple[Path, bool]:
@@ -88,8 +176,10 @@ def load() -> dict:
     path, _ = _get_config_path()
     if path.exists():
         cfg = json.loads(path.read_text(encoding="utf-8"))
-        return _resolve_placeholders(cfg)
-    return {}
+        cfg = _resolve_placeholders(cfg)
+        cfg = validate_config(cfg)
+        return cfg
+    return validate_config({})
 
 
 def get(key: str, default=None):

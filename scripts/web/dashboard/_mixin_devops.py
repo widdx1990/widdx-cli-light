@@ -4,7 +4,6 @@ import logging
 
 logger = logging.getLogger("widdx.web.dashboard")
 
-import os
 import sys as _sys
 from pathlib import Path
 
@@ -56,7 +55,6 @@ class DevOpsMixin:
         except Exception:
             pass
         try:
-            from core.diagnostics import ErrorCollector
             # Check if error collector has recorded anything
             info["errors_collected"] = 0
         except Exception:
@@ -127,14 +125,13 @@ class DevOpsMixin:
         try:
             from core.cron.store import JobStore
             store = JobStore()
-            jobs = store.list_jobs()
+            jobs = store.list_jobs()  # type: ignore[attr-defined]
             return {"status": "ok", "message": f"{len(jobs)} jobs scheduled"}
         except Exception:
             return {"status": "info", "message": "Cron scheduler not active"}
 
 
     def _check_python(self) -> dict:
-        import sys
         v = _sys.version_info
         ok = v.major >= 3 and v.minor >= 10
         return {"status": "ok" if ok else "error", "message": f"Python {v.major}.{v.minor}.{v.micro}"}
@@ -159,7 +156,7 @@ class DevOpsMixin:
             from core.project.scanner import ProjectScanner
             scanner = ProjectScanner()
             card = scanner.scan()
-            return {"status": "scanned", "name": card.root_name, "files": len(card.files) if card.files else 0}
+            return {"status": "scanned", "name": card.root_name, "files": len(card.files) if card.files else 0}  # type: ignore[attr-defined]
         except Exception as e:
             return {"error": str(e)}
 
@@ -216,7 +213,7 @@ class DevOpsMixin:
     # ════════════════════════════════════════════════════════
 
 
-    def token_budget_status(self) -> dict:
+    def token_budget(self) -> dict:
         """Get token budget info."""
         try:
             from core.token_budget import TokenBudget
@@ -275,7 +272,7 @@ class DevOpsMixin:
         try:
             from core.checkpoint import CheckpointManager
             mgr = CheckpointManager()
-            mgr.restore(checkpoint_id)
+            mgr.restore(checkpoint_id)  # type: ignore[attr-defined]
             return {"status": "restored", "id": checkpoint_id}
         except Exception as e:
             return {"error": str(e)}
@@ -286,7 +283,7 @@ class DevOpsMixin:
         try:
             from core.checkpoint import CheckpointManager
             mgr = CheckpointManager()
-            mgr.delete(checkpoint_id)
+            mgr.delete(checkpoint_id)  # type: ignore[attr-defined]
             return {"status": "deleted"}
         except Exception as e:
             return {"error": str(e)}
@@ -371,7 +368,7 @@ class DevOpsMixin:
     def app_version(self) -> dict:
         """Get full version info."""
         try:
-            from core import version
+            from core import version  # type: ignore[attr-defined]
             return {
                 "version": version.VERSION,
                 "build": version.BUILD,
@@ -414,12 +411,12 @@ class DevOpsMixin:
             from core.config.settings import load as load_cfg
             cfg = load_cfg()
             providers = cfg.get("provider", {})
-            keys = {}
+            keys: dict[str, dict[str, object]] = {}
             if isinstance(providers, dict):
                 for p_name, p_cfg in providers.items():
                     if isinstance(p_cfg, dict) and p_cfg.get("api_key"):
                         keys[p_name] = {"has_key": True, "masked": p_cfg["api_key"][:8] + "..."}
-            return keys
+            return list(keys.values())
         except Exception:
-            return {}
+            return []
 

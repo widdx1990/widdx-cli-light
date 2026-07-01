@@ -13,8 +13,8 @@ import logging
 
 logger = logging.getLogger("widdx.auto_commit")
 
-import subprocess
-from pathlib import Path
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 
 class AutoCommitManager:
@@ -72,7 +72,7 @@ class AutoCommitManager:
             return r.stdout or "(no changes)"
         except Exception as e:
             logger.warning("Auto-commit error: %s", e)
-            return None
+            return ""
 
     # ── Internals ───────────────────────────────────────
 
@@ -91,7 +91,7 @@ class AutoCommitManager:
             return files
         except Exception as e:
             logger.warning("Auto-commit error: %s", e)
-            return None
+            return set()
 
     def _commit(self, message: str) -> str | None:
         """Commit changes using the canonical auto_commit from core.project.git."""
@@ -121,7 +121,7 @@ class AutoCommitManager:
             return True
         except Exception as e:
             logger.warning("Auto-commit error: %s", e)
-            return None
+            return False
 
 
 auto_committer = AutoCommitManager()

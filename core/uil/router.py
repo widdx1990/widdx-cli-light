@@ -131,7 +131,7 @@ class DecisionRouter:
                 input_summary=f"weights for {classification.task_type.value}",
                 output=", ".join(f"{k}={v:.2f}" for k, v in mode_weights.items()),
                 score=0.8,
-                detail=f"Router weights modified by learning history",
+                detail="Router weights modified by learning history",
             ))
         except Exception:
             pass

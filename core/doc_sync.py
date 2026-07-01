@@ -15,7 +15,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger("widdx.doc_sync")
@@ -57,7 +57,7 @@ class DocSync:
 
     def _check_tasks(self) -> list[DriftWarning]:
         """Check TASKS.md completed items against code."""
-        warnings = []
+        warnings: list[DriftWarning] = []
         tasks_path = self._widdx / "TASKS.md"
         if not tasks_path.exists():
             return warnings
@@ -78,7 +78,7 @@ class DocSync:
 
     def _check_design(self) -> list[DriftWarning]:
         """Check DESIGN.md API references against actual code."""
-        warnings = []
+        warnings: list[DriftWarning] = []
         design_path = self._widdx / "DESIGN.md"
         if not design_path.exists():
             return warnings
@@ -102,7 +102,7 @@ class DocSync:
 
     def _check_roadmap(self) -> list[DriftWarning]:
         """Check ROADMAP.md for stale entries."""
-        warnings = []
+        warnings: list[DriftWarning] = []
         roadmap_path = self._widdx / "ROADMAP.md"
         if not roadmap_path.exists():
             return warnings

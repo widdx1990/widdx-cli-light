@@ -1,9 +1,8 @@
 """Expert Agents Team — specialized agents that work together like a tech company."""
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .agent import run_agent_with_prompt
 from ..chat import console, print_system_msg
@@ -347,11 +346,12 @@ class ExpertTeam:
         n = 2
 
         # Phase 2: Researcher for medium+ complexity (or KG-detected needs)
+        research = ""
         if complexity >= 2 or lang_hints:
             self._print_phase(str(n), "widdx-researcher", "Researching requirements")
 
             # ── Parallel: Researcher + Coder run concurrently ────
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=2) as pool:
                 research_future = pool.submit(
                     self._run, "researcher",
@@ -363,9 +363,17 @@ class ExpertTeam:
                     "Implement the complete project with high quality:\n%s" % user_input,
                     context=ctx,
                 )
-                # Both run in parallel — wall clock = max(research_time, code_time)
-                research = research_future.result()
+
+                # Wait for coder first — reviewer doesn't need research
                 code = coder_future.result()
+                review_ctx = self._build_context(
+                    project_dir=project_dir,
+                    plan=plan,
+                    code=code,
+                )
+
+                # Collect research when it finishes (may still be running)
+                research = research_future.result()
 
             ctx = self._build_context(
                 project_dir=project_dir,
@@ -380,6 +388,7 @@ class ExpertTeam:
             self._print_phase(str(n), "widdx-coder", "Implementing solution")
             code = self._run("coder",
                 "Implement the complete project with high quality:\n%s" % user_input, context=ctx)
+            review_ctx = ctx
             ctx = self._build_context(
                 project_dir=project_dir,
                 plan=plan,
@@ -387,9 +396,9 @@ class ExpertTeam:
             )
             n += 1
 
-        # Phase 4: Reviewer (always)
+        # Phase 4: Reviewer (always) — starts as soon as Coder finishes
         self._print_phase(str(n), "widdx-reviewer", "Reviewing implementation")
-        review = self._run("reviewer", "Review the implementation thoroughly.", context=ctx)
+        review = self._run("reviewer", "Review the implementation thoroughly.", context=review_ctx)
 
         # Phase 5: Debugger (only for medium+ complexity with issues)
         needs_fix = self._needs_fix(review)

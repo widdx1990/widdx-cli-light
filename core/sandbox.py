@@ -31,10 +31,16 @@ Usage:
 
 from __future__ import annotations
 
-import os, platform, shutil, subprocess, time, shlex, logging, re, json, uuid
+import os
+import platform
+import shutil
+import subprocess
+import time
+import shlex
+import logging
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("widdx.sandbox")
 
@@ -436,7 +442,7 @@ class SandboxExecutor:
         try:
             proc = subprocess.Popen(
                 full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,  # type: ignore[attr-defined]
             )
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)
@@ -609,7 +615,7 @@ class SandboxExecutor:
         # Only use Docker if config EXPLICITLY enables isolation engine
         # (disabled by default to keep files on real filesystem)
         try:
-            from core.engine_adapters import engine_enabled, adapt_container_result
+            from core.engine_adapters import adapt_container_result
             cfg = getattr(self, '_cfg', {}) or {}
             engines = cfg.get("engines", {}) if isinstance(cfg, dict) else {}
             if engines.get("isolation") is True:  # explicit opt-in only
@@ -651,7 +657,7 @@ class SandboxExecutor:
                 text=True,
                 env=merged_env,
                 preexec_fn=self._apply_resource_limits if hasattr(os, 'setrlimit') else None,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,  # type: ignore[attr-defined]
             )
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)

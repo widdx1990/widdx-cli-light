@@ -146,29 +146,29 @@ class CommandHandler:
                     results.append(f"[{i+1}] {m.get('role','?')}: {c[:100]}...")
             if results:
                 self.app._log_message("system", f"🔍 {len(results)} match(es):")
-                for r in results[:10]:
-                    self.app._log_message("system", r)
+                for result_item in results[:10]:
+                    self.app._log_message("system", result_item)
             else:
                 self.app._log_message("system", f"🔍 No matches for '{query}'")
 
         # ── Voice / TTS ────────────────────────────────────
         elif cmd == "/voice":
             from core.voice import tts
-            sub = parts[1].strip() if len(parts) > 1 else ""
+            voice_sub = parts[1].strip() if len(parts) > 1 else ""
 
-            if sub == "on" or sub == "enable":
+            if voice_sub == "on" or voice_sub == "enable":
                 tts.enabled = True
                 self.app._log_message("system", "🔊 Voice enabled — AI will speak responses")
 
-            elif sub == "off" or sub == "disable":
+            elif voice_sub == "off" or voice_sub == "disable":
                 tts.enabled = False
                 self.app._log_message("system", "🔇 Voice disabled")
 
-            elif sub == "status" or not sub:
+            elif voice_sub == "status" or not voice_sub:
                 self.app._log_message("system", tts.status)
 
-            elif sub.startswith("say "):
-                text = sub[4:].strip()
+            elif voice_sub.startswith("say "):
+                text = voice_sub[4:].strip()
                 if text:
                     voice = tts.auto_voice(text)
                     self.app._log_message("system", f"🔊 Speaking ({voice})...")
@@ -178,20 +178,20 @@ class CommandHandler:
                     else:
                         self.app._log_message("system", "❌ TTS failed")
 
-            elif sub == "voices" or sub == "list":
+            elif voice_sub == "voices" or voice_sub == "list":
                 self.app._log_message("system", "🔊 Fetching voice list...")
                 voices = tts.list_voices()[:20]
                 for v in voices:
                     self.app._log_message("system", f"  {v['name']} — {v['locale']} ({v['gender']})")
                 self.app._log_message("system", f"  ... and {tts.list_voices().__len__() - 20} more")
 
-            elif sub.startswith("voice "):
-                new_voice = sub[6:].strip()
+            elif voice_sub.startswith("voice "):
+                new_voice = voice_sub[6:].strip()
                 tts.voice = new_voice
                 self.app._log_message("system", f"🔊 Voice set to {new_voice}")
 
-            elif sub.startswith("speed "):
-                speed = sub[6:].strip()
+            elif voice_sub.startswith("speed "):
+                speed = voice_sub[6:].strip()
                 tts.set_speed(speed)
                 self.app._log_message("system", f"🔊 Speed set to {speed}")
 
@@ -226,9 +226,9 @@ class CommandHandler:
         # ── Gateway / Multi-Channel ──────────────────────
         elif cmd == "/gateway":
             from core.gateway import GatewayCore
-            sub = parts[1].strip() if len(parts) > 1 else ""
+            gw_sub = parts[1].strip() if len(parts) > 1 else ""
 
-            if sub == "start" or sub == "all":
+            if gw_sub == "start" or gw_sub == "all":
                 gateway = GatewayCore()
 
                 def _gateway_handler(msg) -> str:
@@ -250,10 +250,10 @@ class CommandHandler:
                 self.app._log_message("system", "✅ Gateway started: Telegram + Discord")
                 self.app._log_message("system", "ℹ️  Set TELEGRAM_BOT_TOKEN and DISCORD_BOT_TOKEN in .env")
 
-            elif sub == "status" or not sub:
+            elif gw_sub == "status" or not gw_sub:
                 env_telegram = "✅ SET" if os.environ.get("TELEGRAM_BOT_TOKEN") else "❌ NOT SET"
                 env_discord = "✅ SET" if os.environ.get("DISCORD_BOT_TOKEN") else "❌ NOT SET"
-                self.app._log_message("system", f"🤖 Gateway Status:")
+                self.app._log_message("system", "🤖 Gateway Status:")
                 self.app._log_message("system", f"  📱 Telegram: {env_telegram}")
                 self.app._log_message("system", f"  💬 Discord:  {env_discord}")
                 gateway_active = hasattr(self, '_gateway') and self._gateway is not None
@@ -265,18 +265,18 @@ class CommandHandler:
         # ── Background Tasks ──────────────────────────────
         elif cmd == "/tasks":
             from core.background import background
-            tasks = background.list_tasks()
-            running = [t for t in tasks if t.status.value == "running"]
-            if running:
-                self.app._log_message("system", f"🔄 {len(running)} running:")
-                for t in running[:5]:
+            bg_tasks = background.list_tasks()
+            bg_running = [t for t in bg_tasks if t.status.value == "running"]
+            if bg_running:
+                self.app._log_message("system", f"🔄 {len(bg_running)} running:")
+                for t in bg_running[:5]:
                     self.app._log_message("system", f"  {t.summary}")
-            if not tasks:
+            if not bg_tasks:
                 self.app._log_message("system", "📭 No background tasks.")
-            elif not running:
-                recent = tasks[:5]
-                self.app._log_message("system", f"📋 Last {len(recent)} tasks:")
-                for t in recent:
+            elif not bg_running:
+                bg_recent = bg_tasks[:5]
+                self.app._log_message("system", f"📋 Last {len(bg_recent)} tasks:")
+                for t in bg_recent:
                     self.app._log_message("system", f"  {t.summary}")
                     if t.result:
                         self.app._log_message("system", f"     Result: {t.result[:100]}")
@@ -288,9 +288,9 @@ class CommandHandler:
             from core.cron.scheduler import CronScheduler
             sched = CronScheduler()
 
-            sub = parts[1].strip() if len(parts) > 1 else ""
+            cron_sub = parts[1].strip() if len(parts) > 1 else ""
 
-            if sub == "list" or not sub:
+            if cron_sub == "list" or not cron_sub:
                 jobs = sched.list_jobs()
                 if not jobs:
                     self.app._log_message("system", "📭 No cron jobs scheduled.")
@@ -308,10 +308,10 @@ class CommandHandler:
                             f"     Runs: {j.run_count}  Last: {(j.last_run or 'N/A')[:19]}"
                         )
 
-            elif sub.startswith("add "):
+            elif cron_sub.startswith("add "):
                 import shlex
                 try:
-                    rest = sub[4:].strip()
+                    rest = cron_sub[4:].strip()
                     sched_parts = shlex.split(rest)
                     if len(sched_parts) >= 2:
                         schedule = sched_parts[0]
@@ -327,22 +327,22 @@ class CommandHandler:
                 except Exception as e:
                     self.app._log_message("system", f"❌ {e}")
 
-            elif sub.startswith("rm ") or sub.startswith("remove "):
-                job_id = sub.split(maxsplit=1)[1].strip()
+            elif cron_sub.startswith("rm ") or cron_sub.startswith("remove "):
+                job_id = cron_sub.split(maxsplit=1)[1].strip()
                 if sched.remove_job(job_id):
                     self.app._log_message("system", f"✅ Removed job: {job_id[:8]}")
                 else:
                     self.app._log_message("system", f"❌ Job not found: {job_id[:8]}")
 
-            elif sub.startswith("pause "):
-                job_id = sub.split(maxsplit=1)[1].strip()
+            elif cron_sub.startswith("pause "):
+                job_id = cron_sub.split(maxsplit=1)[1].strip()
                 if sched.pause_job(job_id):
                     self.app._log_message("system", f"⏸️ Paused job: {job_id[:8]}")
                 else:
                     self.app._log_message("system", f"❌ Job not found: {job_id[:8]}")
 
-            elif sub.startswith("resume "):
-                job_id = sub.split(maxsplit=1)[1].strip()
+            elif cron_sub.startswith("resume "):
+                job_id = cron_sub.split(maxsplit=1)[1].strip()
                 if sched.resume_job(job_id):
                     self.app._log_message("system", f"▶️ Resumed job: {job_id[:8]}")
                 else:

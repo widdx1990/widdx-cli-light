@@ -1,6 +1,8 @@
 """Command handlers for WIDDX slash commands."""
 
-import json, subprocess, sys, os
+import subprocess
+import sys
+import os
 from pathlib import Path
 from datetime import datetime
 from rich.prompt import Prompt as RPrompt
@@ -8,11 +10,10 @@ from rich.prompt import Prompt as RPrompt
 from core.chat import print_system_msg
 from rich.console import Console
 console = Console(highlight=False)
-from rich.text import Text
-from rich.table import Table
-from core.providers.providers import create_provider, fetch_free_models, fetch_ollama_models
-from core.config.keychain import prompt_key, forget_key
-from core import config
+from rich.text import Text  # noqa: E402
+from rich.table import Table  # noqa: E402
+from core.providers.providers import create_provider, fetch_free_models, fetch_ollama_models  # noqa: E402
+from core.config.keychain import prompt_key  # noqa: E402
 
 
 def build_mcp_discover_table(discovered: list[dict], mgr=None) -> "Table":
@@ -229,7 +230,7 @@ def handle_mcp(user_input: str = ""):
       /mcp add name cmd [args...] — add a new server
       /mcp remove name  — remove a server
     """
-    from core.mcp.client import get_mcp_manager, discover_mcp_servers, load_mcp_tokens
+    from core.mcp.client import get_mcp_manager, discover_mcp_servers
     from rich.table import Table
 
     action, rest = _parse_mcp_sub(user_input)
@@ -245,7 +246,6 @@ def handle_mcp(user_input: str = ""):
         return
 
     if action == "add":
-        from core.mcp.client import MCPServerConnection
         parts = rest.split(None, 1)
         if len(parts) < 2:
             print_system_msg("Usage: /mcp add <name> <command> [args...]")
@@ -256,10 +256,12 @@ def handle_mcp(user_input: str = ""):
         srv_args = cmd_parts[1:] if len(cmd_parts) > 1 else []
         ok = mgr.add_server(srv_name, srv_cmd, srv_args)
         if ok:
-            tools_count = len(mgr.get_server(srv_name).get_tool_definitions())
+            conn = mgr.get_server(srv_name)
+            tools_count = len(conn.get_tool_definitions()) if conn else 0
             print_system_msg(f"MCP server '{srv_name}' added ({tools_count} tools)")
         else:
-            err = mgr.get_server(srv_name).error if mgr.get_server(srv_name) else "unknown"
+            conn = mgr.get_server(srv_name)
+            err = conn.error if conn else "unknown"
             print_system_msg(f"Failed to add '{srv_name}': {err}")
         return
 
@@ -349,7 +351,7 @@ def handle_undo():
 def handle_doctor():
     """Run a system health check and display results."""
     from rich.table import Table
-    from core.mcp.client import get_mcp_manager, discover_mcp_servers
+    from core.mcp.client import get_mcp_manager
 
     table = Table(title="WIDDX System Health",
                   border_style="dim", header_style="bold #f5a623")
@@ -417,7 +419,7 @@ def handle_doctor():
             cwd=str(Path(__file__).parent.parent),
         )
         if r.returncode == 0:
-            last = [l for l in r.stdout.strip().splitlines() if l][-1]
+            last = [line for line in r.stdout.strip().splitlines() if line][-1]
             checks.append(("Tests", "✅", last))
         else:
             checks.append(("Tests", "❌", f"{r.returncode} failure(s)"))
@@ -571,7 +573,6 @@ def handle_gguf(cmd: str, provider, state):
         _CHAT_TEMPLATES,
     )
     from rich.table import Table
-    from rich.panel import Panel
 
     parts = cmd.strip().split(None, 1)
     action = parts[0].lower() if parts else ""
@@ -732,7 +733,7 @@ def handle_gguf(cmd: str, provider, state):
             size_str = f"{f['size_gb']:.1f} GB" if f["size_gb"] >= 1 else f"{f['size_mb']:.0f} MB"
             table.add_row(str(i), f["name"], size_str, f["path"])
         console.print(table)
-        print_system_msg(f"Use /gguf import <path> to import any of these files")
+        print_system_msg("Use /gguf import <path> to import any of these files")
 
     elif action == "remove":
         rest = parts[1] if len(parts) > 1 else ""

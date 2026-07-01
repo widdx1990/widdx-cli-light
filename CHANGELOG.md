@@ -1,5 +1,40 @@
 # Changelog
 
+## 3.2.0 (2026-07-01)
+
+### Quality & Tooling
+- **mypy: 253 → 0 errors** across 171 source files (core/ + scripts/ + cli/ + tui/)
+- **ruff: 347 → 0 lint warnings** (E401, E402, E501, E701, E741, F401, F821, F841, F811 fixed)
+- **Makefile** with 15 commands (install, test, lint, typecheck, build, clean, run-*)
+- **pyproject.toml** configured for mypy + ruff
+- `callable` → `Callable` type hint fix (15 occurrences)
+- `any` → `Any` type hint fix (5 occurrences)
+- Implicit `Optional` (PEP 484) fixed across 24 parameters in 12 files
+- `CREATE_NO_WINDOW` cross-platform support for non-Windows
+
+### Config & Validation
+- `validate_config()` — checks provider, max_turns, temperature, MCP servers with warnings + defaults
+- `_resolve_placeholders()` — `{PROJECT_ROOT}`, `{CWD}`, `{USER_HOME}` resolved at load
+- `ReliableProvider` now has proper `_default_urls` mapping for all 5 provider types + fallback
+- Config default provider changed from `nonexistent-xyz` to `opencode-zen`
+
+### Logging
+- New `core/log_setup.py` with `setup_logging()` — unified format across CLI, TUI, Web, API
+- CLI app now has proper logging (was silent)
+- Web UI now has proper logging (was silent)
+
+### Architecture
+- **Parallel ExpertTeam** — Researcher + Coder run in parallel via ThreadPoolExecutor (saves response time)
+- Project root cleanup — `api_server.py`, `run_textual.py` removed from root; `run-web.bat` moved to `scripts/`
+- Duplicate installation scripts removed (`scripts/install.bat`, `scripts/install.ps1`, etc.)
+
+### Test Stability
+- **538 passed, 0 failed** (was 530 passed, 8 failed)
+- Provider tests now use `raw=True` to verify actual factory classes
+- `test_decision_path` updated for new `PreDecisionForce` decision step
+- `ReliableProvider.base_url` now has proper fallback URLs
+- All provider tests (opencode-zen, ollama, openai, deepseek) pass reliably
+
 ## 3.1.0 (2026-06-27)
 
 ### Level 5.0 — Autonomy Platform

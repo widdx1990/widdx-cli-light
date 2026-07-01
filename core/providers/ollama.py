@@ -1,7 +1,8 @@
 """Ollama provider — local LLM integration."""
 from __future__ import annotations
 
-import json, time, uuid
+import json
+import uuid
 import httpx
 
 from .base import Provider, ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS, _TOOL_CAPABLE_PATTERNS, _REASONING_PATTERNS

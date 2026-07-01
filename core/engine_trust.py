@@ -10,9 +10,8 @@ Persisted to .widdx/engine_trust.json — survives restarts.
 from __future__ import annotations
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("widdx.trust")
 
@@ -77,7 +76,7 @@ class EngineTrust:
 class TrustTracker:
     """Tracks trust for all engines."""
 
-    def __init__(self, data_dir: Path | str = None):
+    def __init__(self, data_dir: Path | str | None = None):
         self._data_dir = Path(data_dir) if data_dir else Path.cwd() / ".widdx"
         self._path = self._data_dir / "engine_trust.json"
         self._engines: dict[str, EngineTrust] = {}
@@ -184,7 +183,7 @@ class TrustTracker:
 _tracker: TrustTracker | None = None
 
 
-def get_trust_tracker(data_dir: Path | str = None) -> TrustTracker:
+def get_trust_tracker(data_dir: Path | str | None = None) -> TrustTracker:
     global _tracker
     if _tracker is None:
         _tracker = TrustTracker(data_dir)

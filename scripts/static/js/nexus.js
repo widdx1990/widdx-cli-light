@@ -11,6 +11,29 @@ const ICON_MAP = {
   'fa-tower-broadcast': 'message', 'fa-plug': 'system', 'fa-file-pen': 'tool',
 };
 
+/* ── Simple Pub/Sub (decouples state changes from UI updates) ────
+ * Usage:
+ *   const unsub = Bus.on('chat:new-message', fn);
+ *   Bus.emit('chat:new-message', { role: 'user', content: '...' });
+ *   unsub(); // cleanup
+ */
+const Bus = (() => {
+  const _handlers = {};
+  return {
+    on(event, fn) {
+      (_handlers[event] = _handlers[event] || []).push(fn);
+      return () => { _handlers[event] = (_handlers[event] || []).filter(h => h !== fn); };
+    },
+    emit(event, data) {
+      (_handlers[event] || []).forEach(fn => { try { fn(data); } catch(e) { /* silent */ } });
+    },
+    off(event, fn) {
+      if (fn) _handlers[event] = (_handlers[event] || []).filter(h => h !== fn);
+      else delete _handlers[event];
+    },
+  };
+})();
+
 /* ── HTML Template helpers ───────────────────────────────────────
  * Centralise common UI patterns so show*View functions stay thin.
  * All helpers return raw HTML strings (safe: values are escapeHtml'd). */
@@ -30,7 +53,7 @@ const TEMPLATES = {
 
   /** Error state (warning icon + message). */
   error(msg) {
-    return '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation" style="color:var(--error)"></i><h3>Error</h3><p>' + escapeHtml(msg || 'An error occurred') + '</p></div>';
+    return '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation text-error"></i><h3>Error</h3><p>' + escapeHtml(msg || 'An error occurred') + '</p></div>';
   },
 
   /** Empty state (custom icon, title, description). */
@@ -61,11 +84,11 @@ const TEMPLATES = {
   /** Two-button row (e.g. refresh + action). */
   buttonRow(buttons) {
     if (!buttons || !buttons.length) return '';
-    var html = '<div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">';
+    var html = '<div class="flex-row-wrap gap-8 mt-12">';
     for (var i = 0; i < buttons.length; i++) {
       var b = buttons[i];
       var extraStyle = b.style || '';
-      html += '<button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px' + extraStyle + '" onclick="' + (b.action || '') + '">'
+      html += '<button class="send-btn w-auto px-8 rounded-sm"' + (extraStyle ? ' style="' + extraStyle + '"' : '') + ' onclick="' + (b.action || '') + '">'
         + escapeHtml(b.label || 'Button') + '</button>';
     }
     return html + '</div>';
@@ -73,11 +96,11 @@ const TEMPLATES = {
 
   /** Render a list of items with key-value display. */
   itemList(items) {
-    if (!items || !items.length) return '<span style="color:var(--text-muted)">No data</span>';
+    if (!items || !items.length) return '<span class="text-muted">No data</span>';
     return items.map(function(item) {
       var left = item.left || '';
       var right = item.right || '';
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+      return '<div class="flex-row-sb py-8 border-bottom-light">'
         + '<div>' + left + '</div>'
         + '<div>' + right + '</div></div>';
     }).join('');
@@ -102,35 +125,72 @@ const TEMPLATES = {
 
   /** Error state with retry button. */
   errorRetry(msg, retryFn) {
-    return '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation" style="color:var(--error);opacity:0.6"></i><h3 style="color:var(--text-primary)">Error</h3><p>' + escapeHtml(msg || 'Something went wrong') + '</p>'
-      + (retryFn ? '<button class="dialog-btn primary" onclick="' + retryFn + '" style="margin-top:12px"><i class="fa-solid fa-rotate"></i> Retry</button>' : '')
+    return '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation text-error" style="opacity:0.6"></i><h3 class="text-primary">Error</h3><p>' + escapeHtml(msg || 'Something went wrong') + '</p>'
+      + (retryFn ? '<button class="dialog-btn primary mt-12" onclick="' + retryFn + '"><i class="fa-solid fa-rotate"></i> Retry</button>' : '')
       + '</div>';
   },
 };
 
-const S = {
-  messages: [],
-  model: 'Loading…',
-  tokens: 0,
-  cost: 0.0,
-  activity: 'Ready',
-  tool: '—',
-  view: 'chat',
-  ws: null,
-  wsReconnectTimer: null,
-  wsRetryCount: 0,
-  wsMaxRetries: 10,
-  streaming: false,
-  // Fields set during streaming — init to null to avoid undefined access
-  _processing: false,
-  _activeAIWrapper: null,
-  _activeAIContent: null,
-  _activeAITextEl: null,
-  _activeThinking: null,
-  _activeThinkingStrip: null,
-  _activeToolCard: null,
-  _toolCount: 0,
+/* ── Centralised Application State (God Object mitigation) ──────────
+ * S.* is split into logical domains: S.chat, S.ui, S.stream.
+ * Backward-compatible getters on S.* delegate to the sub-objects
+ * so existing code continues to work (S.messages → S.chat.messages).
+ * New code should use S.chat.*, S.ui.*, S.stream.* directly.
+ */
+const _S = {
+  chat: {
+    messages: [],
+    model: 'Loading…',
+    tokens: 0,
+    cost: 0.0,
+  },
+  ui: {
+    activity: 'Ready',
+    tool: '—',
+    view: 'chat',
+    autoMode: false,
+  },
+  stream: {
+    ws: null,
+    wsReconnectTimer: null,
+    wsRetryCount: 0,
+    wsMaxRetries: 10,
+    streaming: false,
+    _processing: false,
+    _activeAIWrapper: null,
+    _activeAIBody: null,
+    _activeAIContent: null,
+    _activeAITextEl: null,
+    _activeThinking: null,
+    _activeThinkingStrip: null,
+    _activeToolCard: null,
+    _toolCount: 0,
+  },
 };
+
+// Backward-compatible S object with proxy getters/setters
+const S = new Proxy(_S, {
+  get(target, prop, receiver) {
+    // Direct sub-object access: S.chat, S.ui, S.stream
+    if (prop === 'chat') return target.chat;
+    if (prop === 'ui') return target.ui;
+    if (prop === 'stream') return target.stream;
+    // Legacy flat access → delegate to sub-object
+    if (prop in target.chat) return target.chat[prop];
+    if (prop in target.ui) return target.ui[prop];
+    if (prop in target.stream) return target.stream[prop];
+    return undefined;
+  },
+  set(target, prop, value, receiver) {
+    if (prop in target.chat) { target.chat[prop] = value; return true; }
+    if (prop in target.ui) { target.ui[prop] = value; return true; }
+    if (prop in target.stream) { target.stream[prop] = value; return true; }
+    return false;
+  },
+  has(target, prop) {
+    return prop in target.chat || prop in target.ui || prop in target.stream;
+  },
+});
 
 // ═══════════════ CHAT — REAL API ONLY ═══════════════════
 
@@ -250,7 +310,7 @@ window.sendMessage = async function() {
 
 async function sendViaREST(text) {
   try {
-    const hist = S.messages.filter(function(m) { return m.role !== 'system'; }).map(function(m) { return {role: m.role, content: m.content}; });
+    const hist = S.messages.filter(function(m) { return m.role !== 'system'; }).map(function(m) { return {role: m.role, content: m.content}; }).slice(-1000);
     const r = await fetch('/api/chat', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -274,7 +334,7 @@ async function sendViaREST(text) {
 async function sendViaWS(text) {
   S.streaming = true;
   document.getElementById('cancelBtn').classList.add('visible');
-  const hist = S.messages.filter(m => m.role !== 'system').map(m => ({role: m.role, content: m.content}));
+  const hist = S.messages.filter(m => m.role !== 'system').map(m => ({role: m.role, content: m.content})).slice(-1000);
   S.ws.send(JSON.stringify({message: text, history: hist}));
 }
 
@@ -519,8 +579,8 @@ function updateToolCard(success, result) {
   pill.classList.add(success ? 'success' : 'failed');
   var icon = pill.querySelector('.tp-spinner');
   if (icon) icon.outerHTML = success
-    ? '<i class="fa-solid fa-check" style="font-size:10px;color:var(--success)"></i>'
-    : '<i class="fa-solid fa-xmark" style="font-size:10px;color:var(--error)"></i>';
+    ? '<i class="fa-solid fa-check text-xs text-success"></i>'
+    : '<i class="fa-solid fa-xmark text-xs text-error"></i>';
   S._activeToolCard = null;
   scrollBottom();
 }
@@ -686,7 +746,7 @@ function addWSToolCard(name, details) {
     if (content) {
       const card = document.createElement('div');
       card.className = 'step-card';
-      card.innerHTML = '<div class="step-head open" tabindex="0" role="button" aria-expanded="true"><span class="step-check"><i class="fa-solid fa-spinner fa-spin"></i></span><i class="fa-solid fa-wrench step-icon"></i><span class="step-title">' + escapeHtml(name) + '</span><span class="step-time">running</span><i class="fa-solid fa-chevron-down step-chevron"></i></div><div class="step-body open"><div class="step-body-inner"><div class="step-description" style="font-family:var(--font-mono);font-size:12px">' + escapeHtml(details) + '</div></div></div>';
+      card.innerHTML = '<div class="step-head open" tabindex="0" role="button" aria-expanded="true"><span class="step-check"><i class="fa-solid fa-spinner fa-spin"></i></span><i class="fa-solid fa-wrench step-icon"></i><span class="step-title">' + escapeHtml(name) + '</span><span class="step-time">running</span><i class="fa-solid fa-chevron-down step-chevron"></i></div><div class="step-body open"><div class="step-body-inner"><div class="step-description font-mono text-xs">' + escapeHtml(details) + '</div></div></div>';
       content.appendChild(card);
       scrollBottom();
     }
@@ -725,7 +785,7 @@ function resetSendUI() {
 
 function cancelAgent() {
   if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-    S.ws.send(JSON.stringify({cancel: true}));
+    S.ws.send(JSON.stringify({type: 'cancel'}));
   }
   showTyping(false);
   S.streaming = false;
@@ -847,6 +907,8 @@ function restoreOnboarding() {
 // ── Inline model switcher ──
 
 window.toggleModelDropdown = function(e) {
+  e = e || window.event;
+  if (!e) return;
   e.stopPropagation();
   var dd = document.getElementById('modelDropdown');
   if (!dd) return;
@@ -876,7 +938,7 @@ document.addEventListener('click', function(e) {
 async function populateModelDropdown() {
   var list = document.getElementById('modelDropdownList');
   if (!list) return;
-  list.innerHTML = '<div style="padding:8px 14px;color:var(--text-muted);font-size:12px">Loading...</div>';
+  list.innerHTML = '<div class="p-8 px-14 text-muted text-xs">Loading...</div>';
   try {
     var r = await fetch('/api/settings');
     var data = await r.json();
@@ -887,7 +949,8 @@ async function populateModelDropdown() {
     list.innerHTML = '';
     // Show provider name as section header
     var ph = document.createElement('div');
-    ph.style.cssText = 'padding:4px 14px;font-size:11px;color:var(--text-tertiary)';
+    ph.className = 'text-xs text-tertiary';
+    ph.style.padding = '4px 14px';
     ph.textContent = currentProvider.name || prov.name || 'Models';
     list.appendChild(ph);
     models.forEach(function(m) {
@@ -917,7 +980,7 @@ async function populateModelDropdown() {
       list.appendChild(item);
     });
   } catch(e) {
-    list.innerHTML = '<div style="padding:8px 14px;color:var(--error);font-size:12px">' + escapeHtml(e.message) + '</div>';
+    list.innerHTML = '<div class="p-8 px-14 text-error text-xs">' + escapeHtml(e.message) + '</div>';
   }
 }
 
@@ -974,6 +1037,53 @@ async function loadAppTheme() {
   } catch(e) { /* keep localStorage theme */ }
 }
 
+/* ═══════════════ VIEW REGISTRY (#17-DRY: replaces 25+ if/else chain) ═══════════════════ */
+
+/**
+ * View Registry — maps view names to their render functions.
+ * Replaces the 25+ if/else chain in showView() with a simple lookup.
+ * Each entry: 'view-name': function(area) { ... }
+ * Add new views here instead of adding another else-if.
+ */
+const VIEWS = {
+  chat: function(area) {
+    if (S.messages.length) {
+      area.innerHTML = '';
+      S.messages.forEach(function(m) { renderMsg(m.role, m.content, m.raw); });
+    } else {
+      restoreOnboarding();
+    }
+    setActivity('Ready', '—');
+  },
+  scheduler: function(area) { showCronView(area); },
+  dashboard: function(area) { showDashboardView(area); },
+  delegation: function(area) { showDelegationView(area); },
+  gateway: function(area) { showGatewayView(area); },
+  skills: function(area) { showSkillsView(area); },
+  activity: function(area) { showActivityView(area); },
+  settings: function(area) { showModelSetupView(area); },
+  'model-setup': function(area) { showModelSetupView(area); },
+  memory: function(area) { showMemoryView(area); },
+  mcp: function(area) { showMCPView(area); },
+  sessions: function(area) { showSessionsView(area); },
+  checkpoints: function(area) { showCheckpointsView(area); },
+  git: function(area) { showGitView(area); },
+  doctor: function(area) { showDoctorView(area); },
+  debug: function(area) { showDebugView(area); },
+  permissions: function(area) { showPermissionsView(area); },
+  plugins: function(area) { showPluginsView(area); },
+  workflows: function(area) { showWorkflowsView(area); },
+  proxy: function(area) { showProxyView(area); },
+  gguf: function(area) { showGGUFView(area); },
+  manifest: function(area) { showManifestView(area); },
+  tokenbudget: function(area) { showTokenBudgetView(area); },
+  autocommit: function(area) { showAutoCommitView(area); },
+  apikeys: function(area) { showApiKeysView(area); },
+  docs: function(area) { if (window.showProjectDocsView) window.showProjectDocsView(area); },
+  search: function(area) { if (window.showSearchView) window.showSearchView(area); },
+  plan: function(area) { if (window.showPlanView) window.showPlanView(area); },
+};
+
 // ═══════════════ NAVIGATION ═══════════════════
 
 function showView(view) {
@@ -990,79 +1100,45 @@ function showView(view) {
     i.classList.toggle('active', i.dataset.view === view);
   });
 
-  if (view === 'chat') {
-    if (S.messages.length) {
-      area.innerHTML = '';
-      S.messages.forEach(function(m) { renderMsg(m.role, m.content, m.raw); });
-    } else {
-      restoreOnboarding();
-    }
-    setActivity('Ready', '—');
-  } else if (view === 'scheduler') {
-    showCronView(area);
-  } else if (view === 'dashboard') {
-    showDashboardView(area);
-  } else if (view === 'delegation') {
-    showDelegationView(area);
-  } else if (view === 'gateway') {
-    showGatewayView(area);
-  } else if (view === 'skills') {
-    showSkillsView(area);
-  } else if (view === 'activity') {
-    showActivityView(area);
-  } else if (view === 'settings') {
-    showModelSetupView(area);
-  } else if (view === 'model-setup') {
-    showModelSetupView(area);
-  } else if (view === 'memory') {
-    showMemoryView(area);
-  } else if (view === 'mcp') {
-    showMCPView(area);
-  } else if (view === 'sessions') {
-    showSessionsView(area);
-  } else if (view === 'checkpoints') {
-    showCheckpointsView(area);
-  } else if (view === 'git') {
-    showGitView(area);
-  } else if (view === 'doctor') {
-    showDoctorView(area);
-  } else if (view === 'debug') {
-    showDebugView(area);
-  } else if (view === 'permissions') {
-    showPermissionsView(area);
-  } else if (view === 'plugins') {
-    showPluginsView(area);
-  } else if (view === 'workflows') {
-    showWorkflowsView(area);
-  } else if (view === 'proxy') {
-    showProxyView(area);
-  } else if (view === 'gguf') {
-    showGGUFView(area);
-  } else if (view === 'manifest') {
-    showManifestView(area);
-  } else if (view === 'tokenbudget') {
-    showTokenBudgetView(area);
-  } else if (view === 'autocommit') {
-    showAutoCommitView(area);
-  } else if (view === 'apikeys') {
-    showApiKeysView(area);
-  } else if (view === 'docs') {
-    if (window.showProjectDocsView) window.showProjectDocsView(area);
-  } else if (view === 'search') {
-    if (window.showSearchView) window.showSearchView(area);
-  } else if (view === 'plan') {
-    if (window.showPlanView) window.showPlanView(area);
+  // View Registry lookup — single dispatch instead of 25+ if/else
+  if (VIEWS[view]) {
+    VIEWS[view](area);
   }
 }
 
-// ── Nav click setup ──
+/* ═══════════════ VIEW LOADER (DRY: avoids try/catch + error template duplication) ═══════════════════ */
 
-function setupNavClicks() {
-  document.querySelectorAll('.nav-item[data-view]').forEach(function(item) {
-    item.onclick = function() {
-      showView(item.dataset.view);
-    };
-  });
+/**
+ * Generic view loader: fetches a URL, calls a render function, and
+ * handles errors with a consistent error template + activity update.
+ * Replaces the duplicated try/catch + TEMPLATES.error pattern (#17).
+ *
+ * @param {string} url - API endpoint to fetch
+ * @param {function} renderFn - Receives (data, area) and returns HTML or manipulates area directly
+ * @param {HTMLElement} area - The messagesArea element
+ * @param {object} [opts] - Options
+ * @param {string} [opts.loadingMsg] - Loading message
+ * @param {function} [opts.onSuccess] - Called after successful render
+ */
+async function loadView(url, renderFn, area, opts) {
+  opts = opts || {};
+  area.innerHTML = TEMPLATES.loading(opts.loadingMsg || 'Loading...');
+  setActivity('Loading', url);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) {
+      area.innerHTML = TEMPLATES.error('HTTP ' + r.status + ': ' + r.statusText);
+      setActivity('Ready', '—');
+      return;
+    }
+    const data = await r.json();
+    await renderFn(data, area);
+    if (opts.onSuccess) opts.onSuccess(data);
+    setActivity('Ready', '—');
+  } catch(e) {
+    area.innerHTML = TEMPLATES.error(e.message || 'Request failed');
+    setActivity('Ready', '—');
+  }
 }
 
 // ═══════════════ COMPUTER PANEL ═══════════════════
@@ -1073,8 +1149,9 @@ window.switchTab = function(el, view) {
   if (view === 'desktop') showDesktop();
   else if (view === 'terminal') showTerminal();
   else if (view === 'browser') showBrowser();
-  else if (view === 'files') showFiles();
+  else if (view === 'files') showFileExplorer();
   else if (view === 'screenshot') showScreenshot();
+  else if (view === 'processes') showProcessManager();
 };
 
 async function showDesktop() {
@@ -1083,19 +1160,19 @@ async function showDesktop() {
   try {
     const r = await fetch('/api/computer/info');
     const d = await r.json();
-    body.innerHTML = '<div class="panel-desktop-view" style="gap:6px;padding:20px;align-items:flex-start;justify-content:flex-start;text-align:left;width:100%;font-size:13px;line-height:1.7">'
+    body.innerHTML = '<div class="panel-desktop-view panel-desktop-content">'
       + '<div><strong>Platform:</strong> ' + escapeHtml(d.system?.platform || '—') + '</div>'
       + '<div><strong>Python:</strong> ' + escapeHtml(d.system?.python || '—') + '</div>'
       + '<div><strong>CPU:</strong> ' + (d.system?.cpu_count || 0) + ' cores</div>'
       + '<div><strong>Sandbox:</strong> ' + escapeHtml(d.mode || 'auto') + '</div>'
-      + '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light)"><strong>Stats:</strong> ' + (d.cron?.length || 0) + ' cron · ' + (d.background?.length || 0) + ' bg · ' + (d.agents?.length || 0) + ' agents · ' + (d.skills || 0) + ' skills</div>'
+      + '<div class="mt-8 pt-8 border-top-light"><strong>Stats:</strong> ' + (d.cron?.length || 0) + ' cron · ' + (d.background?.length || 0) + ' bg · ' + (d.agents?.length || 0) + ' agents · ' + (d.skills || 0) + ' skills</div>'
       + '</div>';
     var p = document.getElementById('progressCount');
     if (p) p.textContent = (d.agents?.length || 0) + ' agents · ' + (d.background?.length || 0) + ' tasks';
     var e = document.getElementById('elapsedTime');
     if (e) e.textContent = 'Sandbox: ' + (d.mode || 'auto');
   } catch(e) {
-    body.innerHTML = '<div class="panel-desktop-view"><span style="color:var(--error)">' + escapeHtml(e.message) + '</span></div>';
+    body.innerHTML = '<div class="panel-desktop-view"><span class="text-error">' + escapeHtml(e.message) + '</span></div>';
   }
 }
 
@@ -1119,29 +1196,29 @@ window.runTermCmd = function(cmd) {
 function execTermCmd(cmd, o) {
   _termHistory.push(cmd);
   _termIdx = _termHistory.length;
-  o.innerHTML += '<span style="color:#f0a030;font-weight:600">$ ' + escapeHtml(cmd) + '</span>\n';
+  o.innerHTML += '<span class="text-warning fw-600">$ ' + escapeHtml(cmd) + '</span>\n';
   setActivity('Running', cmd);
-  fetch('/api/computer/info').then(function(r){return r.json()}).then(function(d){o.innerHTML='<span style="color:var(--text-muted);font-size:12px">📂 '+(d.system&&d.system.working_directory||'?')+'</span>\n'+o.innerHTML;});
+  fetch('/api/computer/info').then(function(r){return r.json()}).then(function(d){o.innerHTML='<span class="text-muted text-xs">📂 '+(d.system&&d.system.working_directory||'?')+'</span>\n'+o.innerHTML;});
   fetch('/api/computer/exec', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command:cmd})})
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.stdout) o.innerHTML += d.stdout + '\n';
-      if (d.stderr) o.innerHTML += '<span style="color:#f04848">' + escapeHtml(d.stderr) + '</span>\n';
-      o.innerHTML += '<span style="color:var(--text-muted);font-size:12px">→ exit ' + (d.exit_code || 0) + ' [' + (d.mode || 'auto') + ']</span>\n';
+      if (d.stderr) o.innerHTML += '<span class="text-error">' + escapeHtml(d.stderr) + '</span>\n';
+      o.innerHTML += '<span class="text-muted text-xs">→ exit ' + (d.exit_code || 0) + ' [' + (d.mode || 'auto') + ']</span>\n';
       o.scrollTop = o.scrollHeight; setActivity('Ready', '—');
     })
-    .catch(function(e) { o.innerHTML += '<span style="color:#f04848">' + escapeHtml(e.message) + '</span>\n'; setActivity('Ready', '—'); });
+    .catch(function(e) { o.innerHTML += '<span class="text-error">' + escapeHtml(e.message) + '</span>\n'; setActivity('Ready', '—'); });
 }
 
 function showTerminal() {
   const body = document.getElementById('panelBody');
-  body.innerHTML = '<div id="tc" style="display:flex;flex-direction:column;height:100%;background:#080a0e">'
-    + '<div id="to" style="flex:1;padding:12px;font-family:var(--font-mono);font-size:13px;color:var(--success);overflow-y:auto;line-height:1.6;white-space:pre-wrap"></div>'
-    + '<div style="display:flex;align-items:center;padding:8px 12px;border-top:1px solid var(--border-main);gap:8px;background:#0a0d14">'
-    + '<span style="color:var(--success);font-weight:700;font-family:var(--font-mono)">$</span>'
-    + '<input id="ti" style="flex:1;background:transparent;border:none;color:var(--text-primary);font-family:var(--font-mono);font-size:13px;outline:none" placeholder="Run command (e.g. python app.py, npm start)..."></div>'
-    + '<div style="display:flex;gap:4px;padding:4px 12px 6px;background:#0a0d14;flex-wrap:wrap">'
-    + '<span style="font-size:10px;color:var(--text-muted);padding:2px 0">Quick:</span>'
+  body.innerHTML = '<div id="tc" class="terminal-container">'
+    + '<div id="to" class="terminal-output"></div>'
+    + '<div class="terminal-input-bar">'
+    + '<span class="terminal-prompt">$</span>'
+    + '<input id="ti" class="terminal-input" placeholder="Run command (e.g. python app.py, npm start)..."></div>'
+    + '<div class="terminal-footer">'
+    + '<span class="text-xs text-muted" style="padding:2px 0">Quick:</span>'
     + '<button class="quick-port-btn" onclick="runTermCmd(\'python --version\')">python</button>'
     + '<button class="quick-port-btn" onclick="runTermCmd(\'node --version\')">node</button>'
     + '<button class="quick-port-btn" onclick="runTermCmd(\'npm start\')">npm start</button>'
@@ -1172,52 +1249,446 @@ function showTerminal() {
 
 function showBrowser() {
   const body = document.getElementById('panelBody');
-  body.innerHTML = '<div style="display:flex;flex-direction:column;height:100%">'
-    + '<div style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border-main);background:var(--bg-nav)">'
-    + '<input id="bu" style="flex:1;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:4px 10px;font-size:13px;outline:none" placeholder="https://" value="http://localhost:8000">'
-    + '<button style="background:var(--bg-input);border:1px solid var(--border-main);color:var(--text-primary);padding:4px 10px;border-radius:6px;cursor:pointer" onclick="document.getElementById(\'bf\').src=document.getElementById(\'bu\').value">Go</button></div>'
-    + '<iframe id="bf" style="flex:1;border:none;background:white"></iframe></div>';
+  body.innerHTML = '<div class="browser-container">'
+    + '<div class="browser-urlbar">'
+    + '<input id="bu" class="browser-url-input" placeholder="https://" value="http://localhost:8000">'
+    + '<button class="browser-go-btn" onclick="document.getElementById(\'bf\').src=document.getElementById(\'bu\').value">Go</button></div>'
+    + '<iframe id="bf" class="browser-iframe"></iframe></div>';
 }
 
-async function showFiles() {
+/* ═══════════════ PHASE 2: FILE EXPLORER ═══════════════════ */
+
+var _fileExplorerCurrentPath = '.';
+
+
+async function showFileExplorer(dir) {
+  if (dir !== undefined) _fileExplorerCurrentPath = dir;
   const body = document.getElementById('panelBody');
-  body.innerHTML = '<div id="ft" style="padding:12px;font-family:var(--font-mono);font-size:13px;overflow-y:auto;height:100%"><span style="color:var(--text-muted)">Loading...</span></div>';
-  try {
-    const r = await fetch('/api/sandbox/files?path=.');
-    const d = await r.json();
-    if (d.files) document.getElementById('ft').innerHTML = renderTree(d.files, 0);
-  } catch(e) {
-    body.innerHTML = '<div class="panel-desktop-view"><span style="color:var(--error)">' + escapeHtml(e.message) + '</span></div>';
+  body.innerHTML = '<div class="file-explorer">'
+    + '<div class="file-explorer-toolbar" id="fe-toolbar">'
+    + '<button class="file-explorer-btn" onclick="_fileExplorerGoUp()" title="Go up"><i class="fa-solid fa-arrow-up"></i></button>'
+    + '<button class="file-explorer-btn" onclick="showFileExplorer()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
+    + '<button class="file-explorer-btn" onclick="_fileExplorerCreate()" title="New file"><i class="fa-solid fa-file"></i></button>'
+    + '<button class="file-explorer-btn" onclick="_fileExplorerCreateDir()" title="New folder"><i class="fa-solid fa-folder"></i></button>'
+    + '<div class="file-explorer-breadcrumb" id="fe-breadcrumb"></div>'
+    + '</div>'
+    + '<div class="file-explorer-body" id="fe-body"></div>'
+    + '</div>';
+  _fileExplorerLoadDir(_fileExplorerCurrentPath);
+}
+
+async function _fileExplorerLoadDir(dirPath) {
+  var body = document.getElementById('fe-body');
+  var bread = document.getElementById('fe-breadcrumb');
+  if (!body) return;
+  body.innerHTML = '<div class="file-explorer-empty"><i class="fa-solid fa-spinner fa-spin"></i> <span style="margin-left:8px">Loading...</span></div>';
+  _fileExplorerCurrentPath = dirPath;
+
+  // Build breadcrumb
+  if (bread) {
+    var parts = dirPath.replace(/^\/+/, '').split('/').filter(Boolean);
+    var html = '<span onclick="showFileExplorer(\'.\')"><i class="fa-solid fa-house"></i></span>';
+    var cum = '';
+    parts.forEach(function(p, i) {
+      cum += '/' + p;
+      html += '<span class="sep">&rsaquo;</span><span onclick="showFileExplorer(\'' + escapeHtml(cum) + '\')">' + escapeHtml(p) + '</span>';
+    });
+    bread.innerHTML = html || '<span>.</span>';
   }
+
+  try {
+    var r = await fetch('/api/sandbox/files?path=' + encodeURIComponent(dirPath));
+    var d = await r.json();
+    if (d.error) {
+      body.innerHTML = '<div class="file-explorer-empty text-error">' + escapeHtml(d.error) + '</div>';
+      return;
+    }
+    var files = d.files || [];
+    if (!files.length) {
+      body.innerHTML = '<div class="file-explorer-empty"><i class="fa-solid fa-folder-open"></i> <span style="margin-left:8px">Empty directory</span></div>';
+      return;
+    }
+    body.innerHTML = _fileExplorerRenderItems(files, dirPath);
+  } catch(e) {
+    body.innerHTML = '<div class="file-explorer-empty text-error">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function _fileExplorerRenderItems(items, basePath) {
+  var html = '';
+  var dirs = items.filter(function(i) { return i.type === 'directory'; });
+  var files = items.filter(function(i) { return i.type === 'file'; });
+
+  dirs.forEach(function(item) {
+    var childPath = item.path || basePath + '/' + item.name;
+    html += '<div class="file-explorer-item" onclick="_fileExplorerEnterDir(\'' + escapeJs(childPath) + '\')">'
+      + '<span class="item-icon">📁</span>'
+      + '<span class="item-name">' + escapeHtml(item.name) + '</span>'
+      + '</div>';
+  });
+
+  files.forEach(function(item) {
+    var filePath = item.path || basePath + '/' + item.name;
+    var icon = _fileIcon(item.name);
+    var size = item.size !== undefined ? _formatSize(item.size) : '';
+    html += '<div class="file-explorer-item" onclick="showFileEditor(\'' + escapeJs(filePath) + '\')" title="' + escapeHtml(filePath) + '">'
+      + '<span class="item-icon">' + icon + '</span>'
+      + '<span class="item-name">' + escapeHtml(item.name) + '</span>'
+      + (size ? '<span class="item-meta">' + size + '</span>' : '')
+      + '</div>';
+  });
+
+  return html;
+}
+
+function _fileIcon(name) {
+  var ext = name.split('.').pop().toLowerCase();
+  var icons = {
+    js: '\uD83D\uDCDD', ts: '\uD83D\uDCDD', py: '\uD83D\uDC0D',
+    html: '\uD83C\uDF10', css: '\uD83C\uDFA8', json: '\uD83D\uDCCB',
+    md: '\uD83D\uDCDD', txt: '\uD83D\uDCC4', yml: '\u2699\uFE0F', yaml: '\u2699\uFE0F',
+    toml: '\u2699\uFE0F', cfg: '\u2699\uFE0F', conf: '\u2699\uFE0F',
+    sh: '\uD83D\uDDA5\uFE0F', bash: '\uD83D\uDDA5\uFE0F', zsh: '\uD83D\uDDA5\uFE0F',
+    go: '\uD83C\uDF4E', rs: '\uD83E\uDD16', java:'\u2615',
+    sql: '\uD83D\uDEE0\uFE0F', gitignore:'\uD83D\uDCC1', dockerfile:'\uD83D\uDC33',
+    lock: '\uD83D\uDD12', svg:'\uD83D\uDDBC\uFE0F', png:'\uD83D\uDDBC\uFE0F', jpg:'\uD83D\uDDBC\uFE0F', jpeg:'\uD83D\uDDBC\uFE0F', gif:'\uD83D\uDDBC\uFE0F',
+  };
+  return icons[ext] || '\uD83D\uDCC4';
+}
+
+function _formatSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB';
+  return (bytes / 1048576).toFixed(1) + 'MB';
+}
+
+function _fileExplorerGoUp() {
+  var parts = _fileExplorerCurrentPath.replace(/^\/+/, '').split('/').filter(Boolean);
+  if (parts.length === 0 || _fileExplorerCurrentPath === '.') return;
+  parts.pop();
+  var parent = parts.length ? '/' + parts.join('/') : '.';
+  showFileExplorer(parent);
+}
+
+function _fileExplorerEnterDir(path) {
+  showFileExplorer(path);
+}
+
+function _fileExplorerCreate() {
+  var name = prompt('New file name:');
+  if (!name) return;
+  var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
+  fetch('/api/sandbox/file/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({path: fullPath, is_directory: false, content: ''})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.status === 'ok') {
+        showToast('Created: ' + name, 'success');
+        showFileExplorer();
+      } else {
+        showToast('Error: ' + (d.error || 'Failed'), 'error');
+      }
+    }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+}
+
+function _fileExplorerCreateDir() {
+  var name = prompt('New folder name:');
+  if (!name) return;
+  var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
+  fetch('/api/sandbox/file/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({path: fullPath, is_directory: true})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.status === 'ok') {
+        showToast('Created folder: ' + name, 'success');
+        showFileExplorer();
+      } else {
+        showToast('Error: ' + (d.error || 'Failed'), 'error');
+      }
+    }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+}
+
+/* ═══════════════ PHASE 2: FILE EDITOR ═══════════════════ */
+
+var _editorCurrentPath = '';
+var _editorOriginalContent = '';
+
+async function showFileEditor(filePath) {
+  _editorCurrentPath = filePath;
+  const body = document.getElementById('panelBody');
+  body.innerHTML = '<div class="file-editor">'
+    + '<div class="file-editor-header">'
+    + '<button class="editor-back-btn" onclick="showFileExplorer(\'' + escapeJs(_fileExplorerCurrentPath) + '\')"><i class="fa-solid fa-arrow-left"></i> Files</button>'
+    + '<span class="editor-filename" id="editor-filename">' + escapeHtml(filePath.split('/').pop() || filePath) + '</span>'
+    + '<span class="editor-path">' + escapeHtml(filePath) + '</span>'
+    + '</div>'
+    + '<div class="file-editor-body"><textarea id="editor-textarea" spellcheck="false"></textarea></div>'
+    + '<div class="file-editor-footer">'
+    + '<span class="editor-status" id="editor-status">Loading...</span>'
+    + '<button class="editor-save-btn" id="editor-run-btn" onclick="_editorRun()" title="Run this file"><i class="fa-solid fa-play"></i> Run</button>'
+    + '<button class="editor-save-btn" id="editor-save-btn" onclick="_editorSave()"><i class="fa-solid fa-floppy-disk"></i> Save</button>'
+    + '</div>'
+    + '</div>';
+
+  try {
+    var r = await fetch('/api/sandbox/file?path=' + encodeURIComponent(filePath));
+    var d = await r.json();
+    if (d.error) {
+      document.getElementById('editor-status').textContent = 'Error: ' + d.error;
+      return;
+    }
+    var ta = document.getElementById('editor-textarea');
+    if (ta) {
+      ta.value = d.content || '';
+      _editorOriginalContent = d.content || '';
+    }
+    var status = document.getElementById('editor-status');
+    if (status) status.textContent = (d.size || 0) + ' bytes | ' + (d.content ? (d.content.split('\n').length + ' lines') : 'empty');
+
+    // Auto-preview HTML files in browser tab
+    if (filePath.endsWith('.html') || filePath.endsWith('.htm')) {
+      _autoPreviewHtml(filePath, d.content || '');
+    }
+  } catch(e) {
+    var status = document.getElementById('editor-status');
+    if (status) status.textContent = 'Error: ' + e.message;
+  }
+
+  // Keyboard shortcut: Ctrl+S to save
+  var ta = document.getElementById('editor-textarea');
+  if (ta) {
+    ta.focus();
+    ta.onkeydown = function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        _editorSave();
+      }
+    };
+  }
+}
+
+async function _editorSave() {
+  var ta = document.getElementById('editor-textarea');
+  var btn = document.getElementById('editor-save-btn');
+  if (!ta || !btn) return;
+  var content = ta.value;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+
+  try {
+    var r = await fetch('/api/sandbox/file', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: _editorCurrentPath, content: content})
+    });
+    var d = await r.json();
+    if (d.status === 'ok') {
+      _editorOriginalContent = content;
+      showToast('Saved', 'success');
+      // Auto-preview HTML
+      if (_editorCurrentPath.endsWith('.html') || _editorCurrentPath.endsWith('.htm')) {
+        _autoPreviewHtml(_editorCurrentPath, content);
+      }
+    } else {
+      showToast('Save failed: ' + (d.error || 'Unknown'), 'error');
+    }
+  } catch(e) {
+    showToast('Save error: ' + e.message, 'error');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
+}
+
+async function _editorRun() {
+  var btn = document.getElementById('editor-run-btn');
+  var ta = document.getElementById('editor-textarea');
+  if (!ta || !btn) return;
+
+  // Save first
+  await _editorSave();
+
+  // Detect command based on file extension
+  var ext = _editorCurrentPath.split('.').pop().toLowerCase();
+  var cmdMap = {
+    py: 'python3',
+    js: 'node',
+    ts: 'npx ts-node',
+    sh: 'bash',
+    bash: 'bash',
+    go: 'go run',
+    rs: 'cargo run --',
+    rb: 'ruby',
+    php: 'php',
+    pl: 'perl',
+    lua: 'lua',
+    r: 'Rscript',
+  };
+  var runner = cmdMap[ext];
+  if (!runner) {
+    // For HTML, auto-preview in browser
+    if (ext === 'html' || ext === 'htm') {
+      _autoPreviewHtml(_editorCurrentPath, ta.value);
+      return;
+    }
+    showToast('No runner for .' + ext + ' files', 'info');
+    return;
+  }
+
+  // Switch to terminal tab and run
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Running...';
+
+  // Show terminal
+  var tabs = document.querySelectorAll('.right-panel-tab');
+  for (var i = 0; i < tabs.length; i++) {
+    if (tabs[i].textContent.toLowerCase().indexOf('terminal') !== -1) {
+      switchTab(tabs[i], 'terminal');
+      break;
+    }
+  }
+
+  // Execute in terminal
+  var cmd = runner + ' ' + _editorCurrentPath;
+  var o = document.getElementById('to');
+  if (o) {
+    o.innerHTML += '\n<span class="text-accent">$ ' + escapeHtml(cmd) + '</span>\n';
+    execTermCmd(cmd, o);
+  } else {
+    // Terminal not initialized yet
+    showTerminal();
+    setTimeout(function() {
+      var o2 = document.getElementById('to');
+      if (o2) {
+        o2.innerHTML += '\n<span class="text-accent">$ ' + escapeHtml(cmd) + '</span>\n';
+        execTermCmd(cmd, o2);
+      }
+    }, 200);
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fa-solid fa-play"></i> Run';
+}
+
+/* ═══════════════ PHASE 2: AUTO PREVIEW ═══════════════════ */
+
+function _autoPreviewHtml(filePath, content) {
+  // If browser tab exists, preview the generated HTML
+  var bf = document.getElementById('bf');
+  var bu = document.getElementById('bu');
+  if (bf && bu) {
+    // Write to a temp file and load in iframe
+    // Or use blob URL for instant preview
+    var blob = new Blob([content], {type: 'text/html'});
+    var url = URL.createObjectURL(blob);
+    bf.src = url;
+    bu.value = 'file://' + filePath;
+    // Find browser tab by text content
+    var tabs = document.querySelectorAll('.right-panel-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].textContent.toLowerCase().indexOf('browser') !== -1) {
+        switchTab(tabs[i], 'browser');
+        break;
+      }
+    }
+  }
+}
+
+/* ═══════════════ PHASE 2: PROCESS MANAGER ═══════════════════ */
+
+async function showProcessManager() {
+  const body = document.getElementById('panelBody');
+  body.innerHTML = '<div class="process-manager">'
+    + '<div class="process-header">'
+    + '<span class="proc-title"><i class="fa-solid fa-microchip"></i> Process Manager</span>'
+    + '<button class="file-explorer-btn" onclick="showProcessManager()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
+    + '</div>'
+    + '<div class="process-body" id="proc-body">'
+    + '<div class="process-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>Loading processes...</span></div>'
+    + '</div>'
+    + '</div>';
+  await _loadProcesses();
+}
+
+async function _loadProcesses() {
+  var body = document.getElementById('proc-body');
+  if (!body) return;
+  try {
+    var r = await fetch('/api/sandbox/processes');
+    var d = await r.json();
+    if (d.error || !d.processes || !d.processes.length) {
+      body.innerHTML = '<div class="process-empty"><i class="fa-solid fa-inbox"></i><span>No processes found</span></div>';
+      return;
+    }
+    var html = '';
+    d.processes.forEach(function(proc) {
+      html += '<div class="process-item">'
+        + '<span class="proc-pid">' + escapeHtml(proc.pid) + '</span>'
+        + '<span class="proc-name">' + escapeHtml(proc.command || proc.name || '?') + '</span>'
+        + '<span class="proc-cpu">' + (proc.cpu ? proc.cpu + '%' : '') + '</span>'
+        + '<span class="proc-mem">' + (proc.mem ? (proc.mem.replace('K', 'K').includes('K') || proc.mem.includes('M') ? proc.mem : proc.mem + '%') : '') + '</span>'
+        + '<button class="proc-kill-btn" onclick="_killProcess(\'' + escapeJs(proc.pid) + '\')" title="Kill"><i class="fa-solid fa-xmark"></i></button>'
+        + '</div>';
+    });
+    body.innerHTML = html;
+  } catch(e) {
+    body.innerHTML = '<div class="process-empty text-error"><i class="fa-solid fa-triangle-exclamation"></i><span>' + escapeHtml(e.message) + '</span></div>';
+  }
+}
+
+async function _killProcess(pid) {
+  try {
+    var r = await fetch('/api/sandbox/processes/' + encodeURIComponent(pid) + '/kill', {method: 'POST'});
+    var d = await r.json();
+    if (d.status === 'ok') {
+      showToast('Process ' + pid + ' killed', 'success');
+      showProcessManager();
+    } else {
+      showToast('Failed: ' + (d.error || 'Unknown'), 'error');
+    }
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ── Helper: escapeJs for single-quoted strings ──
+function escapeJs(str) {
+  if (!str) return '';
+  return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 async function showScreenshot() {
   const body = document.getElementById('panelBody');
-  body.innerHTML = '<div style="display:flex;flex-direction:column;height:100%;padding:12px;gap:10px;align-items:center">'
-    + '<button id="ss-btn" onclick="takeScreenshot()" style="padding:8px 20px;border-radius:6px;border:1px solid var(--border-main);background:var(--bg-card);color:var(--text-primary);cursor:pointer;font-size:13px"><i class="fa-solid fa-camera"></i> Take Screenshot</button>'
-    + '<div id="ss-result" style="flex:1;width:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px">Click the button to capture a browser screenshot.</div></div>';
+  body.innerHTML = '<div class="screenshot-container">'
+    + '<button id="ss-btn" class="screenshot-btn" onclick="takeScreenshot()"><i class="fa-solid fa-camera"></i> Take Screenshot</button>'
+    + '<div id="ss-result" class="screenshot-result">Click the button to capture a browser screenshot.</div></div>';
 }
 
 window.takeScreenshot = async function() {
   var btn = document.getElementById('ss-btn');
   var res = document.getElementById('ss-result');
   if (btn) { btn.disabled = true; btn.textContent = 'Capturing...'; }
-  if (res) res.innerHTML = '<span style="color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin"></i> Taking screenshot...</span>';
+  if (res) res.innerHTML = '<span class="text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Taking screenshot...</span>';
   try {
     const r = await fetch('/api/sandbox/screenshot', { method:'POST' });
     const d = await r.json();
     if (d.success && d.data) {
       var imgUrl = typeof d.data === 'string' && d.data.startsWith('data:') ? d.data : (d.data.image_url || d.data.url || '');
       if (imgUrl) {
-        if (res) res.innerHTML = '<img src="' + escapeHtml(imgUrl) + '" style="max-width:100%;max-height:100%;border-radius:6px;border:1px solid var(--border-light);box-shadow:0 2px 12px rgba(0,0,0,0.3)">';
+        if (res) res.innerHTML = '<img src="' + escapeHtml(imgUrl) + '" class="screenshot-img">';
       } else {
-        if (res) res.innerHTML = '<pre style="font-size:11px;color:var(--text-muted);max-height:100%;overflow:auto">' + escapeHtml(JSON.stringify(d.data, null, 2)) + '</pre>';
+        if (res) res.innerHTML = '<pre class="text-xs text-muted max-h-screen overflow-auto">' + escapeHtml(JSON.stringify(d.data, null, 2)) + '</pre>';
       }
     } else {
-      if (res) res.innerHTML = '<span style="color:var(--error)">' + escapeHtml(d.error || 'Screenshot failed') + '</span>';
+      if (res) res.innerHTML = '<span class="text-error">' + escapeHtml(d.error || 'Screenshot failed') + '</span>';
     }
   } catch(e) {
-    if (res) res.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    if (res) res.innerHTML = '<span class="text-error">' + escapeHtml(e.message) + '</span>';
   }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-camera"></i> Take Screenshot'; }
 };
@@ -1226,30 +1697,54 @@ function previewFileInBrowser(path) {
   if (path.endsWith('.html') || path.endsWith('.htm')) {
     document.getElementById('bu').value = path;
     document.getElementById('bf').src = path;
-    switchTab(document.querySelector('.right-panel-tab:nth-child(4)'), 'browser');
+    // Find browser tab by querying its text content
+    var tabs = document.querySelectorAll('.right-panel-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].textContent.toLowerCase().indexOf('browser') !== -1) {
+        switchTab(tabs[i], 'browser');
+        break;
+      }
+    }
   }
 }
 
-function renderTree(items, depth) {
-  return items.map(function(i) {
-    return '<div style="padding-left:' + (depth * 16) + 'px;padding:3px 0;cursor:pointer;color:var(--text-primary)">'
-      + (i.type === 'directory' ? '📁' : '📄') + ' ' + escapeHtml(i.name)
-      + '</div>'
-      + (i.children ? renderTree(i.children, depth + 1) : '');
-  }).join('');
-}
 // ═══════════════ INIT ═══════════════════
 
 document.addEventListener('DOMContentLoaded', function() {
   var ob = document.getElementById('onboarding');
   if (ob) ONBOARDING_HTML = ob.outerHTML;
 
-  setupNavClicks();
+  // Nav clicks are handled via addEventListener below — setupNavClicks() removed (P1 duplicate fix)
   loadAppTheme();
   loadStatus();
   loadProjectSession();
-  loadSidebar();
-  showDesktop();
+  loadSidebar();    // #4: Event listeners (replace inline onclick) — sidebar, header, input
+    document.getElementById('sidebarNewTask').onclick = function() {
+      if (typeof newSession === 'function') newSession();
+      else showView('chat');
+      if (window.innerWidth < 820) toggleSidebar();
+    };
+    document.getElementById('hamburgerBtn').onclick = function() { toggleSidebar(); };
+    document.getElementById('sidebarFloatingToggle').onclick = function() { toggleSidebar(); };
+    document.getElementById('sidebarBackdrop').onclick = function() {
+      if (window.innerWidth < 820) toggleSidebar();
+    };
+    document.getElementById('scrollBottomBtn').onclick = function() { scrollBottom(); };
+    document.getElementById('cancelBtn').onclick = function() { cancelAgent(); };
+    document.getElementById('sendBtn').onclick = function() { sendMessage(); };
+    document.getElementById('langToggleBtn').onclick = function() { Lang.toggle(); };
+    document.getElementById('starBtn').onclick = function() { this.classList.toggle('active'); };
+    document.getElementById('modelSelector').onclick = function(e) { toggleModelDropdown(e); };
+    document.getElementById('modelDropdownFooter').onclick = function() { showView('settings'); };
+
+    // Event delegation for all .nav-item[data-view] elements
+    document.querySelectorAll('.nav-item[data-view]').forEach(function(item) {
+      item.addEventListener('click', function() {
+        showView(this.dataset.view);
+      });
+    });
+
+    showDesktop();
   initWebSocket();
   initEventStream();
 
@@ -1307,14 +1802,14 @@ document.addEventListener('DOMContentLoaded', function() {
       var base64 = ev.target.result.split(',')[1];
       var userMsg = { role: 'user', content: '[Image attached: ' + file.name + ']', image: base64 };
       S.messages.push(userMsg);
-      appendMessageBubble('user', '<i class=\"fa-solid fa-image\"></i> ' + file.name);
+      renderMsg('user', '<i class=\"fa-solid fa-image\"></i> ' + file.name);
       clearUploadPreview();
       fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: 'Describe this image in detail.', history: S.messages })
       }).then(function(r) { return r.json(); })
-        .then(function(d) { if (d.reply) appendMessageBubble('assistant', d.reply); })
+        .then(function(d) { if (d.reply) renderMsg('assistant', d.reply); })
         .catch(function(err) { showToast('Vision failed: ' + err.message, 'error'); });
     };
     reader.readAsDataURL(file);
@@ -1333,7 +1828,7 @@ document.addEventListener('DOMContentLoaded', function() {
       var preview = content.length > 2000 ? content.substring(0, 2000) + '\n... (truncated)' : content;
       var userMsg = { role: 'user', content: 'Uploaded file: ' + file.name + '\n\n```\n' + preview + '\n```' };
       S.messages.push(userMsg);
-      appendMessageBubble('user', '<i class=\"fa-solid fa-file\"></i> ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
+      renderMsg('user', '<i class=\"fa-solid fa-file\"></i> ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
       clearUploadPreview();
       var input = document.getElementById('messageInput');
       input.value = 'Review the attached file: ' + file.name;
@@ -1348,8 +1843,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (existing) existing.remove();
     var div = document.createElement('div');
     div.id = 'uploadPreview';
-    div.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 12px;font-size:12px;color:var(--accent-primary);background:var(--bg-card);border-radius:6px;margin:0 12px 4px';
-    div.innerHTML = icon + ' ' + escapeHtml(name) + ' <span onclick=\"clearUploadPreview()\" style=\"cursor:pointer;color:var(--text-muted);margin-left:8px\">✕</span>';
+    div.className = 'upload-preview';
+    div.innerHTML = icon + ' ' + escapeHtml(name) + ' <span class=\"upload-preview-close\" onclick=\"clearUploadPreview()\">✕</span>';
     var toolbar = document.querySelector('.input-toolbar');
     if (toolbar) toolbar.parentNode.insertBefore(div, toolbar);
   }
@@ -1361,9 +1856,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── Project Docs viewer ──────────────────────────────
   window.showProjectDocsView = function(area) {
-    area.innerHTML = '<div style=\"padding:24px;max-width:900px;margin:0 auto\">'
-      + '<h2 style=\"margin-bottom:16px\"><i class=\"fa-solid fa-book\"></i> Project Documentation</h2>'
-      + '<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px\" id=\"docsGrid\">Loading…</div>'
+    area.innerHTML = '<div class=\"p-24 max-w-900 mx-auto\">'
+      + '<h2 class=\"mb-16\"><i class=\"fa-solid fa-book\"></i> Project Documentation</h2>'
+      + '<div class=\"docs-grid\" id=\"docsGrid\">Loading…</div>'
       + '</div>';
     var docs = ['PLAN.md', 'DESIGN.md', 'TASKS.md', 'ROADMAP.md'];
     var loaded = 0;
@@ -1373,9 +1868,9 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(function(data) {
           loaded++;
           var content = (data.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').substring(0, 3000);
-          html += '<div style=\"background:var(--bg-card);border:1px solid var(--border-main);border-radius:12px;padding:16px\">'
-            + '<h3 style=\"margin:0 0 8px;color:var(--accent-primary)\">' + doc + '</h3>'
-            + '<pre style=\"white-space:pre-wrap;font-size:13px;color:var(--text-secondary);max-height:300px;overflow-y:auto\">' + (content || '(empty)') + '</pre>'
+          html += '<div class=\"bg-card border-main rounded-lg p-16\">'
+            + '<h3 class=\"mb-8 text-accent\" style=\"margin-top:0\">' + doc + '</h3>'
+            + '<pre class=\"text-pre-wrap text-sm text-secondary max-h-300 overflow-y-auto\">' + (content || '(empty)') + '</pre>'
             + '</div>';
           if (loaded === docs.length) {
             document.getElementById('docsGrid').innerHTML = html || '<p>No project docs found. Start a chat to auto-create them.</p>';
@@ -1386,10 +1881,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── Session search ───────────────────────────────────
   window.showSearchView = function(area) {
-    area.innerHTML = '<div style=\"padding:24px;max-width:900px;margin:0 auto\">'
-      + '<h2 style=\"margin-bottom:16px\"><i class=\"fa-solid fa-magnifying-glass\"></i> Search Sessions</h2>'
-      + '<input id=\"searchInput\" style=\"width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border-main);border-radius:8px;color:var(--text-primary);font-size:16px;outline:none;margin-bottom:16px\" placeholder=\"Search messages, sessions, memories…\" oninput=\"doSearch(this.value)\">'
-      + '<div id=\"searchResults\" style=\"display:flex;flex-direction:column;gap:8px\"></div>'
+    area.innerHTML = '<div class=\"p-24 max-w-900 mx-auto\">'
+      + '<h2 class=\"mb-16\"><i class=\"fa-solid fa-magnifying-glass\"></i> Search Sessions</h2>'
+      + '<input id=\"searchInput\" class=\"search-input\" placeholder=\"Search messages, sessions, memories…\" oninput=\"doSearch(this.value)\">'
+      + '<div id=\"searchResults\" class=\"flex-col gap-8\"></div>'
       + '</div>';
   }
 
@@ -1401,24 +1896,24 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(function(r) { return r.json(); })
       .then(function(sessions) {
         if (!sessions || !sessions.length) {
-          container.innerHTML = '<p style=\"color:var(--text-muted)\">No results for \"' + escapeHtml(q) + '\"</p>';
+          container.innerHTML = '<p class=\"text-muted\">No results for \"' + escapeHtml(q) + '\"</p>';
           return;
         }
         container.innerHTML = sessions.slice(0, 20).map(function(s) {
-          return '<div style=\"background:var(--bg-card);border:1px solid var(--border-main);border-radius:8px;padding:12px 16px;cursor:pointer\" onclick=\"showView(\'chat\');loadSession(\'' + (s.id || '') + '\')\">'
+          return '<div class=\"bg-card border-main rounded-lg cursor-pointer\" style=\"padding:12px 16px\" onclick=\"showView(\'chat\');loadSession(\'' + (s.id || '') + '\')\">'
             + '<strong>' + escapeHtml(s.name || 'Untitled') + '</strong>'
-            + '<span style=\"float:right;color:var(--text-muted);font-size:12px\">' + (s.branch || 'main') + '</span>'
-            + '<br><span style=\"color:var(--text-muted);font-size:13px\">' + (s.created || '') + ' · ' + (s.msg_count || 0) + ' messages</span>'
+            + '<span class=\"text-muted text-xs\" style=\"float:right\">' + (s.branch || 'main') + '</span>'
+            + '<br><span class=\"text-muted text-sm\">' + (s.created || '') + ' · ' + (s.msg_count || 0) + ' messages</span>'
             + '</div>';
         }).join('');
       }).catch(function() {
-        container.innerHTML = '<p style=\"color:var(--text-muted)\">Search failed. Try again.</p>';
+        container.innerHTML = '<p class=\"text-muted\">Search failed. Try again.</p>';
       });
   };
 
   // ── Plan view — project status + task progress ───────
   window.showPlanView = function(area) {
-    area.innerHTML = '<div style="padding:24px;max-width:900px;margin:0 auto"><h2><i class="fa-solid fa-list-check"></i> Project Plan</h2><div id="planContent">Loading…</div></div>';
+    area.innerHTML = '<div class="p-24 max-w-900 mx-auto"><h2><i class="fa-solid fa-list-check"></i> Project Plan</h2><div id="planContent">Loading…</div></div>';
     var docs = ['PLAN.md', 'TASKS.md', 'ROADMAP.md'];
     var loaded = 0;
     var html = '';
@@ -1432,14 +1927,14 @@ document.addEventListener('DOMContentLoaded', function() {
             // Parse task statuses
             var done = (content.match(/\[x\]|✅|done|completed/gi) || []).length;
             var pending = (content.match(/\[ \]|todo|in-progress/gi) || []).length;
-            tasks.push('<span style="color:var(--success)">✅ ' + done + ' done</span>');
-            tasks.push('<span style="color:var(--warning)">⏳ ' + pending + ' pending</span>');
+            tasks.push('<span class="text-success">✅ ' + done + ' done</span>');
+            tasks.push('<span class="text-warning">⏳ ' + pending + ' pending</span>');
             document.getElementById('planBadge').textContent = done + '/' + (done + pending);
             document.getElementById('planBadge').style.display = '';
           }
-          html += '<div style="background:var(--bg-card);border:1px solid var(--border-main);border-radius:12px;padding:16px;margin-bottom:12px">'
-            + '<h3 style="margin:0 0 4px;color:var(--accent-primary)">' + doc + (tasks.length ? ' <span style="font-size:14px">' + tasks.join(' · ') + '</span>' : '') + '</h3>'
-            + '<pre style="white-space:pre-wrap;font-size:13px;color:var(--text-secondary);max-height:400px;overflow-y:auto;line-height:1.5">' + (content || '(empty — start a chat to auto-create)') + '</pre>'
+          html += '<div class="bg-card border-main rounded-lg p-16 mb-12">'
+            + '<h3 class="text-accent" style="margin:0 0 4px">' + doc + (tasks.length ? ' <span style="font-size:14px">' + tasks.join(' · ') + '</span>' : '') + '</h3>'
+            + '<pre class="text-pre-wrap text-sm text-secondary max-h-400 overflow-y-auto" style="line-height:1.5">' + (content || '(empty — start a chat to auto-create)') + '</pre>'
             + '</div>';
           if (loaded === docs.length) {
             document.getElementById('planContent').innerHTML = html || '<p>No plan docs yet. Start a chat to auto-create them.</p>';
@@ -1469,9 +1964,9 @@ document.addEventListener('DOMContentLoaded', function() {
   window.showDiffPreview = function(original, modified) {
     var area = document.getElementById('messagesArea');
     if (!area) return;
-    var diffHtml = '<div style=\"background:var(--bg-card);border:1px solid var(--border-main);border-radius:12px;padding:16px;margin:8px 0;max-height:400px;overflow-y:auto;font-family:var(--font-mono);font-size:12px\">'
+    var diffHtml = '<div class=\"diff-container\">'
       + '<h4 style=\"margin:0 0 8px\">Diff Preview</h4>'
-      + '<pre style=\"margin:0;white-space:pre-wrap\">';
+      + '<pre class=\"diff-preview\">';
     var lines1 = original.split('\n');
     var lines2 = modified.split('\n');
     var maxLen = Math.max(lines1.length, lines2.length);
@@ -1479,10 +1974,10 @@ document.addEventListener('DOMContentLoaded', function() {
       var l1 = lines1[i] || '';
       var l2 = lines2[i] || '';
       if (l1 !== l2) {
-        if (l1) diffHtml += '<span style=\"background:rgba(240,72,72,0.15);display:block\">- ' + escapeHtml(l1) + '</span>\n';
-        if (l2) diffHtml += '<span style=\"background:rgba(72,240,144,0.15);display:block\">+ ' + escapeHtml(l2) + '</span>\n';
+        if (l1) diffHtml += '<span class=\"diff-line-removed\">- ' + escapeHtml(l1) + '</span>\n';
+        if (l2) diffHtml += '<span class=\"diff-line-added\">+ ' + escapeHtml(l2) + '</span>\n';
       } else {
-        diffHtml += '<span style=\"display:block\">  ' + escapeHtml(l1) + '</span>\n';
+        diffHtml += '<span class=\"diff-line-unchanged\">  ' + escapeHtml(l1) + '</span>\n';
       }
     }
     diffHtml += '</pre></div>';

@@ -1,6 +1,8 @@
 """MANIFEST.json generator — describes project structure for humans and AI."""
 
-import re, json, ast
+import re
+import json
+import ast
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
@@ -36,7 +38,7 @@ def _extract_frontmatter_desc(filepath: Path) -> str:
     return ""
 
 
-def _walk() -> list[dict]:
+def _walk() -> tuple[list[dict], list[dict]]:
     """Walk the project and return a list of file records."""
     files = []
     skills = []

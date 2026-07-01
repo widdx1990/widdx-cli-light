@@ -9,7 +9,11 @@ This is the SINGLE file that needs to change if either side's types evolve.
 
 from __future__ import annotations
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.uil.contract import ClassificationResult, Plan, VerificationReport
+    from core.sandbox import SandboxResult
 
 logger = logging.getLogger("widdx.adapters")
 
@@ -59,7 +63,7 @@ def adapt_classification(new_result) -> "ClassificationResult":
     domain = domain_map.get(new_result.task_type, Domain.CHAT)
 
     # Convert features list → dict
-    features_dict = {f: True for f in new_result.detected_features}
+    features_dict = {f: "true" for f in new_result.detected_features}
 
     # Build decision path showing the new engine was used
     decision_path = [

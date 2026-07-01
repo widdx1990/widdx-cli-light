@@ -3,13 +3,14 @@
 Every tool is registered here via a dict with:
   name, description, parameters (OpenAI function-calling schema), handler.
 """
-import glob as glob_module
-import os, subprocess, platform, re, json, time, logging
+import subprocess
+import platform
+import re
+import logging
 from html.parser import HTMLParser
 import httpx
 from pathlib import Path
-import tempfile
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger("widdx.tools")
 
@@ -20,17 +21,17 @@ MAX_STDOUT_CHARS = 5000
 MAX_STDERR_CHARS = 2000
 
 TOOL_DEFINITIONS: list[dict] = []
-_TOOL_MAP: dict[str, callable] = {}
+_TOOL_MAP: dict[str, Callable] = {}
 _EXTRA_FILE_TOOLS: list[dict] = []
 # Dynamic tool registrations (workflow, etc.) — survives module reloads
 _DYNAMIC_TOOLS: list[dict] = []
 
 # ── Dangerous command patterns (security) ─────────────────
 # Security patterns — imported from core.tools.security
-from core.tools.security import _DANGEROUS_PATTERNS, _WARN_PATTERNS, scan_dangerous as _scan_dangerous
+from core.tools.security import scan_dangerous as _scan_dangerous  # noqa: E402
 
 
-def register_dynamic(tool_defs: list[dict], tool_map: dict[str, callable]):
+def register_dynamic(tool_defs: list[dict], tool_map: dict[str, Callable]):
     """Register dynamically-created tools (e.g. workflow tools).
 
     These are appended AFTER built-in tools during tool list construction.
@@ -52,7 +53,7 @@ def clear_dynamic():
     _DYNAMIC_TOOLS = []
 
 
-def register(name: str, description: str, parameters: dict, handler: callable):
+def register(name: str, description: str, parameters: dict, handler: Callable):
     """Register a tool: adds its definition and maps name -> handler."""
     TOOL_DEFINITIONS.append({
         "name": name,
@@ -345,12 +346,12 @@ class HTMLTagValidator(HTMLParser):
         self.stack: list[str] = []
         self.errors: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str]]):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
         if tag in self.VOID_TAGS:
             return
         self.stack.append(tag)
 
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str]]):
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
         pass
 
     def handle_endtag(self, tag: str):
@@ -969,12 +970,12 @@ register(
 )
 
 # ── Project Tracker tool ──────────────────────────────────────────────────
-from core.project_tracker import TOOL_DEFINITION as _PT_TOOL, handle_update_project_doc
+from core.project_tracker import TOOL_DEFINITION as _PT_TOOL, handle_update_project_doc  # noqa: E402
 
 register(
-    _PT_TOOL["name"],
-    _PT_TOOL["description"],
-    _PT_TOOL["parameters"],
+    _PT_TOOL["name"],  # type: ignore[arg-type]
+    _PT_TOOL["description"],  # type: ignore[arg-type]
+    _PT_TOOL["parameters"],  # type: ignore[arg-type]
     handle_update_project_doc,
 )
 
@@ -983,7 +984,7 @@ def _handle_run_linter(file_path: str, language: str = "auto") -> str:
     """Run linter on a file and return issues."""
     from core.linter import LinterRunner
     runner = LinterRunner()
-    result = runner.check(Path(file_path), language if language != "auto" else None)
+    result = runner.check(Path(file_path), language != "auto")
     return result.format_for_agent()
 
 register(
@@ -1003,7 +1004,6 @@ register(
 # ── Sandbox executor tool ──────────────────────────────────────────────────
 def _handle_sandbox_exec(command: str, timeout: int = 60, cwd: str = "") -> str:
     """Execute a command in a sandboxed subprocess."""
-    import platform
     from core.sandbox import SandboxExecutor
     sandbox_mode = "subprocess" if platform.system() == "Windows" else "auto"
     sb = SandboxExecutor(mode=sandbox_mode)
@@ -1059,7 +1059,7 @@ def _handle_edit_files(files: list[dict]) -> str:
 
         # Preview diff
         if differ:
-            diff_preview = differ.unified_diff(path.name, current, new_content)[:300]
+            diff_preview = differ.generate(filename=path.name, old_text=current, new_text=new_content)[:300]
             results.append(f"[{i}] DIFF {path}:\n{diff_preview}")
         else:
             results.append(f"[{i}] EDIT {path}")

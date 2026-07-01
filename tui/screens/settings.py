@@ -1,12 +1,13 @@
 """Full-screen settings — tabbed provider config for WIDDX Nexus."""
 
 from textual.screen import Screen
-from textual.widgets import Static, Input, Button, Label, Select, Switch, TabbedContent, TabPane
-from textual.containers import Vertical, Horizontal, ScrollableContainer
+from textual.widgets import Static, Input, Button, Select, Switch, TabbedContent, TabPane
+from textual.containers import Horizontal, ScrollableContainer
 from textual.binding import Binding
 from pathlib import Path
 import threading
 
+from typing import Any
 from core import config
 from core.config.keychain import set_key, forget_key, has_key
 from core.providers.providers import (
@@ -15,8 +16,8 @@ from core.providers.providers import (
 )
 
 # ── Provider definitions ──────────────────────────────────
-from core.providers.providers import _DEFAULT_BASE_URLS, _DEFAULT_MODELS, get_available_models
-PROVIDER_LIST = [
+from core.providers.providers import _DEFAULT_BASE_URLS, _DEFAULT_MODELS
+PROVIDER_LIST: list[dict[str, Any]] = [
     {
         "id": "opencode-zen",
         "label": "🌐 OpenCode Zen",
@@ -365,7 +366,6 @@ class GGUFTab(ScrollableContainer):
         def _run():
             try:
                 from core.providers.gguf import scan_gguf_files
-                from rich.table import Table
                 found = scan_gguf_files(force_refresh=True)
                 if not found:
                     app_ref.call_from_thread(status.update, "[dim]No .gguf files found. Try importing manually.[/]")
@@ -396,7 +396,7 @@ class GGUFTab(ScrollableContainer):
             return
         status.update(f"[dim]Reading {Path(path).name}…[/]")
         try:
-            from core.providers.gguf import import_gguf, suggest_model_name, read_gguf_metadata
+            from core.providers.gguf import suggest_model_name, read_gguf_metadata
             meta = read_gguf_metadata(path)
             name = suggest_model_name(path, meta)
             status.update(f"[dim]Importing as '{name}'… (may take minutes)[/]")
@@ -570,12 +570,12 @@ class SettingsScreen(Screen):
                 except Exception:
                     key = "public" if not pi["needs_key"] else ""
 
-                all_providers[pid] = {"model": model, "base_url": url, "api_key": key}
+                all_providers[str(pid)] = {"model": model, "base_url": url, "api_key": key}
 
             # Active provider config
             active = self._active_provider
-            ap = all_providers.get(active, {})
-            pi_active = next((p for p in PROVIDER_LIST if p["id"] == active), {})
+            ap: dict[str, Any] = all_providers.get(active, {})
+            pi_active: dict[str, Any] = next((p for p in PROVIDER_LIST if p["id"] == active), {})
 
             new_cfg["provider"] = {
                 "name":     active,

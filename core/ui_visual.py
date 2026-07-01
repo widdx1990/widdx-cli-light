@@ -5,7 +5,6 @@ Focus on readability, visual hierarchy, and minimal visual noise.
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -304,7 +303,6 @@ def show_markdown(text: str) -> None:
 
 def show_code(code: str, lang: str = "python") -> None:
     try:
-        from pygments.lexers import get_lexer_by_name
         console.print(Syntax(code, lang, theme="one-dark", line_numbers=True,
                              word_wrap=True, background_color="default"))
         return

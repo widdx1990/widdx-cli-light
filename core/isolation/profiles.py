@@ -147,7 +147,7 @@ def list_profiles() -> list[str]:
     return list(PROFILES.keys())
 
 
-def resolve_profile(task_type: str, features: list[str] = None) -> str:
+def resolve_profile(task_type: str, features: list[str] | None = None) -> str:
     """Resolve the best isolation profile for a task type.
 
     Args:

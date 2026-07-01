@@ -6,7 +6,11 @@ Usage:
   /gguf remove <name>
 """
 
-import struct, subprocess, shutil, json, time, hashlib
+import struct
+import subprocess
+import shutil
+import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -157,7 +161,7 @@ def read_gguf_metadata(filepath: str | Path) -> dict:
             f"Please specify the full path to a .gguf file, e.g.:\n"
             f"  /gguf import {filepath}/model.Q4_K_M.gguf"
         )
-    if not path.suffix.lower() in (".gguf", ".bin"):
+    if path.suffix.lower() not in (".gguf", ".bin"):
         import warnings
         warnings.warn(f"File extension is '{path.suffix}', expected '.gguf'. Attempting anyway...")
 
@@ -536,7 +540,6 @@ def scan_gguf_files(force_refresh: bool = False) -> list[dict]:
 
     # Limited drive scan — only real local drives on Windows
     try:
-        import string
         # C:, D:, E: are the most common — no need to scan all 26 letters
         for letter in ("C", "D", "E", "F", "G"):
             p = Path(f"{letter}:/")

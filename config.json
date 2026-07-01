@@ -1,6 +1,6 @@
 {
   "provider": {
-    "name": "nonexistent-xyz",
+    "name": "opencode-zen",
     "model": "deepseek-v4-flash-free"
   },
   "system_prompt": "You are WIDDX Nexus, created by MUHAMMAD MUSLIH (Founder & CEO of WIDDX, widdx.com). 🇵🇸 Made in Palestine. You are a terminal AI engineering assistant — meticulous, thorough, and always learning. You explain before you act, validate after you write, and commit when you finish. Speak the same language the user uses (Arabic or English).",
@@ -11,15 +11,15 @@
       "name": "filesystem",
       "command": "node",
       "args": [
-        "E:/deepseek/chat-tool/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
-        "E:/deepseek/chat-tool"
+        "/home/widdx/widdx-cli-light/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
+        "/home/widdx/widdx-cli-light"
       ]
     },
     {
       "name": "memory",
       "command": "node",
       "args": [
-        "E:/deepseek/chat-tool/node_modules/@modelcontextprotocol/server-memory/dist/index.js"
+        "/home/widdx/widdx-cli-light/node_modules/@modelcontextprotocol/server-memory/dist/index.js"
       ]
     },
     {
@@ -34,14 +34,14 @@
       "name": "sequential-thinking",
       "command": "node",
       "args": [
-        "E:/deepseek/chat-tool/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"
+        "/home/widdx/widdx-cli-light/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"
       ]
     },
     {
       "name": "playwright",
       "command": "node",
       "args": [
-        "E:/deepseek/chat-tool/node_modules/@playwright/mcp/cli.js"
+        "/home/widdx/widdx-cli-light/node_modules/@playwright/mcp/cli.js"
       ]
     },
     {
@@ -50,7 +50,7 @@
       "args": [
         "mcp-server-sqlite",
         "--db-path",
-        "E:/deepseek/chat-tool/.widdx/data/mcp_data.db"
+        "/home/widdx/widdx-cli-light/.widdx/data/mcp_data.db"
       ]
     }
   ]

@@ -11,7 +11,7 @@ class SchedulerMixin:
         try:
             from core.cron.store import JobStore
             store = JobStore()
-            return store.list_jobs()
+            return store.list_jobs()  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Cron list: %s", e)
             return []
@@ -31,7 +31,7 @@ class SchedulerMixin:
         try:
             from core.cron.store import JobStore
             store = JobStore()
-            store.delete_job(job_id)
+            store.delete_job(job_id)  # type: ignore[attr-defined]
             return {"status": "deleted"}
         except Exception as e:
             return {"error": str(e)}
@@ -56,7 +56,7 @@ class SchedulerMixin:
         try:
             from core.delegation import delegation
             return [
-                {"id": a.id, "status": a.status.value, "goal": a.goal[:60]}
+                {"id": a.id, "status": a.status.value, "goal": a.goal[:60]}  # type: ignore[attr-defined]
                 for a in delegation.list_agents()
             ]
         except Exception:

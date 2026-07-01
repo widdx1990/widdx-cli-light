@@ -19,10 +19,10 @@ Usage:
 
 from __future__ import annotations
 
-import json, time, threading
-from collections import defaultdict
+import json
+import time
+import threading
 from pathlib import Path
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Storage

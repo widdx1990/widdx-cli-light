@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+from typing import Any
 from .pattern_store import ArchitecturePattern
 
 logger = logging.getLogger("widdx.arch.compiler")
@@ -15,7 +16,7 @@ class ArchitectureCompiler:
 
         Returns {"modules": [...], "tasks": [...], "dependencies": {...}, "order": [...]}
         """
-        plan = {
+        plan: dict[str, Any] = {
             "architecture": arch.name,
             "components": arch.components,
             "communication": arch.communication,

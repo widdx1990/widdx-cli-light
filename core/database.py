@@ -228,8 +228,8 @@ class Database:
                     params.append(v)
         if updates:
             updates.append("updated_at = ?")
-            params.append(int(datetime.now().timestamp()))
-            params.append(session_id)
+            params.append(str(int(datetime.now().timestamp())))
+            params.append(str(session_id))
             with self._get_conn() as conn:
                 conn.execute(
                     f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?",

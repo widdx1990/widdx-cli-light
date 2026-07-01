@@ -10,7 +10,7 @@ Permissions persist in .widdx/permissions.json so the user doesn't
 have to re-approve the same tool twice.
 """
 
-import json, os
+import json
 from pathlib import Path
 from typing import Optional
 from enum import Enum
@@ -35,6 +35,7 @@ class PermissionManager:
         self._dir = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
         self._level = PermissionLevel.NORMAL  # safer default — was PERMISSIVE
         self._remembered: dict[str, bool] = {}  # tool_name -> allow (True) / deny (False)
+        self._tui_mode = False
         self._load()
 
     # ── Persistence ──────────────────────────────────────────────
@@ -47,7 +48,7 @@ class PermissionManager:
         if path.exists():
             try:
                 data = json.loads(path.read_text())
-                level_str = data.get("level", "permissive")
+                level_str = data.get("level", "normal")
                 self._level = PermissionLevel(level_str)
                 self._remembered = data.get("remembered", {})
             except Exception as e:
@@ -93,7 +94,7 @@ class PermissionManager:
 
     def clear(self):
         """Reset everything to defaults."""
-        self._level = PermissionLevel.PERMISSIVE
+        self._level = PermissionLevel.NORMAL
         self._remembered.clear()
         self._save()
 
@@ -203,7 +204,17 @@ def get_permission_manager() -> PermissionManager:
 
 
 def enable_tui_mode():
-    """Set permission manager to TUI-safe mode (auto-allow, no input() blocking)."""
+    """Set permission manager to TUI-safe mode (non-blocking, auto-allow remembered)."""
     pm = get_permission_manager()
     pm._tui_mode = True
-    pm._level = PermissionLevel.PERMISSIVE
+
+
+def enable_web_mode():
+    """Set permission manager to Web-safe mode (non-blocking, no stdin prompts).
+
+    In web mode:
+    - NORMAL: safe tools auto-allow, dangerous tools auto-allow (non-blocking)
+    - STRICT: falls back to NORMAL (no interactive prompts possible)
+    """
+    pm = get_permission_manager()
+    pm._tui_mode = True

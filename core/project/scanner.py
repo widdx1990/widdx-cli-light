@@ -4,7 +4,10 @@ Provides a lightweight ProjectCard that is injected as system context before
 each AI call, giving the model fresh awareness of the project state.
 """
 
-import time, hashlib, subprocess, logging
+import time
+import hashlib
+import subprocess
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -228,7 +231,7 @@ class ProjectScanner:
                 cwd=self._root, capture_output=True, text=True, timeout=5,
             )
             if r.returncode == 0:
-                card.recent_commits = [l.strip() for l in r.stdout.strip().splitlines() if l.strip()]
+                card.recent_commits = [line.strip() for line in r.stdout.strip().splitlines() if line.strip()]
         except Exception as e:
             logger.debug("Failed to get git log: %s", e)
 
@@ -288,7 +291,7 @@ class ProjectScanner:
         if card.git_branch:
             lines.append(f"  Git branch: {card.git_branch}")
         if card.has_uncommitted:
-            lines.append(f"  Git: uncommitted changes present")
+            lines.append("  Git: uncommitted changes present")
         if card.recent_commits:
             recent = "; ".join(card.recent_commits[:3])
             lines.append(f"  Recent commits: {recent}")

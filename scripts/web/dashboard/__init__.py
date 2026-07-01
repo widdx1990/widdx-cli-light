@@ -16,8 +16,6 @@ Mixin files:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("widdx.web.dashboard")
 
@@ -45,4 +43,13 @@ class Dashboard(
     Each subsystem is implemented as a separate mixin class.
     This class only contains the initialization glue — all methods
     are inherited from the mixins above.
+
+    ═══ MRO (Method Resolution Order) ═══
+    Dashboard → CoreDashboardMixin → SchedulerMixin → StorageMixin
+              → GatewayMixin → SettingsMixin → DevOpsMixin → object
+
+    All mixins MUST call super().__init__() if they define __init__.
+    Currently only CoreDashboardMixin has __init__. If you add __init__
+    to any other mixin, make sure it delegates: super().__init__()
+    ═══════════════════════════════════════
     """

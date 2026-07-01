@@ -8,47 +8,284 @@ Created by [MUHAMMAD MUSLIH](https://widdx.com) — Founder & CEO of WIDDX
 
 ## What is WIDDX?
 
-WIDDX is not a chatbot. It's a **multi-agent autonomous engineering system**.
-Give it a goal. It plans the work. It writes the code. It tests it. If something
-breaks, it fixes it. It updates the documentation. It records every decision.
-Then it keeps going until the job is done.
+WIDDX is **not a chatbot**. It is a multi-agent autonomous engineering system with **55+ integrated subsystems** organized in a **5-level execution hierarchy**. Give it a goal — it plans, writes code, tests it, fixes errors, updates documentation, records every decision, and keeps going until the job is done.
 
-- **55 integrated systems**
-- **9 agent types** (AutonomousAgent, ExpertTeam × 5, SubAgents, Delegation, Workflow)
-- **7 LLM providers** with automatic failover
-- **539 tests, 0 failures**
+```
+                     ┌─────────────────────────────────────────┐
+                     │           USER GOAL (English)            │
+                     └─────────────────────────────────────────┘
+                                      │
+              ┌───────────────────────┼───────────────────────┐
+              │                       ▼                       │
+              │         ┌─────────────────────────┐           │
+              │         │   StateManager (7 ctx)   │           │
+              │         └─────────────────────────┘           │
+              │                       │                       │
+              │         ┌─────────────┴─────────────┐         │
+              │         │    UIL Brain Pipeline      │         │
+              │         │  Analyze→Route→Plan→Exec   │         │
+              │         │  →Verify→Learn             │         │
+              │         └─────────────┬─────────────┘         │
+              │                       │                       │
+     ┌────────┴────────┐   ┌─────────┴──────────┐   ┌────────┴────────┐
+     │  L1 DIRECT_TOOL │   │  L2 SIMPLE_CHAT     │   │ L3 AUTONOMOUS  │
+     │  (stateless)    │   │  (LLM-only)         │   │ (agent loop)   │
+     └─────────────────┘   └─────────────────────┘   └────────┬────────┘
+                                                              │
+                    ┌─────────────────────────────────────────┼─────────┐
+                    │               L3 Agent Loop             │         │
+                    │  ┌─────┐  ┌──────┐  ┌──────┐  ┌──────┐ │         │
+                    │  │ LLM │→│ Tool │→│Verify│→│ Fix  │ │         │
+                    │  │ Call│  │ Exec │  │Check │  │ Loop │ │         │
+                    │  └─────┘  └──────┘  └──────┘  └──────┘ │         │
+                    └─────────────────────────────────────────┘         │
+                                                                        │
+     ┌───────────────────┐  ┌────────────────┐  ┌───────────────────┐  │
+     │ L4 EXPERT_TEAM    │  │ L5 CREATIVE    │  │ Execution State   │  │
+     │ 5 agents parallel │  │ Strategy Mode  │  │ Controller (ESC)  │  │
+     │ Orchestrator      │  │ LLM invents    │  │ L1→L5 state       │  │
+     │ Researcher+Coder  │  │ new strategies │  │ machine           │  │
+     │ Reviewer+Debugger │  │ when all known │  │ + World Model     │  │
+     └───────────────────┘  │ exhausted      │  │ + Constraint Eng  │  │
+                            └────────────────┘  │ + AIL Generator   │  │
+                                                └───────────────────┘  │
+                                                                        │
+     ┌─────────────────────────────────────────────────────────────────┐│
+     │              Cross-Cutting Systems                             ││
+     │  ┌────────┐ ┌──────┐ ┌──────┐ ┌────┐ ┌───────┐ ┌───────────┐  ││
+     │  │Memory  │ │  KG  │ │ ADR  │ │Plan │ │ DocSync│ │SelfImprove│  ││
+     │  │V4+Ver  │ │Graph │ │Decis.│ │     │ │        │ │           │  ││
+     │  └────────┘ └──────┘ └──────┘ └────┘ └───────┘ └───────────┘  ││
+     │  ┌────────┐ ┌────────┐ ┌──────┐ ┌──────┐ ┌────┐ ┌──────────┐  ││
+     │  │Influence│ │WebLearn│ │Stuck │ │PreFail│ │Self │ │Recursive │  ││
+     │  │Engine  │ │  Loop  │ │Detect│ │Sim   │ │Correct│ │SubAgents │  ││
+     │  └────────┘ └────────┘ └──────┘ └──────┘ └────┘ └──────────┘  ││
+     └─────────────────────────────────────────────────────────────────┘│
+      ┌─────────────────────────────────────────────────────────────────┘
+      ▼
+   ┌──────────────────────────────────────────────┐
+   │   7 Providers  │  Pool Failover  │  Retry    │
+   │   Sandbox      │  MCP Protocol   │  Cron     │
+   └──────────────────────────────────────────────┘
+```
 
 ---
 
-## ⚡ Install
+## 🏗️ Architecture Layers
 
-### One command
-```bash
-pip install git+https://github.com/widdx1990/widdx-cli-light.git
+### L1 — Direct Tool (Stateless)
+Fastest path. Single LLM call → tool execution → response. Used for simple commands, file reads, grep, search.
+
+### L2 — Simple Chat (LLM Only)
+Single LLM call, no tools. Used for chat, Q&A, summarization.
+
+### L3 — Autonomous Agent (Full Loop)
+```
+Goal → LLM → Tool_Exec → Verify → Fix_Loop → Done
+```
+- Agent plans steps, calls tools (15+), verifies output, fixes errors
+- Checkpoint/Resume after every step (survives restart)
+- Provider failover — switches automatically on failure
+- Atomic writes — never corrupts a file
+
+### L4 — Expert Team (5 Specialized Agents)
+| Agent | Role |
+|-------|------|
+| **Orchestrator** | Breaks goal into steps, coordinates |
+| **Researcher** | Gathers information, reads docs |
+| **Coder** | Writes implementation code |
+| **Reviewer** | Checks quality, finds issues |
+| **Debugger** | Repairs issues found by Reviewer |
+
+Researcher + Coder run in parallel for faster response.
+
+### L5 — Creative Strategy Mode
+When all known strategies are exhausted, the LLM invents new ones. Execution State Controller (ESC) manages deterministic escalation:
+
+```
+L1 → L2 → L3 → L4 → L5
+(direct) (chat) (agent) (team) (creative)
 ```
 
-### From source
+---
+
+## 🧠 Core Pipeline (UIL Brain)
+
+```
+User Input
+    │
+    ▼
+┌─────────────┐  ┌────────────────┐  ┌──────────────────┐
+│  Analyzer   │→│    Router      │→│    Planner       │
+│ Task type   │  │ L1-L5 mode    │  │ Task steps       │
+│ Confidence  │  │ Provider pick  │  │ Dependencies     │
+│ Complexity  │  │ Engine flags   │  │ Pattern match    │
+└─────────────┘  └────────────────┘  └──────────────────┘
+                      │                      │
+                      ▼                      ▼
+               ┌──────────────┐    ┌──────────────────┐
+               │  Executor    │←──│  Plan            │
+               │ Agent/Tool   │    │  Decomposition   │
+               └──────┬───────┘    └──────────────────┘
+                      │
+                      ▼
+               ┌──────────────┐
+               │  Verifier    │←── Validation Engine
+               │ Syntax check │    (syntax, runtime,
+               │ Runtime run  │     quality scoring)
+               │ Quality      │
+               └──────┬───────┘
+                      │
+               ┌──────┴──────┐
+               │             │
+            Pass?          Fail?
+               │             │
+               ▼             ▼
+           ┌────────┐  ┌──────────┐
+           │ Learn  │  │ Fix Loop │  ← SelfCorrection
+           │ Patterns│  │ (3 retry)│    (7 strategies)
+           └────────┘  └──────────┘
+```
+
+---
+
+## 🧩 55+ Integrated Systems
+
+### Execution Systems (10)
+| System | File | Description |
+|--------|------|-------------|
+| UIL Brain Pipeline | `core/uil/brain.py` | Analyze→Route→Plan→Execute→Verify→Learn |
+| StateManager | `core/state_manager.py` | 7 context sources → unified prompt |
+| AutonomyLoop | `core/autonomy_loop.py` | Execute→Verify→Fix→Continue cycle |
+| AutonomousAgent | `core/agents/agent.py` | LLM loop with tool calling, checkpoint/resume |
+| ExpertTeam | `core/agents/expert.py` | 5 agents: Orchestrator→Researcher→Coder→Reviewer→Debugger |
+| Delegation | `core/delegation.py` | Parallel sub-agents for independent tasks |
+| WorkflowEngine | `core/workflow.py` | Sequential + parallel + pipeline primitives |
+| ExecutorAdapter | `core/agents/executor_adapter.py` | Bridges UIL contracts to Execution Modes |
+| EngineArbiter | `core/engine_arbiter.py` | Routes tasks to engines (intelligence, validation, isolation) |
+| spawn_agent | `core/tools/__init__.py` | Recursive agent creation (tree depth 3) |
+
+### Execution State Controller (5)
+| System | File | Description |
+|--------|------|-------------|
+| ESC | `core/execution_state_controller.py` | Deterministic L1→L5 state machine |
+| WorldModel | `core/world_model.py` | Defines valid states, filters ESC actions |
+| ConstraintEngine | `core/engine_arbiter.py` | Removes invalid options from state space |
+| AIL Generator | `core/architecture/compiler.py` | Architecture Intelligence Layer — generates code structures |
+| AIL PatternStore | `core/architecture/pattern_store.py` | Stores/scores architecture patterns |
+
+### Intelligence Engine (6)
+| System | File | Description |
+|--------|------|-------------|
+| DecisionEngine | `core/intelligence/decision_engine.py` | Learns optimal routing from execution history |
+| Classifier | `core/intelligence/classifier.py` | TF-IDF + keyword task classification |
+| Pattern Learner | `core/intelligence/learner.py` | Identifies software patterns (MVC, REST, etc.) |
+| Embeddings | `core/intelligence/embeddings.py` | TF-IDF embedding + cosine similarity store |
+| Planner | `core/intelligence/planner.py` | Decomposes tasks into ordered steps |
+| TrustTracker | `core/engine_trust.py` | Tracks per-engine reliability over time |
+
+### Learning & Adaptation (8)
+| System | File | Description |
+|--------|------|-------------|
+| InfluenceEngine | `core/learning/pre_decision_force.py` | 3-tier: block/penalize/prefer decisions based on history |
+| PreFailureSim | `core/learning/pre_failure_sim.py` | Predicts failure probability before execution |
+| StuckDetector | `core/learning/stuck_detector.py` | 5 signal types: repetition, error loops, time, sentiment |
+| StrategyShifter | `core/learning/pre_decision_force.py` | Auto-downgrades L4→L3 or L3→L2 when stuck |
+| WebLearningLoop | `core/learning/web_learning.py` | Learns from web search results during tasks |
+| PatternExtractor | `core/learning/pattern_extractor.py` | Extracts reusable patterns from successful executions |
+| SelfCorrection | `core/self_correction.py` | 7 classified fix strategies with targeted repair |
+| SelfImprove | `core/self_improve.py` | Tracks recurring errors, injects prevention rules |
+
+### Memory & Knowledge (6)
+| System | File | Description |
+|--------|------|-------------|
+| MemoryStore V4 | `core/memory.py` | Versioned facts with confidence, deprecation lifecycle |
+| KnowledgeGraph | `core/knowledge_graph.py` | BFS graph of files→classes→functions→imports |
+| VectorMemory | `core/vector_memory.py` | Ollama embedding + cosine similarity search |
+| ADR | `core/adr.py` | Architecture Decision Records — prevents re-suggesting rejected solutions |
+| DecisionLayer | `core/decision_layer.py` | Weighted: ADR(30%) + Memory(30%) + KG(20%) + Plan(20%) |
+| RAG | `core/rag.py` | TF-IDF search across project docs |
+
+### Validation Engine (4)
+| System | File | Description |
+|--------|------|-------------|
+| Syntax Check | `core/validation/reporter.py` | Python/JS/HTML/Bash compile checks |
+| Runtime Runner | `core/validation/runner.py` | Actually executes code, catches runtime errors |
+| Quality Scorer | `core/validation/reporter.py` | Multi-signal: syntax×0.2 + runtime×0.5 + quality×0.3 |
+| VerifyLoop | `core/verification/loop.py` | Verify→Fix→Retest cycle (up to 3 retries) |
+
+### Provider System (7)
+| System | File | Description |
+|--------|------|-------------|
+| ProviderPool | `core/provider_reliability.py` | Priority-based failover across 7 providers |
+| ReliableProvider | `core/provider_reliability.py` | Wraps all providers with retry + backoff + checkpoint |
+| OpenCode Zen | `core/providers/opencode_zen.py` | Free cloud, zero config |
+| DeepSeek | `core/providers/deepseek.py` | API key, best tool-use |
+| OpenAI Compatible | `core/providers/openai_compatible.py` | Any OpenAI-API model |
+| Ollama | `core/providers/ollama.py` | Local, offline, privacy |
+| GGUF Direct | `core/providers/gguf_provider.py`, `core/providers/gguf.py` | Quantized local models |
+
+### Security & Isolation (5)
+| System | File | Description |
+|--------|------|-------------|
+| SandboxExecutor | `core/sandbox.py` | Isolated command execution (3 OS) |
+| CommandGuard | `core/guard.py` | Blocks rm -rf, fork bombs, disk formats |
+| 4 Isolation Levels | `core/isolation/` | SILENT→STRICT→NORMAL→PERMISSIVE profiles |
+| Rate Limiter | `scripts/web/server.py` | SQLite-backed, survives restarts |
+| PermissionManager | `core/permissions.py` | Multi-level permission system |
+
+### MCP & Tools (4)
+| System | File | Description |
+|--------|------|-------------|
+| MCP Client | `core/mcp/client.py` | Model Context Protocol — connects to external tools |
+| MCP Server Manager | `core/mcp/client.py` | Auto-discovers MCP servers from config |
+| 18 Built-in Tools | `core/tools/__init__.py` | read, write, edit, bash, browser, grep, search, validate... |
+| Plugin Loader | `core/plugin_loader.py` | Hot-reload third-party skill plugins |
+
+### Persistence & State (4)
+| System | File | Description |
+|--------|------|-------------|
+| CheckpointManager | `core/checkpoint.py` | Saves/restores agent state before every action |
+| TokenBudget | `core/token_budget.py` | Tracks and limits token consumption |
+| Database | `core/database.py` | SQLite session/message persistence with migrations |
+| Cron Scheduler | `core/cron/scheduler.py` | Background job scheduling with persistence |
+
+### Interfaces (4)
+| System | Description |
+|--------|-------------|
+| **Web UI** (FastAPI + WebSocket) | 80+ REST endpoints, real-time chat, dashboard, sandbox terminal |
+| **CLI** (Rich) | Terminal chat with syntax highlighting, tool output, session management |
+| **TUI** (Textual) | Full terminal UI with screens, panels, async widgets |
+| **API** (FastAPI) | REST API with Bearer token auth, WebSocket streaming |
+
+### Gateway & Communication (3)
+| System | Description |
+|--------|-------------|
+| Telegram Bot | `core/gateway/telegram.py` — Chat via Telegram |
+| Discord Bot | `core/gateway/discord.py` — Chat via Discord |
+| GatewayCore | `core/gateway/__init__.py` — Unified message routing |
+
+---
+
+## ⚡ Quick Start
+
 ```bash
+# Install
+pip install git+https://github.com/widdx1990/widdx-cli-light.git
+
+# Or from source
 git clone https://github.com/widdx1990/widdx-cli-light
 cd widdx-cli-light
-pip install -e ".[api]"
-```
+make install     # or: pip install -e ".[api]"
 
-### Requirements
-- Python 3.10+
-- Node.js (optional, for MCP browser tools)
-- No GPU needed. No Docker needed. No API key needed for free tier.
-
----
-
-## 🚀 Start
-
-```bash
+# Launch
 widdx-web       # Web UI → http://localhost:8000
 widdx           # Terminal chat (Rich CLI)
 widdx-tui       # Terminal UI (Textual)
 widdx-api       # REST API server
 ```
+
+**First run — no setup needed.** OpenCode Zen (free, no key) is the default.
 
 ---
 
@@ -56,7 +293,7 @@ widdx-api       # REST API server
 
 | Provider | Type | Key? | Tools | Streaming | Best For |
 |----------|------|------|-------|-----------|----------|
-| **OpenCode Zen** | Cloud | No (free) | ✅ | ✅ | Zero-config start |
+| **OpenCode Zen** | Cloud | Free | ✅ | ✅ | Zero-config start |
 | **DeepSeek** | Cloud | API Key | ✅ | ✅ | Best tool-use |
 | **OpenAI Compatible** | Cloud | API Key | ✅ | ✅ | Any OpenAI-API model |
 | **Ollama** | Local | No | ✅ | ❌ | Privacy, offline |
@@ -64,107 +301,11 @@ widdx-api       # REST API server
 | **GGUF Legacy** | Local | No | ❌ | ❌ | Legacy support |
 | **Free Models** | Discovery | No | ❌ | ❌ | Discovery only |
 
-**First run — no setup needed.** OpenCode Zen is the default. Just `widdx-web` and go.
-
-To switch: Settings → Provider → pick one → enter key if needed → Save.
-
-Any model without tool support still works — code extraction fallback handles it.
+Provider failover is automatic — if one fails, the pool switches to the next available.
 
 ---
 
-## 🧠 Capabilities
-
-### Autonomous Execution
-- **Single goal → complete project.** No human in the loop.
-- Agent plans, writes code, runs it, tests it, fixes errors, updates docs.
-- Survives restarts. Resumes from exact step where it stopped.
-- Provider fails? Switches to backup automatically. You never notice.
-
-### Multi-Agent System
-| Agent | When | What |
-|-------|------|------|
-| **AutonomousAgent** | Every task | Main execution loop with tool calling |
-| **ExpertTeam** | Complex projects | 5 specialized agents working sequentially |
-| ↳ Orchestrator | Plans and coordinates | Breaks goal into steps |
-| ↳ Researcher | Research tasks | Gathers information, reads docs |
-| ↳ Coder | Implementation | Writes the actual code |
-| ↳ Reviewer | Quality check | Reviews, finds issues |
-| ↳ Debugger | Fix issues | Repairs what Reviewer found |
-| **spawn_agent** | On demand | Creates sub-agents recursively (tree, depth 3) |
-| **Delegation** | Parallel work | Multiple agents running simultaneously |
-
-### Verification & Quality
-- **Syntax check** — HTML, Python, JavaScript, Bash
-- **Runtime validation** — Actually runs the code and catches errors
-- **Verify → Fix → Retest loop** — Up to 3 retries with targeted fix strategies
-- **SelfCorrection** — 7 classified error types with specific repair tactics
-- Never says "done" until the code actually works
-
-### Memory & Learning
-- **Long-term memory** — Facts, preferences, fixes, patterns (versioned, confidence-scored)
-- **Episodic memory** — Full conversation history (SQLite, survives restarts)
-- **Semantic search** — TF-IDF vector search across memories
-- **Auto-learning** — Extracts facts from conversations automatically
-- **Deprecation lifecycle** — Old memories expire, confident ones persist
-- **Memory Versioning** — Every fact has version, confidence, status, last_validated
-
-### Project Understanding
-- **KnowledgeGraph** — Builds a graph of your entire project (files → classes → functions → imports)
-- **RepoMapper** — Maps dependencies between all files
-- **Project Scanner** — Detects languages, frameworks, file counts
-- **Project Docs** — Auto-creates PLAN, DESIGN, TASKS, ROADMAP for every project
-- **DocSync** — Detects when documentation drifts from actual code
-
-### Decision Intelligence
-- **ADR (Architecture Decision Records)** — Records every decision and why. Prevents re-suggesting rejected solutions.
-- **DecisionLayer** — Weighs ADR (30%) + Memory (30%) + KnowledgeGraph (20%) + Plan (20%) before every choice
-- **SelfImprove** — Tracks recurring errors and injects prevention rules into future prompts
-
-### Reliability
-- **ProviderPool** — 7 providers with priority-based failover
-- **Retry with backoff** — 2s, 4s, 8s delays on transient failures
-- **Checkpoint/Resume** — State saved before every action. Never lose progress.
-- **Code extraction fallback** — Even if the LLM won't use tools, code gets written
-- **Atomic writes** — `.tmp` + `os.replace()` — never corrupt a file
-
-### Security
-- **Sandbox executor** — Isolated command execution (Windows/Linux/macOS)
-- **Command guard** — Blocks `rm -rf /`, fork bombs, disk formats
-- **4 isolation levels** — SILENT → STRICT → NORMAL → PERMISSIVE
-- **API authentication** — Bearer token with empty-key rejection
-- **Rate limiting** — SQLite-backed, survives restarts
-- **Request size limit** — 1MB body cap (configurable)
-- **Skill sandbox** — Third-party skills run with restricted builtins
-- **API key encryption** — XOR-obfuscated storage, never in config files
-
----
-
-## 📊 Architecture
-
-```
-User Goal
-  │
-  ▼
-ChatHandler — Builds context from 7 sources
-  │
-  ▼
-Brain Pipeline — Analyze → Route → Plan → Execute → Verify → Learn
-  │
-  ▼
-AutonomousAgent — Calls LLM → executes tools → verifies → fixes → repeats
-  │
-  ├── Tools: write, bash, browser, spawn_agent, edit, read, validate...
-  ├── Memory: versioned facts, session history
-  ├── KG: project structure graph
-  ├── ADR: architecture decisions
-  └── State: persisted across restarts
-```
-
-Full architecture docs: [`docs/architecture/`](docs/architecture/)
-
----
-
-## 🛠️ Built-in Tools (15+)
+## 🛠️ Built-in Tools (18+)
 
 | Tool | Description |
 |------|-------------|
@@ -179,6 +320,13 @@ Full architecture docs: [`docs/architecture/`](docs/architecture/)
 | `search` | Search project files by pattern |
 | `grep` | Search file contents by regex |
 | `memory_search` | Search learned facts |
+| `memory_add` | Store a new fact |
+| `finish` | Signal task completion |
+| `ask_user` | Request human input |
+| `think` | Internal reasoning log |
+| `execute_with_skills` | Run a named skill |
+| `web_search` | Google search via API |
+| `web_fetch` | Get page content |
 
 ---
 
@@ -187,12 +335,11 @@ Full architecture docs: [`docs/architecture/`](docs/architecture/)
 ```bash
 git clone https://github.com/widdx1990/widdx-cli-light
 cd widdx-cli-light
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/ -q              # 539 tests, 0 failures
-pytest tests/ -v              # Verbose output
-pytest tests/test_memory.py   # Single test file
+make install-dev   # dev dependencies
+make test          # 538 tests, 0 failures
+make lint          # ruff: 0 errors
+make typecheck     # mypy: 0 errors (171 files)
+make clean         # reset to fresh state
 
 # Architecture docs
 docs/architecture/
@@ -212,7 +359,7 @@ docs/architecture/
 | Problem | Fix |
 |---------|-----|
 | `ImportError: _ssl` | Use system Python (not venv with broken SSL) |
-| `widdx-web not found` | `pip install -e ".[api]"` first |
+| `widdx-web not found` | `pip install -e ".[api]"` |
 | `No module named fastapi` | `pip install fastapi uvicorn` |
 | `401 Unauthorized` (API) | Set `WIDDX_API_KEY` env var |
 | Provider not responding | Switch to opencode-zen (free, no key) in Settings |

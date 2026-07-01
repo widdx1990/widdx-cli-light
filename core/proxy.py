@@ -5,9 +5,10 @@ Manages a pool of working proxies, tests them periodically, and cycles
 through them when requests fail with 429 or connection errors.
 """
 
-import time, threading, logging
+import time
+import threading
+import logging
 import httpx
-import re
 from typing import Optional
 
 logger = logging.getLogger("widdx.proxy")
@@ -51,7 +52,7 @@ _PROBE_HEADERS = {
 
 def _build_probe_body() -> dict:
     """Build the probe body with the current config model."""
-    body = dict(_PROBE_BODY)
+    body: dict[str, object] = dict(_PROBE_BODY)
     body["model"] = _get_probe_model()
     return body
 
@@ -170,7 +171,7 @@ class ProxyManager:
 
     def _test_proxies(self, proxy_list: list[str]) -> list[str]:
         """Tests proxies against opencode.ai and returns only working ones."""
-        working = []
+        working: list[str] = []
         tested = 0
         for proxy_addr in proxy_list:
             if tested >= self.MAX_TEST:

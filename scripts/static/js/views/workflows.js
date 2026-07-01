@@ -22,7 +22,7 @@ async function showWorkflowsView(area) {
         const steps = w.steps || [];
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
           + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + (Array.isArray(steps) ? steps.join(' \u2192 ') : (steps || '')) + '</span></div>'
-          + '<div><button style="background:none;border:none;color:var(--success);cursor:pointer" onclick="runWorkflow(\'' + escapeHtml(id) + '\')" title="Run">\u25b6</button></div></div>';
+          + '<div><button style="background:none;border:none;color:var(--success);cursor:pointer" onclick="runWorkflow(\'' + encodeURIComponent(id) + '\')" title="Run">\u25b6</button></div></div>';
       }).join('');
     } else {
       el.innerHTML = '<span style="color:var(--text-muted)">No workflows created yet</span>';
@@ -46,11 +46,12 @@ window.createWorkflow = async function() {
   } catch(e) { showToast(e.message, 'error'); }
 };
 
-window.runWorkflow = async function(id) {
+window.runWorkflow = async function(idEncoded) {
+  const id = decodeURIComponent(idEncoded);
   try {
     showToast('Running workflow...', 'info');
     const r = await fetch('/api/workflows/' + encodeURIComponent(id) + '/run', { method:'POST' });
     const d = await r.json();
     showToast(d.status === 'completed' ? 'Workflow completed' : (d.error || 'Failed'), d.status === 'completed' ? 'success' : 'error');
-  } catch(e) { showToast(e.message, 'error'); };
+  } catch(e) { showToast(e.message, 'error'); }
 };

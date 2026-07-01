@@ -10,16 +10,14 @@ Clean architecture:
 All back-end logic lives in ``core/`` — this module only connects.
 """
 
-import sys, time, hashlib, logging
+import sys
+import time
+import hashlib
 from pathlib import Path
 
-try:
-    from core._path import ensure_project_root
-except ImportError:
-    _root = str(Path(__file__).resolve().parent.parent)
-    if _root not in sys.path:
-        sys.path.insert(0, _root)
-    from core._path import ensure_project_root
+_root = str(Path(__file__).resolve().parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 
 
 # ── Project change detection ──────────────────────────────────────
@@ -93,7 +91,8 @@ from .display import (
 from .input import CLIInput
 from .commands import CLICommands
 
-logger = logging.getLogger("widdx.cli")
+from core.log_setup import setup_logging
+logger = setup_logging("widdx.cli")
 
 SYSTEM_PROMPT = """# WIDDX Nexus — Identity
 
@@ -342,7 +341,6 @@ class CLIApp:
             if result and result.verification and result.verification.findings:
                 criticals = result.verification.criticals
                 errors = result.verification.errors
-                warnings = result.verification.warnings
                 if criticals:
                     self.show_error(
                         f"🔴 Verification: {len(criticals)} critical issue(s):\n"
@@ -470,8 +468,8 @@ class CLIApp:
         console.print(Rule(style=DIM))
         console.print(Align.center(Text.assemble(
             (" ◆ WIDDX  ", f"bold {GREEN}"),
-            (f"Session ended  ", f"{DIM}"),
-            (f"turns: {self.state['turns']}  ", f"bold white"),
+            ("Session ended  ", f"{DIM}"),
+            (f"turns: {self.state['turns']}  ", "bold white"),
             (f"cost: ${self.state['cost']:.4f}", f"bold {GOLD}"),
         )))
         console.print(Rule(style=DIM))

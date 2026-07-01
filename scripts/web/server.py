@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sqlite3
 import sys
 import time
 from typing import Any
@@ -42,13 +43,13 @@ STATIC_DIR.mkdir(exist_ok=True)
 # ── FastAPI imports (checked) ──────────────────────────────
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-    from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
     from fastapi.staticfiles import StaticFiles
 except ImportError as e:
     import sys
     print(f"\n❌ FastAPI not installed: {e}")
-    print(f"   Install: pip install widdx-nexus[api]")
-    print(f"   Or:      pip install fastapi uvicorn\n")
+    print("   Install: pip install widdx-nexus[api]")
+    print("   Or:      pip install fastapi uvicorn\n")
     sys.exit(1)
 
 logger = logging.getLogger("widdx.web")
@@ -56,7 +57,7 @@ logger = logging.getLogger("widdx.web")
 # ── Log sanitization ─────────────────────────────────────────
 from core.utils import sanitize_log
 
-def _safe_log(msg: str, *args) -> None:
+def _safe_log(msg: str, *args: Any) -> None:
     """Log a message with sensitive data redacted."""
     safe_msg = sanitize_log(msg % args if args else msg)
     logger.debug(safe_msg)
@@ -91,25 +92,54 @@ class MemoryPayload(BaseModel):
 # ── App ─────────────────────────────────────────────────────
 app = FastAPI(title="WIDDX Nexus", version="3.2.0")
 
-# ── CORS ────────────────────────────────────────────────────
+# ── CORS + Origin validation ───────────────────────────────
+# ISS-009: CSRF / Origin validation — only allow same-origin requests
+ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
+
 from fastapi.middleware.cors import CORSMiddleware
+
+@app.middleware("http")
+async def _validate_origin(request: Request, call_next):
+    """Reject requests with disallowed Origin header (CSRF protection).
+
+    Only validates non-GET, non-OPTIONS requests that include an Origin header.
+    Browser fetch/XHR requests include Origin automatically for cross-origin
+    requests; local requests from the same origin are unaffected.
+    """
+    if request.method not in ("GET", "OPTIONS"):
+        origin = request.headers.get("origin")
+        if origin and origin not in ALLOWED_ORIGINS:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=403, content={"error": "Origin not allowed"})
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ── Mount static files ──────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# ── Favicon ─────────────────────────────────────────────────
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    p = STATIC_DIR / "favicon.ico"
+    if p.exists():
+        return FileResponse(p)
+    return Response(status_code=204)
 
 # ── Lazy handlers ───────────────────────────────────────────
 _chat_handler: Any = None
 _sandbox_handler: Any = None
 
 
-def get_chat():
+def get_chat() -> Any:
     global _chat_handler
     if _chat_handler is None:
         from scripts.web.chat import ChatHandler
@@ -117,14 +147,14 @@ def get_chat():
     return _chat_handler
 
 
-def refresh_chat():
+def refresh_chat() -> Any:
     """Force recreation of the chat handler (e.g. after settings change)."""
     global _chat_handler
     _chat_handler = None
     return get_chat()
 
 
-def get_sandbox():
+def get_sandbox() -> Any:
     global _sandbox_handler
     if _sandbox_handler is None:
         from scripts.web.sandbox import SandboxHandler
@@ -135,7 +165,7 @@ def get_sandbox():
 # ── Routes ──────────────────────────────────────────────────
 
 @app.post("/api/new-session")
-async def api_new_session():
+async def api_new_session() -> dict:
     """Start a new chat session."""
     chat = get_chat()
     sid = chat.new_session()
@@ -143,24 +173,23 @@ async def api_new_session():
 
 
 @app.get("/")
-async def index():
+async def index() -> Response:
     """Serve the main Web UI page (no-cache)."""
     html_path = STATIC_DIR / "index.html"
     if html_path.exists():
-        from fastapi.responses import Response
         content = html_path.read_bytes()
         return Response(content=content, media_type="text/html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return HTMLResponse("<h1>WIDDX Nexus Web UI</h1><p>Build index.html first.</p>")
 
 
 @app.get("/api/health")
-async def health():
+async def health() -> dict:
     """Health check endpoint — lightweight, no side effects."""
     return {"status": "ok", "version": "3.2.0"}
 
 
 @app.get("/api/status")
-async def status():
+async def status() -> dict:
     """System status endpoint."""
     chat = get_chat()
     sandbox = get_sandbox()
@@ -175,7 +204,7 @@ async def status():
 
 
 @app.get("/api/tools")
-async def api_tools():
+async def api_tools() -> dict:
     """List available tools for slash commands and UI."""
     try:
         chat = get_chat()
@@ -192,7 +221,7 @@ async def api_tools():
 
 
 @app.get("/api/project/session")
-async def api_project_session():
+async def api_project_session() -> dict:
     """Load current project session from SQLite database."""
     try:
         from core.database import get_db
@@ -238,10 +267,15 @@ async def api_branches():
 
 
 @app.post("/api/chat")
-async def chat_message(payload: ChatPayload):
+async def chat_message(payload: ChatPayload, request: Request):
     """Send a chat message (non-blocking)."""
     message = payload.message
     history = payload.history
+    # Rate limiting
+    from fastapi.responses import JSONResponse as _JR
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        return _JR(status_code=429, content={"content": "", "error": "Rate limited — 30 req/min max"})
 
     chat = get_chat()
     loop = asyncio.get_running_loop()
@@ -255,11 +289,179 @@ async def chat_message(payload: ChatPayload):
         return {"content": "", "error": "Request timed out after 10 minutes. Please try a simpler request."}
 
 
+# ── Pydantic models for File Operations (Phase 2) ────────────
+class FileCreatePayload(BaseModel):
+    path: str = Field(..., min_length=1, max_length=10000)
+    is_directory: bool = Field(default=False)
+    content: str = Field(default="", max_length=5000000)
+
+class FileRenamePayload(BaseModel):
+    path: str = Field(..., min_length=1, max_length=10000)
+    new_name: str = Field(..., min_length=1, max_length=1000)
+
+
+@app.get("/api/sandbox/file")
+async def sandbox_file_read(path: str = ""):
+    """Read file content."""
+    try:
+        if not path:
+            return {"error": "Path is required"}
+        file_path = Path(path).resolve()
+        if not file_path.exists() or not file_path.is_file():
+            return {"error": "File not found"}
+        # Security: prevent reading outside project
+        project_root = Path.cwd().resolve()
+        fp_str = str(file_path)
+        pr_str = str(project_root)
+        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
+            return {"error": "Access denied"}
+        content = file_path.read_text(encoding="utf-8")
+        size = file_path.stat().st_size
+        return {"content": content, "size": size, "path": str(file_path)}
+    except UnicodeDecodeError:
+        return {"error": "Binary file — cannot read as text"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/sandbox/file")
+async def sandbox_file_write(payload: FileCreatePayload):
+    """Write file content."""
+    try:
+        file_path = Path(payload.path).resolve()
+        project_root = Path.cwd().resolve()
+        fp_str = str(file_path)
+        pr_str = str(project_root)
+        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
+            return {"error": "Access denied"}
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(payload.content, encoding="utf-8")
+        return {"status": "ok", "path": str(file_path)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.delete("/api/sandbox/file")
+async def sandbox_file_delete(path: str = ""):
+    """Delete a file or directory."""
+    try:
+        if not path:
+            return {"error": "Path is required"}
+        file_path = Path(path).resolve()
+        project_root = Path.cwd().resolve()
+        fp_str = str(file_path)
+        pr_str = str(project_root)
+        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
+            return {"error": "Access denied"}
+        if file_path.is_file():
+            file_path.unlink()
+            return {"status": "ok", "deleted": str(file_path)}
+        elif file_path.is_dir():
+            import shutil
+            shutil.rmtree(file_path)
+            return {"status": "ok", "deleted": str(file_path)}
+        return {"error": "Path not found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/sandbox/file/create")
+async def sandbox_file_create(payload: FileCreatePayload):
+    """Create a new file or directory."""
+    try:
+        file_path = Path(payload.path).resolve()
+        project_root = Path.cwd().resolve()
+        fp_str = str(file_path)
+        pr_str = str(project_root)
+        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
+            return {"error": "Access denied"}
+        if payload.is_directory:
+            file_path.mkdir(parents=True, exist_ok=True)
+            return {"status": "ok", "created": str(file_path), "type": "directory"}
+        else:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(payload.content, encoding="utf-8")
+            return {"status": "ok", "created": str(file_path), "type": "file"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/sandbox/file/rename")
+async def sandbox_file_rename(payload: FileRenamePayload):
+    """Rename a file or directory."""
+    try:
+        old_path = Path(payload.path).resolve()
+        project_root = Path.cwd().resolve()
+        fp_str = str(old_path)
+        pr_str = str(project_root)
+        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
+            return {"error": "Access denied"}
+        new_path = old_path.parent / payload.new_name
+        old_path.rename(new_path)
+        return {"status": "ok", "old": str(old_path), "new": str(new_path)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/sandbox/processes")
+async def sandbox_processes():
+    """List running processes (cross-platform)."""
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=5)
+            processes = []
+            for line in result.stdout.strip().split("\n"):
+                parts = [p.strip(' \"') for p in line.split(",")]
+                if len(parts) >= 3:
+                    processes.append({
+                        "pid": parts[1],
+                        "name": parts[0],
+                        "mem": parts[3] if len(parts) > 3 else "",
+                    })
+        else:
+            result = subprocess.run(["ps", "aux", "--sort=-%mem"], capture_output=True, text=True, timeout=5)
+            processes = []
+            lines = result.stdout.strip().split("\n")
+            for line in lines[1:31]:  # top 30
+                parts = line.split(None, 10)
+                if len(parts) >= 11:
+                    processes.append({
+                        "pid": parts[1],
+                        "user": parts[0],
+                        "cpu": parts[2],
+                        "mem": parts[3],
+                        "command": parts[10][:60],
+                    })
+        return {"processes": processes, "count": len(processes)}
+    except Exception as e:
+        return {"processes": [], "error": str(e)}
+
+
+@app.post("/api/sandbox/processes/{pid}/kill")
+async def sandbox_process_kill(pid: str):
+    """Kill a process by PID."""
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, text=True, timeout=5)
+        else:
+            subprocess.run(["kill", "-9", str(pid)], capture_output=True, text=True, timeout=5)
+        return {"status": "ok", "killed": pid}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/api/sandbox/exec")
-async def sandbox_exec(payload: SandboxPayload):
+async def sandbox_exec(payload: SandboxPayload, request: Request):
     """Execute a shell command in the sandbox."""
     command = payload.command
     timeout = payload.timeout
+    # Rate limiting
+    from fastapi.responses import JSONResponse as _JR2
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        return _JR2(status_code=429, content={"stdout": "", "stderr": "Rate limited — 30 req/min max", "exit_code": -1, "mode": "auto"})
 
     sandbox = get_sandbox()
     result = sandbox.execute(command, timeout)
@@ -285,7 +487,7 @@ async def sandbox_screenshot():
 # ── Dashboard ────────────────────────────────────────────
 _dashboard: Any = None
 
-def get_dashboard():
+def get_dashboard() -> Any:
     global _dashboard
     if _dashboard is None:
         from scripts.web.dashboard import Dashboard
@@ -294,59 +496,77 @@ def get_dashboard():
 
 
 @app.get("/api/dashboard")
-async def api_dashboard():
+async def api_dashboard() -> dict:
     """Full system dashboard."""
     return get_dashboard().computer_info()
 
 
 @app.get("/api/dashboard/cron")
-async def api_cron():
-    return get_dashboard().cron_jobs()
+async def api_cron() -> list[dict]:
+    jobs = get_dashboard().cron_jobs()
+    if not isinstance(jobs, list):
+        return []
+    return jobs
 
 
 @app.post("/api/dashboard/cron")
-async def api_cron_create(request: Request):
+async def api_cron_create(request: Request) -> dict:
     data = await request.json()
     return get_dashboard().cron_create(data.get("schedule", ""), data.get("prompt", ""))
 
 
 @app.delete("/api/dashboard/cron/{job_id}")
-async def api_cron_delete(job_id: str):
+async def api_cron_delete(job_id: str) -> dict:
     return get_dashboard().cron_delete(job_id)
 
 
 @app.get("/api/dashboard/background")
-async def api_background():
-    return get_dashboard().background_tasks()
+async def api_background() -> list[dict]:
+    tasks = get_dashboard().background_tasks()
+    if not isinstance(tasks, list):
+        return []
+    return tasks
 
 
 @app.get("/api/dashboard/agents")
-async def api_agents():
-    return get_dashboard().sub_agents()
+async def api_agents() -> list[dict]:
+    agents = get_dashboard().sub_agents()
+    if not isinstance(agents, list):
+        return []
+    return agents
 
 
 @app.get("/api/dashboard/memories")
-async def api_memories():
-    return get_dashboard().memories()
+async def api_memories() -> list[dict]:
+    mems = get_dashboard().memories()
+    if not isinstance(mems, list):
+        return []
+    return mems
 
 
 @app.get("/api/dashboard/sessions")
-async def api_sessions():
-    return get_dashboard().sessions()
+async def api_sessions() -> list[dict]:
+    sessions = get_dashboard().sessions()
+    if not isinstance(sessions, list):
+        return []
+    return sessions
 
 
 @app.get("/api/dashboard/activity")
-async def api_activity(limit: int = 50):
-    return get_dashboard().activity_feed(limit)
+async def api_activity(limit: int = 50) -> list[dict]:
+    feed = get_dashboard().activity_feed(limit)
+    if not isinstance(feed, list):
+        return []
+    return feed
 
 
 @app.get("/api/dashboard/gateway")
-async def api_gateway():
+async def api_gateway() -> dict:
     return get_dashboard().gateway_status()
 
 
 @app.post("/api/gateway/start")
-async def api_gateway_start(request: Request):
+async def api_gateway_start(request: Request) -> dict:
     """Start a gateway platform (telegram/discord/sms) with credentials."""
     data = await request.json()
     platform = data.get("platform", "")
@@ -374,7 +594,7 @@ async def api_gateway_start(request: Request):
 
 
 @app.post("/api/gateway/stop")
-async def api_gateway_stop(request: Request):
+async def api_gateway_stop(request: Request) -> dict:
     """Stop a gateway platform."""
     data = await request.json()
     platform = data.get("platform", "")
@@ -390,12 +610,12 @@ async def api_gateway_stop(request: Request):
 # ── Settings ────────────────────────────────────────────
 
 @app.get("/api/settings")
-async def api_settings():
+async def api_settings() -> dict:
     return get_dashboard().get_settings()
 
 
 @app.post("/api/settings")
-async def api_settings_update(payload: SettingsPayload):
+async def api_settings_update(payload: SettingsPayload) -> dict:
     data = payload.model_dump(exclude_none=True)
     result = get_dashboard().update_settings(data)
     if result.get("status") == "ok":
@@ -404,9 +624,12 @@ async def api_settings_update(payload: SettingsPayload):
             from core.activity import add as add_event
             provider = data.get("provider", {})
             changed = []
-            if "model" in provider: changed.append(f"model={provider['model']}")
-            if "name" in provider: changed.append(f"provider={provider['name']}")
-            if "temperature" in data: changed.append(f"temp={data['temperature']}")
+            if "model" in provider:
+                changed.append(f"model={provider['model']}")
+            if "name" in provider:
+                changed.append(f"provider={provider['name']}")
+            if "temperature" in data:
+                changed.append(f"temp={data['temperature']}")
             add_event("settings_change", detail=", ".join(changed) or "settings updated",
                       icon="fa-sliders", agent="system", status="done")
         except Exception:
@@ -584,7 +807,7 @@ async def api_git_undo():
 
 @app.get("/api/token-budget")
 async def api_token_budget():
-    return get_dashboard().token_budget_status()
+    return get_dashboard().token_budget()
 
 
 @app.post("/api/token-budget/reset")
@@ -680,14 +903,13 @@ async def api_version():
 # as the rest of the project's persistence layer.
 _RATELIMIT_MAX = 30   # max requests
 _RATELIMIT_WINDOW = 60   # per N seconds
-_RL_DB: "sqlite3.Connection | None" = None
+_RL_DB: sqlite3.Connection | None = None
 
 
-def _rl_db() -> "sqlite3.Connection":
+def _rl_db() -> sqlite3.Connection:
     """Return the rate-limiter SQLite connection (lazy init)."""
     global _RL_DB
     if _RL_DB is None:
-        import sqlite3
         db_path = Path.home() / ".widdx" / "ratelimit.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         _RL_DB = sqlite3.connect(str(db_path))
@@ -709,12 +931,18 @@ def _check_rate_limit(client_ip: str) -> bool:
 
     Uses SQLite-backed storage so rate-limit state survives server
     restarts — prevents the restart-bypass attack vector (ISS-005).
+
+    Only deletes expired entries for the requesting client to avoid
+    affecting other clients' rate-limit state (ISS-014).
     """
     now = time.time()
     cutoff = now - _RATELIMIT_WINDOW
     db = _rl_db()
-    # Purge expired entries for ALL clients
-    db.execute("DELETE FROM ratelimit WHERE ts < ?", (cutoff,))
+    # Purge only this client's expired entries — not ALL clients
+    db.execute(
+        "DELETE FROM ratelimit WHERE client_ip = ? AND ts < ?",
+        (client_ip, cutoff),
+    )
     # Count recent requests from this client
     row = db.execute(
         "SELECT COUNT(*) FROM ratelimit WHERE client_ip = ? AND ts >= ?",
@@ -758,18 +986,40 @@ async def websocket_chat(websocket: WebSocket):
 
     Receives:  {"message": "...", "history": [...]}
     Sends:     {"type": "text|tool|done|error", "data": "..."}
+    Supports cancel: client sends {"type": "cancel"}
     """
     await websocket.accept()
     logger.info("WebSocket connected")
     loop = asyncio.get_running_loop()
+    stream_task: asyncio.Task | None = None
+    cancel_flag = False
 
     try:
         while True:
-            # Wait for the next message from the client (blocks until data arrives)
             data = await websocket.receive_text()
             payload = json.loads(data)
+
+            # Handle cancellation
+            if payload.get("type") == "cancel":
+                cancel_flag = True
+                if stream_task and not stream_task.done():
+                    stream_task.cancel()
+                await websocket.send_json({"type": "cancelled", "data": ""})
+                await websocket.send_json({"type": "done", "data": ""})
+                stream_task = None
+                continue
+
             message = payload.get("message", "")
+            # WebSocket message validation — prevent abuse
+            if len(message) > 100000:
+                await websocket.send_json({"type": "error", "data": "Message too long (max 100,000 characters)"})
+                await websocket.send_json({"type": "done", "data": ""})
+                continue
             history = payload.get("history", [])
+            # Limit history size
+            if len(history) > 1000:
+                history = history[-1000:]
+            cancel_flag = False
 
             chat = get_chat()
             event_queue: asyncio.Queue = asyncio.Queue()
@@ -778,13 +1028,15 @@ async def websocket_chat(websocket: WebSocket):
                 """Run chat.chat_stream() in executor, feeding events into the queue."""
                 def _sync_run():
                     for event in chat.chat_stream(message, history):
+                        if cancel_flag:
+                            break
                         loop.call_soon_threadsafe(event_queue.put_nowait, event)
                 await loop.run_in_executor(None, _sync_run)
 
             stream_task = asyncio.create_task(_stream_runner())
 
             try:
-                while True:
+                while not cancel_flag:
                     event = await asyncio.wait_for(event_queue.get(), timeout=600.0)
                     if event["type"] == "done":
                         await websocket.send_json({"type": "done", "data": ""})
@@ -797,17 +1049,16 @@ async def websocket_chat(websocket: WebSocket):
                 })
                 await websocket.send_json({"type": "done", "data": ""})
             finally:
-                if not stream_task.done():
+                if stream_task and not stream_task.done():
                     stream_task.cancel()
+                stream_task = None
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
+        if stream_task and not stream_task.done():
+            stream_task.cancel()
     except Exception as e:
         logger.error("WebSocket error: %s", e)
-        try:
-            await websocket.send_json({"type": "error", "data": str(e)})
-        except Exception:
-            pass
 
 
 @app.websocket("/ws/events")
@@ -850,7 +1101,7 @@ async def websocket_events(websocket: WebSocket):
 
 # ── Main ────────────────────────────────────────────────────
 
-def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
+def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False) -> None:
     """Run the Web UI server."""
     import uvicorn
     logger.info("WIDDX Nexus Web UI: http://%s:%d", host, port)

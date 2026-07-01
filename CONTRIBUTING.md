@@ -50,7 +50,7 @@ See `docs/architecture/` for complete documentation:
 ## Project Structure
 
 ```
-chat-tool/
+widdx-nexus/
 ├── core/          ← Engine (55 modules)
 ├── scripts/       ← Web server + static
 ├── cli/           ← CLI interface
@@ -67,4 +67,3 @@ chat-tool/
 - `Perf:` — Performance improvements
 - `Refactor:` — Code restructuring
 
-Co-Authored-By: Claude <noreply@anthropic.com>

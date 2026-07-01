@@ -5,8 +5,9 @@ automatic validation after file writes/edits and after `bash` commands
 that create/modify known source files.
 """
 
-import json, uuid, time
-from datetime import datetime
+import json
+import uuid
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -141,7 +142,7 @@ class AutonomousAgent:
             return event
         import re
         _sur = re.compile(r'[\ud800-\udfff]')
-        cleaned = {}
+        cleaned: dict[str, Any] = {}
         for k, v in event.items():
             if isinstance(v, str):
                 cleaned[k] = _sur.sub('\ufffd', v)
@@ -297,7 +298,7 @@ class AutonomousAgent:
         from core.task_state import get_task_state
         ts = get_task_state()
 
-        self._consumed_step_indices = set()
+        self._consumed_step_indices: set[int] = set()
         resume = False
         start_iteration = 0
         max_iter = self.cfg.get("agent_max_iterations", 25)
@@ -707,6 +708,8 @@ class AutonomousAgent:
             self._emit({"type": "tool_result", "data": {"name": tc.name, "result": result[:500]}})
             # ExecutionIntelligence: evaluate step quality
             try:
+                from core.execution_intelligence import get_execution_intelligence
+                ei = get_execution_intelligence()
                 ei.evaluate_step(len(self.steps) + 1, result, tc.name,
                                  tc.args if hasattr(tc, 'args') else {})
             except Exception:
@@ -765,7 +768,7 @@ class AutonomousAgent:
             or ``None`` if everything passed.
         """
         from pathlib import Path
-        import platform as _plat, subprocess as _sp
+        import subprocess as _sp
 
         root = Path(".").resolve()
         errors = []
@@ -882,7 +885,8 @@ _agent_results: dict[str, dict] = {}
 def spawn_sub_agent(task: str, role: str = "worker", provider=None, tool_defs=None,
                     cfg=None, parent_id: str = "", depth: int = 0) -> dict:
     """Spawn a sub-agent that runs autonomously. Sub-agents can spawn further sub-agents."""
-    import uuid, threading
+    import uuid
+    import threading
 
     if depth >= _MAX_DEPTH:
         return {"agent_id": "", "role": role, "summary": "Max depth reached", "success": False}
@@ -923,7 +927,7 @@ Focus only on your task. Use tools. You can spawn sub-agents via spawn_agent too
         tool_defs = list(tool_defs) + [spawn_def]
 
     state = {"model": getattr(provider, "model", ""), "turns": 0, "cost": 0.0}
-    result_container = {}
+    result_container: dict[str, Any] = {}
 
     def _run():
         try:

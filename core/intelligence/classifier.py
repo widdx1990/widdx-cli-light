@@ -12,9 +12,8 @@ with LLM as optional enrichment.
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
-from .embeddings import TFIDFEmbedder, get_embedder, embed_text
+from .embeddings import TFIDFEmbedder, get_embedder
 
 logger = logging.getLogger("widdx.intelligence.classifier")
 
@@ -440,6 +439,8 @@ class LocalClassifier:
     def _classify_by_embedding(self, text: str) -> ClassificationResult | None:
         """Try to classify by embedding similarity against labeled examples."""
         try:
+            if self._embedder is None:
+                return None
             results = self._embedder.search(text, top_k=3, min_score=0.05)
         except Exception:
             return None
@@ -460,7 +461,7 @@ class LocalClassifier:
             return None
 
         # Best task type by weighted vote
-        best_type = max(votes, key=votes.get)
+        best_type = max(votes, key=lambda k: votes[k])
         best_score = votes[best_type] / sum(votes.values()) if sum(votes.values()) > 0 else 0
         confidence = min(0.9, best_score * 2.0)  # scale up but cap at 0.9
 

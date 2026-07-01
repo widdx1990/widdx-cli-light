@@ -6,25 +6,18 @@ project root to sys.path before importing the core application logic.
 
 import sys
 from pathlib import Path
-try:
-    from core._path import ensure_project_root
-except ImportError:
-    _root = str(Path(__file__).resolve().parent.parent)
-    if _root not in sys.path:
-        sys.path.insert(0, _root)
-    from core._path import ensure_project_root
-import json
+_root = str(Path(__file__).resolve().parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 import time
 import logging
 import asyncio
 import os
-import secrets
 from typing import Optional
 from contextlib import asynccontextmanager
-from collections import OrderedDict
 
 try:
-    from fastapi import FastAPI, HTTPException, Query, Depends
+    from fastapi import FastAPI, HTTPException, Depends
     from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, Field
@@ -95,18 +88,17 @@ def rate_limit(credentials: Optional[HTTPAuthorizationCredentials] = Depends(sec
     client_id = credentials.credentials if credentials else "anonymous"
     if not _rate_limiter.check(client_id):
         raise HTTPException(status_code=429, detail="Rate limit exceeded.")
-from core import config, tools
+from core import tools
 from core.config.settings import load as load_config, save as save_config
 from core.providers.providers import (
-    create_provider, get_available_models, resolve_model,
-    fetch_free_models, fetch_ollama_models,
+    create_provider, get_available_models,
 )
 from core.memory import MemoryStore
 from core.memory_learner import MemoryLearner
 from core.project import state as project_state
 from core.project.scanner import ProjectScanner
 from core.project_tracker import ensure_docs, load_docs, update_doc, build_context_block
-from core.auto_setup import detect_project_deps, learn_project
+from core.auto_setup import detect_project_deps
 from core.skills import skill_manager
 from core.mcp.client import get_mcp_manager
 from core.chat import run_stream_turn
@@ -160,7 +152,7 @@ async def lifespan(app: FastAPI):
     try:
         state.mcp_mgr.load_from_config(state.cfg)
         state.mcp_mgr.start()
-        logger.info("MCP manager started — %d servers", len(state.mcp_mgr.servers))
+        logger.info("MCP manager started — %d servers", len(state.mcp_mgr.servers))  # type: ignore[attr-defined,unused-ignore]
     except Exception as e:
         logger.warning("MCP manager start skipped: %s", e)
     ensure_docs(Path.cwd().resolve())

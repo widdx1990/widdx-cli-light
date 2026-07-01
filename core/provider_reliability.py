@@ -20,7 +20,7 @@ import time
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 import httpx
 from core.providers.base import Provider
 
@@ -232,7 +232,6 @@ class CheckpointManager:
 
 def classify_exception(e: Exception) -> Exception:
     """Classify exception as RateLimitError, ProviderAuthError, transient network error, or general error."""
-    import httpx
     if isinstance(e, (RateLimitError, ProviderAuthError)):
         return e
     if isinstance(e, httpx.HTTPStatusError):
@@ -261,10 +260,18 @@ class ReliableProvider(Provider):
         from core.config.settings import load as _load_cfg
         cfg = _load_cfg()
         p_cfg = cfg.get("provider", {})
+        p_name = name or p_cfg.get("name", "opencode-zen")
+        _default_urls = {
+            "opencode-zen": "https://opencode.ai/zen/v1",
+            "opencode": "https://opencode.ai/zen/v1",
+            "ollama": "http://localhost:11434",
+            "deepseek": "https://api.deepseek.com",
+            "openai": "https://api.openai.com/v1",
+        }
         super().__init__(
-            name=name or p_cfg.get("name", "opencode-zen"),
+            name=p_name,
             model=model or p_cfg.get("model", "deepseek-v4-flash-free"),
-            base_url=base_url or p_cfg.get("base_url", ""),
+            base_url=base_url or p_cfg.get("base_url") or _default_urls.get(p_name, "https://opencode.ai/zen/v1"),
             api_key=api_key or p_cfg.get("api_key", ""),
         )
         self._active_name = self.name
@@ -285,7 +292,7 @@ class ReliableProvider(Provider):
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "arguments", getattr(tc, "args", {}))
             cid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "")
-            tcs.append(ToolCall(name, args, cid))
+            tcs.append(ToolCall(name or "", args or {}, cid or ""))
         return res.content, tcs
 
     def stream(self, messages: list, tool_defs: list, temperature: float = 0.7):

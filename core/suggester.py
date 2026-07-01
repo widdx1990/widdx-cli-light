@@ -1,6 +1,9 @@
 """Proactive Suggester — analyze project state and suggest next actions."""
 
-import time, subprocess, re, logging
+import time
+import subprocess
+import re
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from .memory import MemoryStore
@@ -58,7 +61,7 @@ class ProjectSuggester:
                 ["git", "status", "--porcelain"],
                 cwd=self._root, capture_output=True, text=True, timeout=5,
             )
-            lines = [l for l in r.stdout.splitlines() if l.strip()]
+            lines = [line for line in r.stdout.splitlines() if line.strip()]
             if lines:
                 count = len(lines)
                 return Suggestion(
@@ -104,7 +107,7 @@ class ProjectSuggester:
                 ["git", "log", "--oneline", "-5", "--since=24.hours"],
                 cwd=self._root, capture_output=True, text=True, timeout=5,
             )
-            commits = [l for l in r.stdout.strip().splitlines() if l.strip()]
+            commits = [line for line in r.stdout.strip().splitlines() if line.strip()]
             if len(commits) >= 3:
                 return Suggestion(
                     icon="🔄",

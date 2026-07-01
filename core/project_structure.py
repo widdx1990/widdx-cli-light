@@ -10,8 +10,8 @@ warnings.warn(
     stacklevel=2,
 )
 
-from pathlib import Path
-from typing import Optional
+from pathlib import Path  # noqa: E402
+from typing import Optional  # noqa: E402
 
 
 class FileNode:
@@ -95,10 +95,11 @@ class ProjectStructureAnalyzer:
 
     def get_structure_summary(self, max_depth: int = MAX_DEPTH) -> str:
         """Get a text summary of the project structure (DEPRECATED)."""
-        if self.structure is None:
-            self.analyze(max_depth)
+        root = self.structure
+        if root is None:
+            root = self.analyze(max_depth)
         lines = ["<project_structure>", ""]
-        self._append_tree(lines, self.structure, "", max_depth)
+        self._append_tree(lines, root, "", max_depth)
         lines.extend(["", "</project_structure>"])
         return "\n".join(lines)
 
@@ -116,10 +117,11 @@ class ProjectStructureAnalyzer:
 
     def get_file_extensions(self) -> dict:
         """Count file extensions in the project (DEPRECATED)."""
-        if self.structure is None:
-            self.analyze()
+        root = self.structure
+        if root is None:
+            root = self.analyze()
         extensions: dict = {}
-        self._count_extensions(self.structure, extensions)
+        self._count_extensions(root, extensions)
         return extensions
 
     def _count_extensions(self, node: FileNode, extensions: dict):
@@ -130,10 +132,11 @@ class ProjectStructureAnalyzer:
 
     def search_files(self, pattern: str) -> list:
         """Search for files matching a pattern (DEPRECATED)."""
-        if self.structure is None:
-            self.analyze()
+        root = self.structure
+        if root is None:
+            root = self.analyze()
         results: list = []
-        self._search_files(self.structure, pattern.lower(), results)
+        self._search_files(root, pattern.lower(), results)
         return results
 
     def _search_files(self, node: FileNode, pattern: str, results: list):

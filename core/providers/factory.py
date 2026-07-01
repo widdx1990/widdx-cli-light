@@ -1,9 +1,7 @@
 """Provider factory — create providers, discover models."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Optional
 
 from .base import Provider
 from .ollama import OllamaProvider
@@ -11,9 +9,8 @@ from .openai_compatible import OpenAICompatibleProvider
 from .opencode_zen import OpenCodeZenProvider
 from .deepseek import DeepSeekProvider
 from .gguf_provider import GGUFDirectProvider, _DEFAULT_BASE_URLS, _DEFAULT_MODELS
-from .free_models import fetch_free_models, fetch_ollama_models, set_fallback_model, _DEFAULT_FALLBACK_MODEL
+from .free_models import fetch_free_models, fetch_ollama_models, set_fallback_model
 from ..config.keychain import get_key
-from ..proxy import proxy_manager, ZEN_BASE
 
 import logging as _logging
 logger = _logging.getLogger("widdx.providers")

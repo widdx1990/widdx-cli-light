@@ -3,15 +3,10 @@
 CLI-specific additions only — no duplication with `core.ui_visual`.
 """
 
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 from rich.style import Style
-from rich.box import ROUNDED, MINIMAL
 
 from core.ui_visual import (
-    CYAN, DIM, DIM_STYLE, GOLD, GOLD_STYLE, GREEN, ORANGE, PURPLE, RED,
-    ROLE_META_ASCII, Style, TOOL,
+    CYAN, DIM, GOLD, GREEN, ORANGE, PURPLE, RED,
 )
 
 

@@ -12,7 +12,6 @@ Patterns are loaded at startup and can be extended via learner.py.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -644,9 +643,9 @@ PATTERNS["system_monitoring"] = SoftwarePattern(
 # PATTERN LOOKUP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def find_patterns(task_type: str, features: list[str] = None,
-                  languages: list[str] = None,
-                  complexity: int = None) -> list[SoftwarePattern]:
+def find_patterns(task_type: str, features: list[str] | None = None,
+                  languages: list[str] | None = None,
+                  complexity: int | None = None) -> list[SoftwarePattern]:
     """Find matching patterns for a given task type and features.
 
     Args:

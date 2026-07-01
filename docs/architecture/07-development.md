@@ -2,7 +2,7 @@
 
 ## Project Structure
 ```
-chat-tool/
+widdx-nexus/
 ├── core/               ← Engine (55 modules)
 │   ├── uil/            ← Brain pipeline
 │   ├── agents/         ← AutonomousAgent, ExpertTeam
@@ -65,7 +65,7 @@ logger.info("Something happened: %s", detail)
 ## Running
 ```bash
 # Development
-cd E:\deepseek\chat-tool
+cd &lt;project-dir&gt;
 pip install -e .
 widdx-web                    # → http://127.0.0.1:8000
 

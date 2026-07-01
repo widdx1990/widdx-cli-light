@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 logger = logging.getLogger("widdx.verify_loop")
@@ -77,7 +77,7 @@ class VerifyLoop:
 
         for i in range(1, self._max_retries + 1):
             iterations = i
-            report = verifier.verify(output, task_type)
+            report = verifier.verify(output, task_type)  # type: ignore[arg-type]
             final_report = report
 
             if report.passed_all:

@@ -20,10 +20,12 @@ Configuration:
     /vision model <model_name>
 """
 
-import os, base64, json, logging
+import os
+import base64
+import logging
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("widdx.vision")
 
@@ -45,7 +47,7 @@ class VisionMode:
 
 
 # ── Global config (set via /vision command) ───────────────────
-_vision_config = {
+_vision_config: dict[str, Any] = {
     "mode": VisionMode.PIPELINE,
     "ollama_model": "llava:7b",       # أو deepseek-vl2, qwen-vl
     "ollama_url": "http://localhost:11434",
@@ -105,8 +107,8 @@ def _ollama_describe(image_path: str) -> VisionResult:
 # ═══════════════════════════════════════════════════════════════
 
 # Cache for the loaded model (load once)
-_pipeline_model = None
-_pipeline_processor = None
+_pipeline_model: Any = None
+_pipeline_processor: Any = None
 
 
 def _load_pipeline_model():
@@ -126,7 +128,8 @@ def _load_pipeline_model():
         import torch
     except ImportError:
         logger.warning("HuggingFace Transformers غير مثبت. جارِ التثبيت...")
-        import subprocess, sys
+        import subprocess
+        import sys
         try:
             subprocess.check_call(
                 [sys.executable, "-m", "pip", "install", "transformers", "torch", "accelerate", "-q"],
@@ -232,31 +235,13 @@ def _fallback_describe(image_path: str) -> VisionResult:
     Extracts: dimensions, colors, brightness, file type, size.
     This is much weaker than a real vision model but works without any ML deps.
     """
-    model_name = _vision_config["pipeline_model"]
-
     try:
         from PIL import Image
-        import struct
 
         img = Image.open(image_path)
         w, h = img.size
         fmt = img.format or "Unknown"
         fsize = os.path.getsize(image_path)
-        mode = img.mode
-
-        # Convert to RGB for analysis
-        if mode != "RGB":
-            img = img.convert("RGB")
-
-        # Sample dominant colors (simple 4-quadrant average)
-        pixels = list(img.getdata())
-        total_pixels = len(pixels)
-        r_sum = sum(p[0] for p in pixels) // total_pixels if total_pixels else 0
-        g_sum = sum(p[1] for p in pixels) // total_pixels if total_pixels else 0
-        b_sum = sum(p[2] for p in pixels) // total_pixels if total_pixels else 0
-
-        # Brightness estimate
-        brightness = (r_sum + g_sum + b_sum) / 3 / 255 * 100
 
         # Edge detection (if OpenCV available)
         has_cv2 = True
@@ -265,13 +250,10 @@ def _fallback_describe(image_path: str) -> VisionResult:
             cv_img = cv2.imread(image_path)
             if cv_img is not None:
                 gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-                edges = cv2.Canny(gray, 100, 200)
-                edge_ratio = (edges > 0).sum() / (edges.shape[0] * edges.shape[1])
             else:
-                edge_ratio = 0
+                pass
         except Exception:
             has_cv2 = False
-            edge_ratio = 0
 
         # Face detection (if OpenCV)
         face_count = 0
@@ -341,7 +323,7 @@ def _deepseek_vision_describe(image_path: str) -> VisionResult:
     mime = mime_map.get(ext, "image/jpeg")
 
     # Try different vision API endpoints and model IDs
-    endpoints = [
+    endpoints: list[dict[str, Any]] = [
         # Primary: standard chat with vision model
         {"url": "https://api.deepseek.com/chat/completions",
          "model": "deepseek-vl2",
@@ -466,11 +448,11 @@ def describe_image(image_path: str, mode: Optional[str] = None) -> VisionResult:
 
     # Validate file
     if not os.path.exists(image_path):
-        return VisionResult("", mode, "", False, f"الملف غير موجود: {image_path}")
+        return VisionResult("", str(mode), "", False, f"الملف غير موجود: {image_path}")
 
     ext = Path(image_path).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
-        return VisionResult("", mode, "", False,
+        return VisionResult("", str(mode), "", False,
                             f"صيغة غير مدعومة: {ext}. الصيغ المدعومة: {', '.join(SUPPORTED_EXTENSIONS)}")
 
     # Route to the selected mode

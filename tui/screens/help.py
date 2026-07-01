@@ -1,8 +1,8 @@
 """Help screen modal — commands, shortcuts, and quick-action buttons."""
 
 from textual.screen import ModalScreen
-from textual.widgets import Static, RichLog, Button, Label
-from textual.containers import Vertical, Horizontal, ScrollableContainer
+from textual.widgets import Static, RichLog, Button
+from textual.containers import Vertical, Horizontal
 from textual.binding import Binding
 from rich.table import Table
 from rich.text import Text

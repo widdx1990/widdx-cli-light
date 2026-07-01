@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("widdx.state_manager")
 
@@ -95,7 +94,7 @@ class StateManager:
         # 6. Project docs
         try:
             from core.project_tracker import build_context_block
-            ctx = build_context_block(self._root)
+            ctx = build_context_block(self._root) or ""
             if ctx:
                 parts.append(f"<project_docs>\n{ctx[:800]}\n</project_docs>")
         except Exception:

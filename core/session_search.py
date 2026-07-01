@@ -25,9 +25,8 @@ Usage:
 
 from __future__ import annotations
 
-import re, time
-from pathlib import Path
-from typing import Optional
+import re
+import time
 
 # ---------------------------------------------------------------------------
 # Snippet extraction
@@ -204,7 +203,7 @@ class SessionSearcher:
                 except Exception as e:
                     import logging
                     logging.getLogger("widdx.session_search").warning("Search error: %s", e)
-                    return None
+                    return {}
         return {
             "total_messages": row_count,
             "fts_indexed": fts_count,
@@ -259,8 +258,8 @@ class SessionSearcher:
                     except Exception as e:
                         import logging
                         logging.getLogger("widdx.session_search").warning("Search error: %s", e)
-                        return None
-                conn.commit()
+            conn.commit()
+            return 0
         except Exception as e:
             import logging
             logging.getLogger("widdx.session_search").warning("Search error: %s", e)
@@ -298,7 +297,7 @@ class SessionSearcher:
         except Exception as e:
             import logging
             logging.getLogger("widdx.session_search").warning("Search error: %s", e)
-            return None
+            return []
             return self._search_like(query, top_k)
 
         return results
@@ -336,7 +335,7 @@ class SessionSearcher:
         except Exception as e:
             import logging
             logging.getLogger("widdx.session_search").warning("Search error: %s", e)
-            return None
+            return []
 
         return results
 
@@ -361,4 +360,4 @@ class SessionSearcher:
         except Exception as e:
             import logging
             logging.getLogger("widdx.session_search").warning("Search error: %s", e)
-            return None
+            return 0

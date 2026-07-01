@@ -30,8 +30,8 @@ async function showCronView(area) {
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
           + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">Every ' + interval + 's · ' + escapeHtml(j.command || '') + '</span></div>'
           + '<div><span style="color:' + color + '">● ' + status + '</span>'
-          + ' <button onclick="toggleCron(\'' + escapeHtml(j.id || name) + '\')" style="background:none;border:none;color:var(--warning);cursor:pointer" title="Toggle">⏸</button>'
-          + ' <button onclick="delCron(\'' + escapeHtml(j.id || name) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer" title="Remove">✕</button></div></div>';
+          + ' <button onclick="toggleCron(\'' + encodeURIComponent(j.id || name) + '\')" style="background:none;border:none;color:var(--warning);cursor:pointer" title="Toggle">⏸</button>'
+          + ' <button onclick="delCron(\'' + encodeURIComponent(j.id || name) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer" title="Remove">✕</button></div></div>';
       }).join('');
     }
     setActivity('Ready', '—');
@@ -55,6 +55,7 @@ window.addCronJob = async function() {
 };
 
 window.toggleCron = async function(id) {
+  id = decodeURIComponent(id);
   try {
     var r = await fetch('/api/cron/' + encodeURIComponent(id) + '/toggle', { method:'POST' });
     var d = await r.json();
@@ -64,6 +65,7 @@ window.toggleCron = async function(id) {
 };
 
 window.delCron = async function(id) {
+  id = decodeURIComponent(id);
   var ok = await showConfirm('Remove scheduled task?', 'This task will be permanently deleted.', { confirmText: 'Remove', danger: true });
   if (!ok) return;
   try {

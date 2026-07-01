@@ -13,8 +13,8 @@ This converts disagreements from "log and ignore" to "verify and learn."
 from __future__ import annotations
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Optional, Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 logger = logging.getLogger("widdx.arbiter")
 
@@ -46,7 +46,7 @@ class EngineArbiter:
         old_classification: Any,
         new_classification: Any,
         user_input: str,
-        executor: callable,
+        executor: Callable,
         old_ctx: Any,
         new_ctx: Any,
         messages: list | None = None,
@@ -92,7 +92,6 @@ class EngineArbiter:
         )
 
         try:
-            from core.engine_adapters import engine_enabled
 
             # Execute old path
             old_result = self._safe_execute(executor, old_ctx, user_input, messages, "old")

@@ -20,10 +20,12 @@ Usage:
 
 from __future__ import annotations
 
-import json, math, re, time, hashlib
+import json
+import math
+import re
+import time
 from collections import Counter
 from pathlib import Path
-from typing import Any, Optional
 
 # ---------------------------------------------------------------------------
 # Storage Paths
@@ -118,7 +120,8 @@ class OllamaEmbeddingEngine:
         return self._available or False
 
     def _check_availability(self):
-        import urllib.request, urllib.error
+        import urllib.request
+        import urllib.error
         try:
             url = "http://localhost:11434/api/tags"
             req = urllib.request.Request(url, method="GET")
@@ -131,7 +134,8 @@ class OllamaEmbeddingEngine:
         """Return embedding vector or None if unavailable."""
         if not self.available:
             return None
-        import urllib.request, urllib.error
+        import urllib.request
+        import urllib.error
         try:
             payload = json.dumps({
                 "model": self.model,
@@ -233,7 +237,7 @@ class VectorMemoryStore:
         for mem in self._memories:
             mem_emb = mem.get("embedding")
             if self._is_dense(query_emb) and self._is_dense(mem_emb):
-                score = OllamaEmbeddingEngine.cosine_similarity(query_emb, mem_emb)
+                score = OllamaEmbeddingEngine.cosine_similarity(query_emb, mem_emb)  # type: ignore[arg-type]
             else:
                 # TF-IDF fallback
                 score = self._tfidf.similarity(query, mem.get("content", ""))

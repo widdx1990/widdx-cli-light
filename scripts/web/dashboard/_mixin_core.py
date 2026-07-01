@@ -5,10 +5,17 @@ import logging
 logger = logging.getLogger("widdx.web.dashboard")
 
 from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class CoreDashboardMixin:
     def __init__(self):
+        """
+        ═══ MIXIN INIT CHAIN ═══
+        This is the only mixin with __init__. All other mixins rely
+        on Python's MRO to resolve methods. If you add __init__ to
+        another mixin, ensure it calls: super().__init__()
+        """
         self._ready = False
         self._init_systems()
 
@@ -27,7 +34,9 @@ class CoreDashboardMixin:
 
     def system_info(self) -> dict:
         """OS, CPU, RAM, disk, Python version."""
-        import os, platform, shutil
+        import os
+        import platform
+        import shutil
         info = {
             "platform": platform.platform(),
             "python": platform.python_version(),
@@ -49,7 +58,7 @@ class CoreDashboardMixin:
             mgr = BackgroundTaskManager()
             return [
                 {"id": t.id, "status": t.status.value, "elapsed": t.elapsed}
-                for t in mgr.list_agents()
+                for t in mgr.list_agents()  # type: ignore[attr-defined]
             ]
         except Exception:
             return []
@@ -70,12 +79,12 @@ class CoreDashboardMixin:
             "mode": mode,
             "system": self.system_info(),
             "processes": self.running_processes(),
-            "cron": self.cron_jobs(),
-            "background": self.background_tasks(),
-            "agents": self.sub_agents(),
-            "memories": len(self.memories()),
-            "sessions": len(self.sessions()),
-            "skills": len(self.skills()),
+            "cron": self.cron_jobs(),  # type: ignore[attr-defined]
+            "background": self.background_tasks(),  # type: ignore[attr-defined]
+            "agents": self.sub_agents(),  # type: ignore[attr-defined]
+            "memories": len(self.memories()),  # type: ignore[attr-defined]
+            "sessions": len(self.sessions()),  # type: ignore[attr-defined]
+            "skills": len(self.skills()),  # type: ignore[attr-defined]
         }
 
 

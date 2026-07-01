@@ -45,7 +45,6 @@ class StorageMixin:
 
     def _emergency_activity(self) -> list[dict]:
         """Last resort — return placeholder events."""
-        import datetime
         now = datetime.datetime.utcnow().isoformat()
         return [
             {"id": "welcome", "type": "message", "icon": "fa-star", "agent": "system",
@@ -81,7 +80,7 @@ class StorageMixin:
         try:
             from core.memory import MemoryStore
             mem = MemoryStore()
-            mem.add(content, tags=tags)
+            mem.add(content, tags=tags)  # type: ignore[attr-defined]
             return {"status": "ok", "message": "Memory added"}
         except Exception as e:
             return {"error": str(e)}

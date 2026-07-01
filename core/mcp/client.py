@@ -26,9 +26,8 @@ def _setup_windows_job(proc) -> bool:
         import ctypes
         from ctypes import wintypes
         
-        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)  # type: ignore[attr-defined]
         
-        CREATE_SUSPENDED = 0x00000004
         JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
         JOB_OBJECT_LIMIT_JOB_TIME = 0x00000004
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
@@ -86,7 +85,7 @@ def _setup_windows_job(proc) -> bool:
         # Assign process (must be created suspended)
         pid = proc.pid if hasattr(proc, 'pid') else proc._proc.pid if hasattr(proc, '_proc') else 0
         if pid and not kernel32.AssignProcessToJobObject(job, ctypes.wintypes.HANDLE(
-                ctypes.windll.kernel32.OpenProcess(0x40000, False, pid))):
+                ctypes.windll.kernel32.OpenProcess(0x40000, False, pid))):  # type: ignore[attr-defined]
             return False
         
         return True
@@ -109,13 +108,13 @@ def _mcp_resource_limits():
         resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
     except (ImportError, AttributeError, ValueError):
         pass  # Windows or restricted environment — skip
-import os
-import base64
-import hashlib
-import socket
-import uuid
-from pathlib import Path
-from typing import Any, Optional
+CREATE_NO_WINDOW = 0x08000000  # Windows only; defined here for cross-platform type safety
+import base64  # noqa: E402
+import hashlib  # noqa: E402
+import socket  # noqa: E402
+import uuid  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Any, Optional  # noqa: E402
 
 logger = logging.getLogger("widdx.mcp")
 
@@ -189,8 +188,9 @@ class MCPServerConnection:
             msg["params"] = params
         payload = json.dumps(msg) + "\n"
         try:
-            self._proc.stdin.write(payload)
-            self._proc.stdin.flush()
+            if self._proc.stdin:
+                self._proc.stdin.write(payload)
+                self._proc.stdin.flush()
         except Exception as e:
             self._error = f"Write error: {e}"
             return None
@@ -248,7 +248,6 @@ class MCPServerConnection:
                 _use_container = False
                 if os.name != 'nt':  # container support varies on Windows
                     try:
-                        from core.engine_adapters import engine_enabled
                         from core.isolation.container import get_container_manager
                         cm = get_container_manager()
                         # Check if isolation engine is enabled AND container available
@@ -265,7 +264,7 @@ class MCPServerConnection:
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 text=True,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
+                                creationflags=CREATE_NO_WINDOW,
                             )
                     except (ImportError, Exception):
                         pass
@@ -278,7 +277,7 @@ class MCPServerConnection:
                         stderr=subprocess.PIPE,
                         text=True,
                         preexec_fn=_mcp_resource_limits if os.name != 'nt' else None,
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                        creationflags=CREATE_NO_WINDOW if os.name == 'nt' else 0,
                     )
                     # Windows: assign to job object for resource limits
                     if os.name == 'nt' and self._proc and self._proc.pid:
@@ -290,7 +289,7 @@ class MCPServerConnection:
                 continue
 
             # Check process is alive
-            if self._proc.poll() is not None:
+            if self._proc and self._proc.poll() is not None:
                 err = self._proc.stderr.read() if self._proc.stderr else ""
                 last_err = f"Process exited on launch: {err[:200]}"
                 self._disconnect_proc()
@@ -314,8 +313,9 @@ class MCPServerConnection:
             # Send initialized notification
             try:
                 notif = json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
-                self._proc.stdin.write(notif)
-                self._proc.stdin.flush()
+                if self._proc and self._proc.stdin:
+                    self._proc.stdin.write(notif)
+                    self._proc.stdin.flush()
             except Exception as e:
                 logger.debug("MCP server %s: initialized notification failed: %s", self.name, e)
 
@@ -701,7 +701,7 @@ def discover_mcp_servers(force_refresh: bool = False) -> list[dict]:
             capture_output=True, text=True, timeout=10,
         )
         if npm_list.returncode == 0:
-            deps = npm_list.stdout
+            pass
             # We just note it, don't auto-add unknown packages
     except Exception as e:
         logger.debug("MCP: npm list failed: %s", e)

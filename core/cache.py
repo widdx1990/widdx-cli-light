@@ -32,9 +32,13 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib, json, os, time, threading
+import hashlib
+import json
+import os
+import time
+import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -99,15 +103,6 @@ class _Entry:
     def touch(self):
         self.seq = _next_seq()
         self.hits += 1
-
-    def to_dict(self) -> dict:
-        return {
-            "key": self.key,
-            "value": self.value,
-            "created": self.created,
-            "expires": self.expires,
-            "hits": self.hits,
-        }
 
     def to_dict(self) -> dict:
         return {
