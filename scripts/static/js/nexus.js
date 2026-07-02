@@ -34,6 +34,20 @@ const Bus = (() => {
   };
 })();
 
+/* ── Delegated click handler (replaces inline onclick) ──────────
+ * Usage: add data-click="handler-name" to HTML, then register:
+ *   CLICK_HANDLERS['copy-msg'] = (el) => copyMsg(el);
+ */
+const CLICK_HANDLERS = {};
+
+document.addEventListener('click', function(e) {
+  var el = e.target.closest('[data-click]');
+  if (!el) return;
+  var action = el.getAttribute('data-click');
+  var fn = CLICK_HANDLERS[action];
+  if (fn) fn(el, e);
+});
+
 /* ── HTML Template helpers ───────────────────────────────────────
  * Centralise common UI patterns so show*View functions stay thin.
  * All helpers return raw HTML strings (safe: values are escapeHtml'd). */
@@ -124,9 +138,9 @@ const TEMPLATES = {
   },
 
   /** Error state with retry button. */
-  errorRetry(msg, retryFn) {
+  errorRetry(msg, retryHandler) {
     return '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation text-error" style="opacity:0.6"></i><h3 class="text-primary">Error</h3><p>' + escapeHtml(msg || 'Something went wrong') + '</p>'
-      + (retryFn ? '<button class="dialog-btn primary mt-12" onclick="' + retryFn + '"><i class="fa-solid fa-rotate"></i> Retry</button>' : '')
+      + (retryHandler ? '<button class="dialog-btn primary mt-12" data-click="' + retryHandler + '"><i class="fa-solid fa-rotate"></i> Retry</button>' : '')
       + '</div>';
   },
 };
@@ -486,9 +500,9 @@ function createAssistantWrapper(content) {
     + '</div>'
     + '<div class="ai-body"></div>'
     + '<div class="ai-footer">'
-    + '<button class="ai-btn" onclick="copyMsg(this)" title="Copy"><i class="fa-solid fa-copy"></i></button>'
-    + '<button class="ai-btn" onclick="this.classList.toggle(\'active\')" title="Good"><i class="fa-solid fa-thumbs-up"></i></button>'
-    + '<button class="ai-btn" onclick="this.classList.toggle(\'active\')" title="Bad"><i class="fa-solid fa-thumbs-down"></i></button>'
+    + '<button class="ai-btn" data-click="copy-msg" title="Copy"><i class="fa-solid fa-copy"></i></button>'
+    + '<button class="ai-btn" data-click="toggle-active" title="Good"><i class="fa-solid fa-thumbs-up"></i></button>'
+    + '<button class="ai-btn" data-click="toggle-active" title="Bad"><i class="fa-solid fa-thumbs-down"></i></button>'
     + '</div>';
   S._activeAIWrapper = wrapper;
   S._activeAIBody = wrapper.querySelector('.ai-body');
@@ -509,12 +523,7 @@ function addThinkingBlock(reasoningText) {
   strip.className = 'think-strip';
   const tid = 'think-' + Date.now();
   strip.innerHTML =
-    '<button class="think-toggle" onclick="'
-    + 'var s=document.getElementById(\'' + tid + '\');var opened=s.style.display!==\'block\';'
-    + 's.style.display=opened?\'block\':\'none\';'
-    + 'this.querySelector(\'.think-label\').textContent=opened?\'Hide reasoning\':\'Show reasoning\';'
-    + 'this.querySelector(\'.think-chevron\').style.transform=opened?\'rotate(90deg)\':\'rotate(0deg)\''
-    + '">'
+    '<button class="think-toggle" data-click="think-toggle" data-target="' + tid + '">'
     + '<span class="think-chevron">&#9654;</span>'
     + '<span class="think-label">Show reasoning</span>'
     + '</button>'
@@ -660,11 +669,13 @@ function handleWSMessage(msg) {
       S._processing = false;
       S._activeAIWrapper = null;
       S._activeAIBody = null;
+      S._activeToolCard = null;
+      S._toolCount = 0;
+      // Trigger Canvas render while _activeAITextEl is still valid
+      _tryCanvasRender();
       S._activeAITextEl = null;
       S._activeThinking = null;
       S._activeThinkingStrip = null;
-      S._activeToolCard = null;
-      S._toolCount = 0;
       updateProgress(100, 'Complete');
       setActivity('Ready', '—');
       resetSendUI();
@@ -699,7 +710,7 @@ function handleWSMessage(msg) {
 
 // ═══════════════ MESSAGE RENDER ═══════════════════
 
-function renderMsg(role, content, rawContent) {
+function renderMsg(role, content, canvasMeta) {
   const area = document.getElementById('messagesArea');
   if (!area) return;
   const d = document.createElement('div');
@@ -710,7 +721,18 @@ function renderMsg(role, content, rawContent) {
   } else if (role === 'assistant') {
     const t = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
     var body;
-    try { body = parseMarkdown(content); } catch(e) { body = '<pre>' + escapeHtml(content) + '</pre>'; }
+    // If message has stored canvas metadata, use canvas renderer
+    if (canvasMeta && canvasMeta.type) {
+      var canvasType = __canvasTypes.find(function(ct) { return ct.name === canvasMeta.type; });
+      if (canvasType) {
+        try { body = canvasType.render(canvasMeta.data, content); } catch(e) { body = parseMarkdown(content); }
+      } else {
+        body = parseMarkdown(content);
+      }
+      d.dataset.canvasType = canvasMeta.type;
+    } else {
+      try { body = parseMarkdown(content); } catch(e) { body = '<pre>' + escapeHtml(content) + '</pre>'; }
+    }
     d.innerHTML =
       '<div class="ai-header">'
       + '<div class="ai-avatar">W</div>'
@@ -722,9 +744,9 @@ function renderMsg(role, content, rawContent) {
       + '</div>'
       + '<div class="ai-body"><div class="response-block"><div class="response-content">' + body + '</div></div></div>'
       + '<div class="ai-footer">'
-      + '<button class="ai-btn" onclick="copyMsg(this)" title="Copy"><i class="fa-solid fa-copy"></i></button>'
-      + '<button class="ai-btn" onclick="this.classList.toggle(\'active\')" title="Good"><i class="fa-solid fa-thumbs-up"></i></button>'
-      + '<button class="ai-btn" onclick="this.classList.toggle(\'active\')" title="Bad"><i class="fa-solid fa-thumbs-down"></i></button>'
+      + '<button class="ai-btn" data-click="copy-msg" title="Copy"><i class="fa-solid fa-copy"></i></button>'
+      + '<button class="ai-btn" data-click="toggle-active" title="Good"><i class="fa-solid fa-thumbs-up"></i></button>'
+      + '<button class="ai-btn" data-click="toggle-active" title="Bad"><i class="fa-solid fa-thumbs-down"></i></button>'
       + '</div>';
   } else {
     d.innerHTML = '<div class="system-msg"><i class="fa-solid fa-circle-info"></i> ' + escapeHtml(content) + '</div>';
@@ -734,8 +756,8 @@ function renderMsg(role, content, rawContent) {
 }
 
 function addMsg(role, content, rawContent) {
-  S.messages.push({role, content, raw: rawContent || content});
-  renderMsg(role, content, rawContent);
+  S.messages.push({role, content, raw: rawContent || content, canvas: null});
+  renderMsg(role, content, null);
 }
 
 function addWSToolCard(name, details) {
@@ -752,6 +774,149 @@ function addWSToolCard(name, details) {
     }
   }
 }
+
+CLICK_HANDLERS['copy-msg'] = function(el) { copyMsg(el); };
+CLICK_HANDLERS['toggle-active'] = function(el) { el.classList.toggle('active'); };
+CLICK_HANDLERS['fe-nav'] = function(el) { showFileExplorer(el.getAttribute('data-path')); };
+CLICK_HANDLERS['fe-enter-dir'] = function(el) { _fileExplorerEnterDir(el.getAttribute('data-path')); };
+CLICK_HANDLERS['fe-open-file'] = function(el) { showFileEditor(el.getAttribute('data-path')); };
+CLICK_HANDLERS['fill-input'] = function(el) {
+  var inp = document.getElementById('messageInput');
+  if (!inp) return;
+  inp.value = el.getAttribute('data-value');
+  inp.focus();
+};
+CLICK_HANDLERS['clear-upload'] = function() { clearUploadPreview(); };
+CLICK_HANDLERS['load-session'] = function(el) {
+  showView('chat');
+  loadSession(el.getAttribute('data-session'));
+};
+CLICK_HANDLERS['editor-back'] = function() { showView('chat'); };
+CLICK_HANDLERS['editor-run'] = function() { _editorRun(); };
+CLICK_HANDLERS['editor-save'] = function() { _editorSave(); };
+CLICK_HANDLERS['proc-refresh'] = function() { showProcessManager(); };
+CLICK_HANDLERS['proc-kill'] = function(el) { _killProcess(el.getAttribute('data-pid')); };
+CLICK_HANDLERS['take-screenshot'] = function() { takeScreenshot(); };
+CLICK_HANDLERS['fe-go-up'] = function() { _fileExplorerGoUp(); };
+CLICK_HANDLERS['fe-refresh'] = function() { showFileExplorer(); };
+CLICK_HANDLERS['fe-create-file'] = function() { _fileExplorerCreate(); };
+CLICK_HANDLERS['fe-create-dir'] = function() { _fileExplorerCreateDir(); };
+CLICK_HANDLERS['fe-toggle-dir'] = function(el) { _fileExplorerToggleDir(el); };
+CLICK_HANDLERS['fe-delete'] = function(el) { _fileExplorerDelete(el.getAttribute('data-path')); };
+CLICK_HANDLERS['browser-go'] = function() {
+  var bf = document.getElementById('bf');
+  var bu = document.getElementById('bu');
+  if (bf && bu) bf.src = bu.value;
+};
+CLICK_HANDLERS['run-term-cmd'] = function(el) {
+  runTermCmd(el.getAttribute('data-cmd'));
+};
+CLICK_HANDLERS['exec-slash'] = function(el) {
+  var idx = parseInt(el.getAttribute('data-idx'), 10);
+  execSlashCommand(idx);
+  hideSlashPopup();
+};
+CLICK_HANDLERS['fill-skill'] = function(el) {
+  var name = el.getAttribute('data-skill');
+  var inp = document.getElementById('messageInput');
+  if (!inp) return;
+  inp.value = '/skill ' + name;
+  inp.focus();
+  inp.dispatchEvent(new Event('input'));
+};
+CLICK_HANDLERS['think-toggle'] = function(el) {
+  var tid = el.getAttribute('data-target');
+  var s = document.getElementById(tid);
+  if (!s) return;
+  var opened = s.style.display !== 'block';
+  s.style.display = opened ? 'block' : 'none';
+  el.querySelector('.think-label').textContent = opened ? 'Hide reasoning' : 'Show reasoning';
+  el.querySelector('.think-chevron').style.transform = opened ? 'rotate(90deg)' : 'rotate(0deg)';
+};
+
+// ── View-level CLICK_HANDLERS ──
+CLICK_HANDLERS['scan-manifest'] = function() { scanManifest(); };
+CLICK_HANDLERS['toggle-plugin'] = function(el) { togglePlugin(el.getAttribute('data-plugin'), el.getAttribute('data-enabled') === 'true'); };
+CLICK_HANDLERS['select-platform'] = function(el) { selectPlatform(el.getAttribute('data-platform')); };
+CLICK_HANDLERS['start-gateway'] = function(el) { startGateway(el.getAttribute('data-platform')); };
+CLICK_HANDLERS['stop-gateway'] = function(el) { stopGateway(el.getAttribute('data-platform')); };
+CLICK_HANDLERS['load-skills-view'] = function() { loadSkillsView(); };
+CLICK_HANDLERS['set-permission'] = function(el) { setPermission(el.getAttribute('data-level')); };
+CLICK_HANDLERS['refresh-git'] = function() { if (typeof refreshGitView === 'function') refreshGitView(); };
+CLICK_HANDLERS['create-workflow'] = function() { createWorkflow(); };
+CLICK_HANDLERS['run-workflow'] = function(el) { runWorkflow(el.getAttribute('data-workflow')); };
+CLICK_HANDLERS['create-checkpoint'] = function() { createCheckpoint(); };
+CLICK_HANDLERS['restore-checkpoint'] = function(el) { restoreCheckpoint(el.getAttribute('data-checkpoint')); };
+CLICK_HANDLERS['del-checkpoint'] = function(el) { delCheckpoint(el.getAttribute('data-checkpoint')); };
+CLICK_HANDLERS['add-cron'] = function() { addCronJob(); };
+CLICK_HANDLERS['toggle-cron'] = function(el) { toggleCron(el.getAttribute('data-cron')); };
+CLICK_HANDLERS['del-cron'] = function(el) { delCron(el.getAttribute('data-cron')); };
+CLICK_HANDLERS['retry-cron-view'] = function() { showCronView(document.getElementById('messagesArea')); };
+CLICK_HANDLERS['load-session-btn'] = function(el) { loadSession(el.getAttribute('data-session')); };
+CLICK_HANDLERS['export-session'] = function(el) { exportSession(el.getAttribute('data-session')); };
+CLICK_HANDLERS['del-session'] = function(el) { delSession(el.getAttribute('data-session')); };
+CLICK_HANDLERS['sidebar-load-session'] = function(el) {
+  var sid = el.getAttribute('data-sid');
+  if (sid && typeof loadSession === 'function') loadSession(sid);
+  else showView('chat');
+};
+CLICK_HANDLERS['save-general-settings'] = function() { saveGeneralSettings(); };
+CLICK_HANDLERS['save-all-providers'] = function() { saveAllProviders(); };
+CLICK_HANDLERS['refresh-provider-models'] = function() { refreshProviderModels(); };
+CLICK_HANDLERS['save-proxy-settings'] = function() { saveProxySettings(); };
+CLICK_HANDLERS['load-gguf-settings'] = function() { loadGGUFSettings(); };
+CLICK_HANDLERS['switch-settings-tab'] = function(el) { switchSettingsTab(el.getAttribute('data-tab')); };
+CLICK_HANDLERS['switch-settings-tab-connections'] = function(el) { switchSettingsTab(el.getAttribute('data-tab')); loadConnectionsTab(); };
+CLICK_HANDLERS['switch-settings-tab-mcp'] = function(el) { switchSettingsTab(el.getAttribute('data-tab')); loadMCPTab(); };
+CLICK_HANDLERS['set-perm-level'] = function(el) { setPermLevel(el.getAttribute('data-level')); };
+CLICK_HANDLERS['reset-token-budget-settings'] = function() { resetTokenBudgetSettings(); };
+CLICK_HANDLERS['toggle-autocommit-settings'] = function() { toggleAutoCommitSettings(); };
+CLICK_HANDLERS['unload-gguf-settings'] = function() { unloadGGUFSettings(); };
+CLICK_HANDLERS['add-mcp-settings'] = function() { addMCPServerFromSettings(); };
+CLICK_HANDLERS['restart-mcp-settings'] = function(el) { restartMCPFromSettings(el.getAttribute('data-mcp')); };
+CLICK_HANDLERS['del-mcp-settings'] = function(el) { delMCPFromSettings(el.getAttribute('data-mcp')); };
+CLICK_HANDLERS['connect-gateway-settings'] = function(el) { connectGateway(el.getAttribute('data-gw-platform')); };
+CLICK_HANDLERS['disconnect-gateway-settings'] = function(el) { disconnectGateway(el.getAttribute('data-gw-platform')); };
+CLICK_HANDLERS['toggle-autocommit'] = function() { toggleAutoCommit(); };
+CLICK_HANDLERS['reset-token-budget'] = function() { resetTokenBudget(); };
+CLICK_HANDLERS['run-doctor'] = function() { showDoctorView(document.getElementById('messagesArea')); };
+CLICK_HANDLERS['save-proxy'] = function() { saveProxy(); };
+CLICK_HANDLERS['load-gguf'] = function() { loadGGUF(); };
+CLICK_HANDLERS['unload-gguf'] = function() { unloadGGUF(); };
+CLICK_HANDLERS['add-memory'] = function() { addMemory(); };
+CLICK_HANDLERS['load-memory-view'] = function() { loadMemoryView(); };
+CLICK_HANDLERS['del-memory'] = function(el) { delMemory(el.getAttribute('data-memory')); };
+CLICK_HANDLERS['load-activity-view'] = function() { loadActivityView(); };
+CLICK_HANDLERS['add-mcp'] = function() { addMCPServer(); };
+CLICK_HANDLERS['restart-mcp'] = function(el) { restartMCPServer(el.getAttribute('data-mcp')); };
+CLICK_HANDLERS['del-mcp'] = function(el) { delMCPServer(el.getAttribute('data-mcp')); };
+CLICK_HANDLERS['refresh-debug'] = function() { showDebugView(document.getElementById('messagesArea')); };
+
+// ── Index-level CLICK_HANDLERS ──
+CLICK_HANDLERS['export-chat'] = function() {
+  _showExportDialog();
+};
+CLICK_HANDLERS['export-markdown'] = function() { _exportChat('markdown', false); };
+CLICK_HANDLERS['export-markdown-dl'] = function() { _exportChat('markdown', true); };
+CLICK_HANDLERS['export-json'] = function() { _exportChat('json', true); };
+CLICK_HANDLERS['close-export-dialog'] = function() {
+  var d = document.getElementById('export-dialog');
+  if (d) d.remove();
+};
+CLICK_HANDLERS['open-command-palette'] = function() { openCommandPalette(); };
+CLICK_HANDLERS['toggle-auto-mode'] = function() { toggleAutoMode(); };
+CLICK_HANDLERS['lang-toggle'] = function() { if (typeof Lang !== 'undefined') Lang.toggle(); };
+CLICK_HANDLERS['toggle-theme'] = function() { toggleTheme(); };
+CLICK_HANDLERS['send-onboarding'] = function(el) { sendOnboardingMsg(el.getAttribute('data-msg')); };
+CLICK_HANDLERS['toggle-computer'] = function() { toggleComputer(); };
+CLICK_HANDLERS['toggle-voice-input'] = function() { toggleVoiceInput(); };
+CLICK_HANDLERS['switch-right-tab'] = function(el) { switchTab(el, el.getAttribute('data-tab')); };
+CLICK_HANDLERS['close-palette-overlay'] = function(el, e) {
+  if (e && e.target === el) closeCommandPalette();
+};
+CLICK_HANDLERS['exec-palette'] = function(el) {
+  if (typeof execPaletteAction === 'function') execPaletteAction(el.getAttribute('data-action'));
+};
 
 window.copyMsg = function(btn) {
   const text = btn.closest('.ai-content')?.querySelector('.ai-text')?.textContent
@@ -800,7 +965,7 @@ function showSkillSuggestions(skills) {
   var container = document.getElementById('skill-suggestions');
   if (!container) return;
   var html = skills.map(function(s) {
-    return '<span class="skill-chip" onclick="var inp=document.getElementById(\'messageInput\');inp.value=\'/skill ' + s.name + '\';inp.focus();inp.dispatchEvent(new Event(\'input\'))" title="' + escapeHtml(s.description || '') + '">' + (s.icon || '') + ' ' + escapeHtml(s.name) + '</span>';
+    return '<span class="skill-chip" data-click="fill-skill" data-skill="' + escapeHtml(s.name) + '" title="' + escapeHtml(s.description || '') + '">' + (s.icon || '') + ' ' + escapeHtml(s.name) + '</span>';
   }).join('');
   container.innerHTML = html;
   container.style.display = 'block';
@@ -815,22 +980,28 @@ function scrollBottom() {
   }
 }
 
-// Monitor scroll to show/hide bottom button
-var _scrollMonitor = setInterval(function() {
-  var area = document.getElementById('messagesArea');
-  var btn = document.getElementById('scrollBottomBtn');
-  if (!area || !btn) return;
-  var distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;
-  if (distFromBottom > 200) { btn.classList.add('visible'); }
-  else { btn.classList.remove('visible'); }
-  // Tool pill timeout: mark running pills stuck after 30s
+// Scroll monitor — IntersectionObserver
+var _scrollSentinel = document.createElement('div');
+_scrollSentinel.className = 'scroll-sentinel';
+var _messagesArea = document.getElementById('messagesArea');
+if (_messagesArea) {
+  _messagesArea.appendChild(_scrollSentinel);
+  var _scrollObserver = new IntersectionObserver(function(entries) {
+    var btn = document.getElementById('scrollBottomBtn');
+    if (!btn) return;
+    btn.classList.toggle('visible', !entries[0].isIntersecting);
+  }, { root: _messagesArea, threshold: 1.0 });
+  _scrollObserver.observe(_scrollSentinel);
+}
+// Tool pill timeout — check every 10s
+var _pillMonitor = setInterval(function() {
   var pills = document.querySelectorAll('.tool-pill.running');
   pills.forEach(function(p) {
     var start = parseInt(p.dataset.start || '0');
     if (!start) { p.dataset.start = Date.now(); return; }
     if (Date.now() - start > 30000) { p.classList.add('stuck'); }
   });
-}, 3000);
+}, 10000);
 
 // ═══════════════ ACTIVITY ═══════════════════
 
@@ -861,7 +1032,7 @@ function showSlashPopup(val) {
   popup.style.display = 'block';
   _slashPopupVisible = true;
   popup.innerHTML = matches.map(function(c, i) {
-    return '<div class="slash-item' + (i === 0 ? ' active' : '') + '" onclick="execSlashCommand(' + SLASH_COMMANDS.indexOf(c) + ');hideSlashPopup()"><i class="fa-solid ' + c.icon + '"></i><span class="slash-cmd">' + c.cmd + '</span><span class="slash-desc">' + c.desc + '</span></div>';
+    return '<div class="slash-item' + (i === 0 ? ' active' : '') + '" data-click="exec-slash" data-idx="' + SLASH_COMMANDS.indexOf(c) + '"><i class="fa-solid ' + c.icon + '"></i><span class="slash-cmd">' + c.cmd + '</span><span class="slash-desc">' + c.desc + '</span></div>';
   }).join('');
 }
 
@@ -957,7 +1128,7 @@ async function populateModelDropdown() {
       var item = document.createElement('div');
       item.className = 'model-dropdown-item' + (m === prov.model ? ' active' : '');
       item.textContent = m;
-      item.onclick = async function() {
+      item.addEventListener('click', async function() {
         // Save model change immediately
         showToast('Switching to ' + m + '...', 'info');
         var saveR = await fetch('/api/settings', {
@@ -976,7 +1147,7 @@ async function populateModelDropdown() {
         document.getElementById('modelDropdown').style.display = 'none';
         var ch = document.querySelector('.model-chevron');
         if (ch) ch.style.transform = '';
-      };
+      });
       list.appendChild(item);
     });
   } catch(e) {
@@ -1009,13 +1180,13 @@ async function loadProjectSession() {
     });
     if (!msgs.length) return;
     S.messages = msgs.map(function(m) {
-      return { role: m.role, content: m.content || '', raw: m.content || '' };
+      return { role: m.role, content: m.content || '', raw: m.content || '', canvas: m.canvas || null };
     });
     hideOnboarding();
     const area = document.getElementById('messagesArea');
     if (area) {
       area.innerHTML = '';
-      S.messages.forEach(function(m) { renderMsg(m.role, m.content, m.raw); });
+      S.messages.forEach(function(m) { renderMsg(m.role, m.content, m.canvas); });
     }
     if (data.state && data.state.model) {
       S.model = data.state.model;
@@ -1049,7 +1220,7 @@ const VIEWS = {
   chat: function(area) {
     if (S.messages.length) {
       area.innerHTML = '';
-      S.messages.forEach(function(m) { renderMsg(m.role, m.content, m.raw); });
+      S.messages.forEach(function(m) { renderMsg(m.role, m.content, m.canvas); });
     } else {
       restoreOnboarding();
     }
@@ -1146,12 +1317,10 @@ async function loadView(url, renderFn, area, opts) {
 window.switchTab = function(el, view) {
   el.parentElement.querySelectorAll('.right-panel-tab').forEach(function(t) { t.classList.remove('active'); });
   el.classList.add('active');
-  if (view === 'desktop') showDesktop();
-  else if (view === 'terminal') showTerminal();
+  if (view === 'terminal') showTerminal();
   else if (view === 'browser') showBrowser();
-  else if (view === 'files') showFileExplorer();
-  else if (view === 'screenshot') showScreenshot();
   else if (view === 'processes') showProcessManager();
+  else if (view === 'screenshot') showScreenshot();
 };
 
 async function showDesktop() {
@@ -1219,11 +1388,11 @@ function showTerminal() {
     + '<input id="ti" class="terminal-input" placeholder="Run command (e.g. python app.py, npm start)..."></div>'
     + '<div class="terminal-footer">'
     + '<span class="text-xs text-muted" style="padding:2px 0">Quick:</span>'
-    + '<button class="quick-port-btn" onclick="runTermCmd(\'python --version\')">python</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd(\'node --version\')">node</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd(\'npm start\')">npm start</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd(\'python -m http.server 8080\')">serve :8080</button>'
-    + '<button class="quick-port-btn" onclick="runTermCmd(\'dir\')">dir</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="python --version">python</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="node --version">node</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="npm start">npm start</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="python -m http.server 8080">serve :8080</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="dir">dir</button>'
     + '</div></div>';
   // Set focus
   var ti = document.getElementById('ti');
@@ -1252,9 +1421,36 @@ function showBrowser() {
   body.innerHTML = '<div class="browser-container">'
     + '<div class="browser-urlbar">'
     + '<input id="bu" class="browser-url-input" placeholder="https://" value="http://localhost:8000">'
-    + '<button class="browser-go-btn" onclick="document.getElementById(\'bf\').src=document.getElementById(\'bu\').value">Go</button></div>'
+    + '<button class="browser-go-btn" data-click="browser-go">Go</button>'
+    + '<button class="browser-go-btn" data-click="browser-refresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
+    + '<button class="browser-go-btn" data-click="browser-toggle-live" id="browser-live-btn" title="Auto-refresh">●</button>'
+    + '</div>'
     + '<iframe id="bf" class="browser-iframe"></iframe></div>';
 }
+
+var _browserRefreshTimer = null;
+
+CLICK_HANDLERS['browser-refresh'] = function() {
+  var bf = document.getElementById('bf');
+  if (bf) bf.src = bf.src;
+};
+
+CLICK_HANDLERS['browser-toggle-live'] = function() {
+  var btn = document.getElementById('browser-live-btn');
+  if (_browserRefreshTimer) {
+    clearInterval(_browserRefreshTimer);
+    _browserRefreshTimer = null;
+    if (btn) btn.style.opacity = '0.5';
+  } else {
+    _browserRefreshTimer = setInterval(function() {
+      var bf = document.getElementById('bf');
+      if (bf && bf.src && bf.src !== 'about:blank' && !bf.src.startsWith('blob:')) {
+        bf.src = bf.src;
+      }
+    }, 3000);
+    if (btn) btn.style.opacity = '1';
+  }
+};
 
 /* ═══════════════ PHASE 2: FILE EXPLORER ═══════════════════ */
 
@@ -1263,38 +1459,49 @@ var _fileExplorerCurrentPath = '.';
 
 async function showFileExplorer(dir) {
   if (dir !== undefined) _fileExplorerCurrentPath = dir;
-  const body = document.getElementById('panelBody');
-  body.innerHTML = '<div class="file-explorer">'
-    + '<div class="file-explorer-toolbar" id="fe-toolbar">'
-    + '<button class="file-explorer-btn" onclick="_fileExplorerGoUp()" title="Go up"><i class="fa-solid fa-arrow-up"></i></button>'
-    + '<button class="file-explorer-btn" onclick="showFileExplorer()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
-    + '<button class="file-explorer-btn" onclick="_fileExplorerCreate()" title="New file"><i class="fa-solid fa-file"></i></button>'
-    + '<button class="file-explorer-btn" onclick="_fileExplorerCreateDir()" title="New folder"><i class="fa-solid fa-folder"></i></button>'
-    + '<div class="file-explorer-breadcrumb" id="fe-breadcrumb"></div>'
+  const body = document.getElementById('fe-sidebar-body');
+  if (!body) return;
+  body.innerHTML = ''
+    + '<div class="fe-toolbar">'
+    + '<span class="fe-path" id="fe-path">' + escapeHtml(_fileExplorerCurrentPath) + '</span>'
+    + '<button class="fe-btn" data-click="fe-go-up" title="Go up"><i class="fa-solid fa-arrow-up"></i></button>'
+    + '<button class="fe-btn" data-click="fe-refresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
+    + '<button class="fe-btn" data-click="fe-create-file" title="New file"><i class="fa-solid fa-file-circle-plus"></i></button>'
+    + '<button class="fe-btn" data-click="fe-create-dir" title="New folder"><i class="fa-solid fa-folder-plus"></i></button>'
     + '</div>'
-    + '<div class="file-explorer-body" id="fe-body"></div>'
-    + '</div>';
+    + '<input class="file-explorer-search" id="fe-search" type="text" placeholder="Filter files..." oninput="_fileExplorerSearch(this.value)">'
+    + '<div class="file-explorer-body" id="fe-body" style="flex:1;overflow-y:auto"></div>';
   _fileExplorerLoadDir(_fileExplorerCurrentPath);
+
+  // Keyboard navigation
+  var feSearch = document.getElementById('fe-search');
+  if (feSearch) {
+    feSearch.addEventListener('keydown', function(e) {
+      _feNavigate(e);
+    });
+  }
+
+  // Double-click on file items
+  var feBody = document.getElementById('fe-body');
+  if (feBody) {
+    feBody.addEventListener('contextmenu', function(e) {
+      var item = e.target.closest('.file-explorer-item');
+      if (!item) return;
+      e.preventDefault();
+      var path = item.getAttribute('data-path');
+      var isDir = item.classList.contains('directory');
+      _fileExplorerContextMenu(e, path, isDir);
+    });
+  }
 }
 
 async function _fileExplorerLoadDir(dirPath) {
   var body = document.getElementById('fe-body');
-  var bread = document.getElementById('fe-breadcrumb');
   if (!body) return;
-  body.innerHTML = '<div class="file-explorer-empty"><i class="fa-solid fa-spinner fa-spin"></i> <span style="margin-left:8px">Loading...</span></div>';
   _fileExplorerCurrentPath = dirPath;
-
-  // Build breadcrumb
-  if (bread) {
-    var parts = dirPath.replace(/^\/+/, '').split('/').filter(Boolean);
-    var html = '<span onclick="showFileExplorer(\'.\')"><i class="fa-solid fa-house"></i></span>';
-    var cum = '';
-    parts.forEach(function(p, i) {
-      cum += '/' + p;
-      html += '<span class="sep">&rsaquo;</span><span onclick="showFileExplorer(\'' + escapeHtml(cum) + '\')">' + escapeHtml(p) + '</span>';
-    });
-    bread.innerHTML = html || '<span>.</span>';
-  }
+  var pathEl = document.getElementById('fe-path');
+  if (pathEl) pathEl.textContent = dirPath;
+  body.innerHTML = '<div class="file-explorer-empty" style="padding:12px"><i class="fa-solid fa-spinner fa-spin"></i><span>Loading...</span></div>';
 
   try {
     var r = await fetch('/api/sandbox/files?path=' + encodeURIComponent(dirPath));
@@ -1305,7 +1512,7 @@ async function _fileExplorerLoadDir(dirPath) {
     }
     var files = d.files || [];
     if (!files.length) {
-      body.innerHTML = '<div class="file-explorer-empty"><i class="fa-solid fa-folder-open"></i> <span style="margin-left:8px">Empty directory</span></div>';
+      body.innerHTML = '<div class="file-explorer-empty"><i class="fa-solid fa-folder-open"></i> <span class="ml-8">Empty directory</span></div>';
       return;
     }
     body.innerHTML = _fileExplorerRenderItems(files, dirPath);
@@ -1314,16 +1521,19 @@ async function _fileExplorerLoadDir(dirPath) {
   }
 }
 
-function _fileExplorerRenderItems(items, basePath) {
+function _fileExplorerRenderItems(items, basePath, level) {
+  level = level || 0;
   var html = '';
   var dirs = items.filter(function(i) { return i.type === 'directory'; });
   var files = items.filter(function(i) { return i.type === 'file'; });
 
   dirs.forEach(function(item) {
     var childPath = item.path || basePath + '/' + item.name;
-    html += '<div class="file-explorer-item" onclick="_fileExplorerEnterDir(\'' + escapeJs(childPath) + '\')">'
+    html += '<div class="file-explorer-item directory level-' + level + '" data-click="fe-enter-dir" data-path="' + escapeHtml(childPath) + '">'
+      + '<span class="item-toggle" data-click="fe-toggle-dir" data-path="' + escapeHtml(childPath) + '" data-base="' + escapeHtml(basePath) + '">▶</span>'
       + '<span class="item-icon">📁</span>'
       + '<span class="item-name">' + escapeHtml(item.name) + '</span>'
+      + '<span class="item-actions"><button data-click="fe-delete" data-path="' + escapeHtml(childPath) + '" title="Delete">✕</button></span>'
       + '</div>';
   });
 
@@ -1331,10 +1541,11 @@ function _fileExplorerRenderItems(items, basePath) {
     var filePath = item.path || basePath + '/' + item.name;
     var icon = _fileIcon(item.name);
     var size = item.size !== undefined ? _formatSize(item.size) : '';
-    html += '<div class="file-explorer-item" onclick="showFileEditor(\'' + escapeJs(filePath) + '\')" title="' + escapeHtml(filePath) + '">'
+    html += '<div class="file-explorer-item level-' + level + '" data-click="fe-open-file" data-path="' + escapeHtml(filePath) + '" title="' + escapeHtml(filePath) + '">'
       + '<span class="item-icon">' + icon + '</span>'
       + '<span class="item-name">' + escapeHtml(item.name) + '</span>'
       + (size ? '<span class="item-meta">' + size + '</span>' : '')
+      + '<span class="item-actions"><button data-click="fe-delete" data-path="' + escapeHtml(filePath) + '" title="Delete">✕</button></span>'
       + '</div>';
   });
 
@@ -1375,43 +1586,226 @@ function _fileExplorerEnterDir(path) {
   showFileExplorer(path);
 }
 
-function _fileExplorerCreate() {
-  var name = prompt('New file name:');
-  if (!name) return;
-  var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
-  fetch('/api/sandbox/file/create', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({path: fullPath, is_directory: false, content: ''})
-  }).then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.status === 'ok') {
-        showToast('Created: ' + name, 'success');
-        showFileExplorer();
-      } else {
-        showToast('Error: ' + (d.error || 'Failed'), 'error');
-      }
-    }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
-}
+// Keyboard navigation
+window._feNavigate = function(e) {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    var items = document.querySelectorAll('#fe-body .file-explorer-item');
+    if (!items.length) return;
+    var current = document.querySelector('#fe-body .file-explorer-item.focused');
+    var idx = current ? Array.from(items).indexOf(current) : -1;
+    if (current) current.classList.remove('focused');
+    if (e.key === 'ArrowDown') idx = Math.min(idx + 1, items.length - 1);
+    else idx = Math.max(idx - 1, 0);
+    items[idx].classList.add('focused');
+    items[idx].scrollIntoView({ block: 'nearest' });
+    e.preventDefault();
+  } else if (e.key === 'Enter') {
+    var focused = document.querySelector('#fe-body .file-explorer-item.focused');
+    if (focused) {
+      var path = focused.getAttribute('data-path');
+      if (focused.classList.contains('directory')) showFileExplorer(path);
+      else showFileEditor(path);
+    }
+    e.preventDefault();
+  } else if (e.key === 'Backspace' && document.activeElement === document.getElementById('fe-search')) {
+    // Only go up when search is focused and empty
+    if (!e.target.value) _fileExplorerGoUp();
+  } else if (e.key === 'Escape') {
+    document.querySelectorAll('#fe-body .file-explorer-item.focused').forEach(function(i) { i.classList.remove('focused'); });
+  }
+};
 
-function _fileExplorerCreateDir() {
-  var name = prompt('New folder name:');
-  if (!name) return;
-  var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
-  fetch('/api/sandbox/file/create', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({path: fullPath, is_directory: true})
-  }).then(function(r) { return r.json(); })
+// Inline new file/folder creation
+window._fileExplorerCreate = function() {
+  var body = document.getElementById('fe-body');
+  if (!body) return;
+  var row = document.createElement('div');
+  row.className = 'file-explorer-item fe-new-row';
+  row.innerHTML = '<span class="item-icon">📄</span><input class="fe-inline-input" id="fe-new-file-input" placeholder="filename.ext" autofocus>';
+  body.insertBefore(row, body.firstChild);
+  var inp = document.getElementById('fe-new-file-input');
+  if (!inp) return;
+  inp.focus();
+  inp.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') {
+      var name = inp.value.trim();
+      row.remove();
+      if (!name) return;
+      var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
+      fetch('/api/sandbox/file/create', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: fullPath, is_directory: false, content: ''})
+      }).then(function(r){return r.json()}).then(function(d) {
+        if (d.status === 'ok') { showToast('Created: ' + name, 'success'); showFileExplorer(); }
+        else showToast('Error: ' + (d.error || 'Failed'), 'error');
+      }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+    } else if (ev.key === 'Escape') { row.remove(); }
+  });
+  inp.addEventListener('blur', function() { setTimeout(function() { row.remove(); }, 200); });
+};
+
+window._fileExplorerCreateDir = function() {
+  var body = document.getElementById('fe-body');
+  if (!body) return;
+  var row = document.createElement('div');
+  row.className = 'file-explorer-item fe-new-row';
+  row.innerHTML = '<span class="item-icon">📁</span><input class="fe-inline-input" id="fe-new-dir-input" placeholder="foldername" autofocus>';
+  body.insertBefore(row, body.firstChild);
+  var inp = document.getElementById('fe-new-dir-input');
+  if (!inp) return;
+  inp.focus();
+  inp.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') {
+      var name = inp.value.trim();
+      row.remove();
+      if (!name) return;
+      var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
+      fetch('/api/sandbox/file/create', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: fullPath, is_directory: true})
+      }).then(function(r){return r.json()}).then(function(d) {
+        if (d.status === 'ok') { showToast('Created: ' + name, 'success'); showFileExplorer(); }
+        else showToast('Error: ' + (d.error || 'Failed'), 'error');
+      }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+    } else if (ev.key === 'Escape') { row.remove(); }
+  });
+  inp.addEventListener('blur', function() { setTimeout(function() { row.remove(); }, 200); });
+};
+
+window._fileExplorerToggleDir = function(el) {
+  var path = el.getAttribute('data-path');
+  var base = el.getAttribute('data-base');
+  var parent = el.closest('.file-explorer-item');
+  if (!parent || !path) return;
+
+  // If already expanded, collapse
+  var next = parent.nextElementSibling;
+  if (el.classList.contains('expanded')) {
+    el.classList.remove('expanded');
+    el.textContent = '▶';
+    while (next && next.classList.contains('file-explorer-item') && !next.classList.contains('level-0')) {
+      var n = next;
+      next = n.nextElementSibling;
+      n.remove();
+    }
+    return;
+  }
+
+  el.classList.add('expanded');
+  el.textContent = '▼';
+  var level = parseInt(parent.className.match(/level-(\d+)/)?.[1] || '0', 10) + 1;
+
+  // Fetch children
+  fetch('/api/sandbox/files?path=' + encodeURIComponent(path))
+    .then(function(r){return r.json()})
     .then(function(d) {
+      if (d.error || !d.files?.length) {
+        el.classList.remove('expanded');
+        el.textContent = '▶';
+        return;
+      }
+      var html = _fileExplorerRenderItems(d.files, path, level);
+      parent.insertAdjacentHTML('afterend', html);
+    })
+    .catch(function() {
+      el.classList.remove('expanded');
+      el.textContent = '▶';
+    });
+};
+
+window._fileExplorerContextMenu = function(e, path, isDir) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Remove existing menu
+  var old = document.querySelector('.file-context-menu');
+  if (old) old.remove();
+
+  var menu = document.createElement('div');
+  menu.className = 'file-context-menu';
+  menu.innerHTML = '<div class="ctx-item" data-action="open">📂 Open</div>'
+    + '<div class="ctx-divider"></div>'
+    + '<div class="ctx-item" data-action="rename">✏️ Rename</div>'
+    + '<div class="ctx-item" data-action="copy-path">📋 Copy Path</div>'
+    + '<div class="ctx-divider"></div>'
+    + '<div class="ctx-item danger" data-action="delete">🗑️ Delete</div>';
+
+  menu.style.left = Math.min(e.clientX, window.innerWidth - 170) + 'px';
+  menu.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+  document.body.appendChild(menu);
+
+  menu.addEventListener('click', function(ev) {
+    var action = ev.target.closest('.ctx-item')?.getAttribute('data-action');
+    if (!action) return;
+    menu.remove();
+    if (action === 'open') {
+      if (isDir) showFileExplorer(path);
+      else showFileEditor(path);
+    } else if (action === 'rename') {
+      _fileExplorerRename(path);
+    } else if (action === 'copy-path') {
+      navigator.clipboard.writeText(path).then(function() { showToast('Path copied', 'success'); });
+    } else if (action === 'delete') {
+      _fileExplorerDelete(path);
+    }
+  });
+
+  // Close on any click outside
+  setTimeout(function() {
+    document.addEventListener('click', function closeMenu() {
+      var m = document.querySelector('.file-context-menu');
+      if (m) m.remove();
+      document.removeEventListener('click', closeMenu);
+    }, { once: true });
+  }, 10);
+};
+
+window._fileExplorerSearch = function(query) {
+  var items = document.querySelectorAll('#fe-body .file-explorer-item');
+  var q = query.toLowerCase().trim();
+  items.forEach(function(el) {
+    var name = el.querySelector('.item-name')?.textContent.toLowerCase() || '';
+    el.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+  });
+};
+
+window._fileExplorerDelete = function(path) {
+  if (!path) return;
+  showConfirm('Delete ' + path.split('/').pop() + '?', 'This cannot be undone.', { confirmText: 'Delete', danger: true }).then(function(ok) {
+    if (!ok) return;
+    fetch('/api/sandbox/file/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: path})
+    }).then(function(r){return r.json()}).then(function(d) {
       if (d.status === 'ok') {
-        showToast('Created folder: ' + name, 'success');
+        showToast('Deleted', 'success');
         showFileExplorer();
       } else {
         showToast('Error: ' + (d.error || 'Failed'), 'error');
       }
     }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
-}
+  });
+};
+
+window._fileExplorerRename = function(oldPath) {
+  if (!oldPath) return;
+  var name = prompt('New name:', oldPath.split('/').pop());
+  if (!name || name === oldPath.split('/').pop()) return;
+  var newPath = oldPath.slice(0, oldPath.lastIndexOf('/') + 1) + name;
+  fetch('/api/sandbox/file/rename', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({old_path: oldPath, new_path: newPath})
+  }).then(function(r){return r.json()}).then(function(d) {
+    if (d.status === 'ok') {
+      showToast('Renamed', 'success');
+      showFileExplorer();
+    } else {
+      showToast('Error: ' + (d.error || 'Failed'), 'error');
+    }
+  }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+};
 
 /* ═══════════════ PHASE 2: FILE EDITOR ═══════════════════ */
 
@@ -1420,18 +1814,23 @@ var _editorOriginalContent = '';
 
 async function showFileEditor(filePath) {
   _editorCurrentPath = filePath;
-  const body = document.getElementById('panelBody');
-  body.innerHTML = '<div class="file-editor">'
+  const body = document.getElementById('messagesArea');
+  // Destroy previous CM instance if any before clearing body
+  if (window._editorCM) {
+    window._editorCM.toTextArea();
+    window._editorCM = null;
+  }
+  body.innerHTML = '<div class="file-editor file-editor-full">'
     + '<div class="file-editor-header">'
-    + '<button class="editor-back-btn" onclick="showFileExplorer(\'' + escapeJs(_fileExplorerCurrentPath) + '\')"><i class="fa-solid fa-arrow-left"></i> Files</button>'
+    + '<button class="editor-back-btn" data-click="editor-back"><i class="fa-solid fa-arrow-left"></i> Back to Chat</button>'
     + '<span class="editor-filename" id="editor-filename">' + escapeHtml(filePath.split('/').pop() || filePath) + '</span>'
     + '<span class="editor-path">' + escapeHtml(filePath) + '</span>'
     + '</div>'
     + '<div class="file-editor-body"><textarea id="editor-textarea" spellcheck="false"></textarea></div>'
     + '<div class="file-editor-footer">'
     + '<span class="editor-status" id="editor-status">Loading...</span>'
-    + '<button class="editor-save-btn" id="editor-run-btn" onclick="_editorRun()" title="Run this file"><i class="fa-solid fa-play"></i> Run</button>'
-    + '<button class="editor-save-btn" id="editor-save-btn" onclick="_editorSave()"><i class="fa-solid fa-floppy-disk"></i> Save</button>'
+    + '<button class="editor-save-btn" id="editor-run-btn" data-click="editor-run" title="Run this file"><i class="fa-solid fa-play"></i> Run</button>'
+    + '<button class="editor-save-btn" id="editor-save-btn" data-click="editor-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>'
     + '</div>'
     + '</div>';
 
@@ -1442,43 +1841,90 @@ async function showFileEditor(filePath) {
       document.getElementById('editor-status').textContent = 'Error: ' + d.error;
       return;
     }
-    var ta = document.getElementById('editor-textarea');
-    if (ta) {
-      ta.value = d.content || '';
-      _editorOriginalContent = d.content || '';
-    }
-    var status = document.getElementById('editor-status');
-    if (status) status.textContent = (d.size || 0) + ' bytes | ' + (d.content ? (d.content.split('\n').length + ' lines') : 'empty');
+    var content = d.content || '';
+    _editorOriginalContent = content;
 
-    // Auto-preview HTML files in browser tab
+    // Detect CodeMirror mode from extension
+    var ext = filePath.split('.').pop().toLowerCase();
+    var mode = _codeMirrorMode(ext);
+
+    // Create CodeMirror
+    var ta = document.getElementById('editor-textarea');
+    if (ta && typeof CodeMirror !== 'undefined') {
+      ta.value = content;
+      window._editorCM = CodeMirror.fromTextArea(ta, {
+        mode: mode,
+        theme: 'monokai',
+        lineNumbers: true,
+        indentUnit: 2,
+        tabSize: 2,
+        lineWrapping: true,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        extraKeys: {'Ctrl-S': function() { _editorSave(); }}
+      });
+      window._editorCM.focus();
+    } else if (ta) {
+      ta.value = content;
+      ta.focus();
+    }
+
+    var status = document.getElementById('editor-status');
+    if (status) status.textContent = (d.size || 0) + ' bytes | ' + (content.split('\n').length + ' lines');
+
+    // Auto-save on change (debounced 2s)
+    if (window._editorCM) {
+      window._editorAutoSaveTimer = null;
+      window._editorCM.on('change', function() {
+        if (window._editorAutoSaveTimer) clearTimeout(window._editorAutoSaveTimer);
+        window._editorAutoSaveTimer = setTimeout(function() {
+          if (window._editorCM && window._editorCM.getValue() !== _editorOriginalContent) {
+            _editorSave(true);
+          }
+        }, 2000);
+      });
+    }
+
+    // Auto-preview HTML
     if (filePath.endsWith('.html') || filePath.endsWith('.htm')) {
-      _autoPreviewHtml(filePath, d.content || '');
+      _autoPreviewHtml(filePath, content);
     }
   } catch(e) {
     var status = document.getElementById('editor-status');
     if (status) status.textContent = 'Error: ' + e.message;
   }
-
-  // Keyboard shortcut: Ctrl+S to save
-  var ta = document.getElementById('editor-textarea');
-  if (ta) {
-    ta.focus();
-    ta.onkeydown = function(e) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        _editorSave();
-      }
-    };
-  }
 }
 
-async function _editorSave() {
-  var ta = document.getElementById('editor-textarea');
+function _codeMirrorMode(ext) {
+  var map = {
+    js: 'javascript', ts: 'javascript', jsx: 'javascript', tsx: 'javascript',
+    py: 'python', rb: 'python',
+    html: 'htmlmixed', htm: 'htmlmixed',
+    css: 'css', scss: 'css', less: 'css',
+    json: 'javascript',
+    md: 'markdown', mkd: 'markdown',
+    yml: 'yaml', yaml: 'yaml',
+    sh: 'shell', bash: 'shell', zsh: 'shell',
+    sql: 'sql',
+    xml: 'xml', svg: 'xml',
+  };
+  return map[ext] || 'textile';
+}
+
+async function _editorSave(silent) {
+  var content;
+  if (window._editorCM) {
+    content = window._editorCM.getValue();
+  } else {
+    var ta = document.getElementById('editor-textarea');
+    if (!ta) return;
+    content = ta.value;
+  }
   var btn = document.getElementById('editor-save-btn');
-  if (!ta || !btn) return;
-  var content = ta.value;
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  if (!silent && btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  }
 
   try {
     var r = await fetch('/api/sandbox/file', {
@@ -1489,68 +1935,54 @@ async function _editorSave() {
     var d = await r.json();
     if (d.status === 'ok') {
       _editorOriginalContent = content;
-      showToast('Saved', 'success');
-      // Auto-preview HTML
+      if (!silent) showToast('Saved', 'success');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save'; }
       if (_editorCurrentPath.endsWith('.html') || _editorCurrentPath.endsWith('.htm')) {
         _autoPreviewHtml(_editorCurrentPath, content);
       }
     } else {
-      showToast('Save failed: ' + (d.error || 'Unknown'), 'error');
+      if (!silent) showToast('Save failed: ' + (d.error || 'Unknown'), 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save'; }
     }
   } catch(e) {
-    showToast('Save error: ' + e.message, 'error');
+    if (!silent) showToast('Save error: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save'; }
   }
-
-  btn.disabled = false;
-  btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
 }
+
+window._editorSave = _editorSave;
 
 async function _editorRun() {
   var btn = document.getElementById('editor-run-btn');
-  var ta = document.getElementById('editor-textarea');
-  if (!ta || !btn) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Running...'; }
+
+  var content;
+  if (window._editorCM) {
+    content = window._editorCM.getValue();
+  } else {
+    var ta = document.getElementById('editor-textarea');
+    if (!ta) return;
+    content = ta.value;
+  }
 
   // Save first
-  await _editorSave();
+  await _editorSave(true);
 
   // Detect command based on file extension
   var ext = _editorCurrentPath.split('.').pop().toLowerCase();
-  var cmdMap = {
-    py: 'python3',
-    js: 'node',
-    ts: 'npx ts-node',
-    sh: 'bash',
-    bash: 'bash',
-    go: 'go run',
-    rs: 'cargo run --',
-    rb: 'ruby',
-    php: 'php',
-    pl: 'perl',
-    lua: 'lua',
-    r: 'Rscript',
-  };
+  var cmdMap = { py: 'python3', js: 'node', ts: 'npx ts-node', sh: 'bash', bash: 'bash', go: 'go run', rb: 'ruby', php: 'php', pl: 'perl', lua: 'lua', r: 'Rscript' };
   var runner = cmdMap[ext];
   if (!runner) {
-    // For HTML, auto-preview in browser
-    if (ext === 'html' || ext === 'htm') {
-      _autoPreviewHtml(_editorCurrentPath, ta.value);
-      return;
-    }
+    if (ext === 'html' || ext === 'htm') { _autoPreviewHtml(_editorCurrentPath, content); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-play"></i> Run'; } return; }
     showToast('No runner for .' + ext + ' files', 'info');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-play"></i> Run'; }
     return;
   }
-
-  // Switch to terminal tab and run
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Running...';
 
   // Show terminal
   var tabs = document.querySelectorAll('.right-panel-tab');
   for (var i = 0; i < tabs.length; i++) {
-    if (tabs[i].textContent.toLowerCase().indexOf('terminal') !== -1) {
-      switchTab(tabs[i], 'terminal');
-      break;
-    }
+    if (tabs[i].textContent.toLowerCase().indexOf('terminal') !== -1) { switchTab(tabs[i], 'terminal'); break; }
   }
 
   // Execute in terminal
@@ -1560,19 +1992,14 @@ async function _editorRun() {
     o.innerHTML += '\n<span class="text-accent">$ ' + escapeHtml(cmd) + '</span>\n';
     execTermCmd(cmd, o);
   } else {
-    // Terminal not initialized yet
     showTerminal();
     setTimeout(function() {
       var o2 = document.getElementById('to');
-      if (o2) {
-        o2.innerHTML += '\n<span class="text-accent">$ ' + escapeHtml(cmd) + '</span>\n';
-        execTermCmd(cmd, o2);
-      }
+      if (o2) { o2.innerHTML += '\n<span class="text-accent">$ ' + escapeHtml(cmd) + '</span>\n'; execTermCmd(cmd, o2); }
     }, 200);
   }
 
-  btn.disabled = false;
-  btn.innerHTML = '<i class="fa-solid fa-play"></i> Run';
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-play"></i> Run'; }
 }
 
 /* ═══════════════ PHASE 2: AUTO PREVIEW ═══════════════════ */
@@ -1606,18 +2033,48 @@ async function showProcessManager() {
   body.innerHTML = '<div class="process-manager">'
     + '<div class="process-header">'
     + '<span class="proc-title"><i class="fa-solid fa-microchip"></i> Process Manager</span>'
-    + '<button class="file-explorer-btn" onclick="showProcessManager()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
+    + '<button class="file-explorer-btn" data-click="proc-refresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
+    + '<button class="file-explorer-btn" id="proc-live-btn" data-click="proc-toggle-live" title="Toggle live refresh">● Live</button>'
     + '</div>'
     + '<div class="process-body" id="proc-body">'
     + '<div class="process-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>Loading processes...</span></div>'
     + '</div>'
     + '</div>';
   await _loadProcesses();
+  _startProcessAutoRefresh();
 }
 
-async function _loadProcesses() {
+var _procRefreshTimer = null;
+
+function _startProcessAutoRefresh() {
+  if (_procRefreshTimer) clearInterval(_procRefreshTimer);
+  _procRefreshTimer = setInterval(function() {
+    _loadProcesses(true);
+  }, 5000);
+}
+
+function _stopProcessAutoRefresh() {
+  if (_procRefreshTimer) {
+    clearInterval(_procRefreshTimer);
+    _procRefreshTimer = null;
+  }
+}
+
+CLICK_HANDLERS['proc-toggle-live'] = function() {
+  var btn = document.getElementById('proc-live-btn');
+  if (_procRefreshTimer) {
+    _stopProcessAutoRefresh();
+    if (btn) btn.style.opacity = '0.5';
+  } else {
+    _startProcessAutoRefresh();
+    if (btn) btn.style.opacity = '1';
+  }
+};
+
+async function _loadProcesses(silent) {
   var body = document.getElementById('proc-body');
   if (!body) return;
+  if (!silent) body.innerHTML = '<div class="process-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>Loading processes...</span></div>';
   try {
     var r = await fetch('/api/sandbox/processes');
     var d = await r.json();
@@ -1627,17 +2084,20 @@ async function _loadProcesses() {
     }
     var html = '';
     d.processes.forEach(function(proc) {
+      var status = proc.status || 'running';
+      var statusDot = status === 'running' ? '🟢' : status === 'sleeping' ? '🟡' : '⚪';
       html += '<div class="process-item">'
         + '<span class="proc-pid">' + escapeHtml(proc.pid) + '</span>'
         + '<span class="proc-name">' + escapeHtml(proc.command || proc.name || '?') + '</span>'
-        + '<span class="proc-cpu">' + (proc.cpu ? proc.cpu + '%' : '') + '</span>'
-        + '<span class="proc-mem">' + (proc.mem ? (proc.mem.replace('K', 'K').includes('K') || proc.mem.includes('M') ? proc.mem : proc.mem + '%') : '') + '</span>'
-        + '<button class="proc-kill-btn" onclick="_killProcess(\'' + escapeJs(proc.pid) + '\')" title="Kill"><i class="fa-solid fa-xmark"></i></button>'
+        + '<span class="proc-cpu">' + (proc.cpu != null ? proc.cpu + '%' : '') + '</span>'
+        + '<span class="proc-mem">' + (proc.mem != null ? proc.mem : '') + '</span>'
+        + '<span class="proc-status">' + statusDot + '</span>'
+        + '<button class="proc-kill-btn" data-click="proc-kill" data-pid="' + escapeHtml(proc.pid) + '" title="Kill"><i class="fa-solid fa-xmark"></i></button>'
         + '</div>';
     });
     body.innerHTML = html;
   } catch(e) {
-    body.innerHTML = '<div class="process-empty text-error"><i class="fa-solid fa-triangle-exclamation"></i><span>' + escapeHtml(e.message) + '</span></div>';
+    if (!silent) body.innerHTML = '<div class="process-empty text-error"><i class="fa-solid fa-triangle-exclamation"></i><span>' + escapeHtml(e.message) + '</span></div>';
   }
 }
 
@@ -1662,10 +2122,75 @@ function escapeJs(str) {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+// ═══════════════ PHASE 4: EXPORT SYSTEM ═══════════════════
+
+function _showExportDialog() {
+  var existing = document.getElementById('export-dialog');
+  if (existing) { existing.remove(); return; }
+
+  var overlay = document.createElement('div');
+  overlay.id = 'export-dialog';
+  overlay.className = 'dialog-overlay open';
+  overlay.innerHTML = '<div class="dialog-box" style="max-width:420px"><div class="dialog-icon info"><i class="fa-solid fa-file-export"></i></div>'
+    + '<div class="dialog-title">Export Conversation</div><div class="dialog-desc text-sm text-muted" style="margin-bottom:16px">'
+    + (S.messages?.length || 0) + ' messages in this session</div>'
+    + '<div style="display:flex;flex-direction:column;gap:8px">'
+    + '<button class="send-btn w-full" data-click="export-markdown"><i class="fa-solid fa-clipboard"></i> Copy as Markdown</button>'
+    + '<button class="send-btn w-full" data-click="export-markdown-dl"><i class="fa-solid fa-download"></i> Download as .md</button>'
+    + '<button class="send-btn w-full" data-click="export-json"><i class="fa-solid fa-code"></i> Download as .json</button>'
+    + '</div>'
+    + '<div class="dialog-actions" style="margin-top:16px"><button class="dialog-btn secondary" data-click="close-export-dialog">Cancel</button></div></div>';
+  document.body.appendChild(overlay);
+}
+
+function _exportChat(format, download) {
+  var ext = format === 'json' ? 'json' : 'md';
+  var ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  var filename = 'widdx-export-' + ts + '.' + ext;
+
+  var messages = S.messages || [];
+  var content = '';
+
+  if (format === 'json') {
+    content = JSON.stringify({
+      exportedAt: new Date().toISOString(),
+      model: S.model || '—',
+      messageCount: messages.length,
+      messages: messages.map(function(m) { return { role: m.role, content: m.content, canvas: m.canvas || null, timestamp: m.timestamp || null }; })
+    }, null, 2);
+  } else {
+    content = messages.map(function(m) {
+      var role = m.role === 'user' ? '👤 **You**' : m.role === 'assistant' ? '🤖 **WIDDX**' : 'ℹ️ **System**';
+      return role + '\n\n' + (m.content || '') + '\n\n---\n';
+    }).join('\n');
+    content = '# WIDDX Nexus — Conversation Export\n\n_Exported: ' + new Date().toLocaleString() + '_\n\n' + content;
+  }
+
+  if (download) {
+    var blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Downloaded: ' + filename, 'success');
+  } else {
+    navigator.clipboard.writeText(content).then(function() {
+      showToast('Copied to clipboard!', 'success');
+    }).catch(function() {
+      showToast('Failed to copy', 'error');
+    });
+  }
+
+  var dialog = document.getElementById('export-dialog');
+  if (dialog) dialog.remove();
+}
+
 async function showScreenshot() {
   const body = document.getElementById('panelBody');
   body.innerHTML = '<div class="screenshot-container">'
-    + '<button id="ss-btn" class="screenshot-btn" onclick="takeScreenshot()"><i class="fa-solid fa-camera"></i> Take Screenshot</button>'
+    + '<button id="ss-btn" class="screenshot-btn" data-click="take-screenshot"><i class="fa-solid fa-camera"></i> Take Screenshot</button>'
     + '<div id="ss-result" class="screenshot-result">Click the button to capture a browser screenshot.</div></div>';
 }
 
@@ -1718,24 +2243,24 @@ document.addEventListener('DOMContentLoaded', function() {
   loadAppTheme();
   loadStatus();
   loadProjectSession();
-  loadSidebar();    // #4: Event listeners (replace inline onclick) — sidebar, header, input
-    document.getElementById('sidebarNewTask').onclick = function() {
+  loadSidebar();    // #4: Event listeners — sidebar, header, input
+    document.getElementById('sidebarNewTask').addEventListener('click', function() {
       if (typeof newSession === 'function') newSession();
       else showView('chat');
       if (window.innerWidth < 820) toggleSidebar();
-    };
-    document.getElementById('hamburgerBtn').onclick = function() { toggleSidebar(); };
-    document.getElementById('sidebarFloatingToggle').onclick = function() { toggleSidebar(); };
-    document.getElementById('sidebarBackdrop').onclick = function() {
+    });
+    document.getElementById('hamburgerBtn').addEventListener('click', function() { toggleSidebar(); });
+    document.getElementById('sidebarFloatingToggle').addEventListener('click', function() { toggleSidebar(); });
+    document.getElementById('sidebarBackdrop').addEventListener('click', function() {
       if (window.innerWidth < 820) toggleSidebar();
-    };
-    document.getElementById('scrollBottomBtn').onclick = function() { scrollBottom(); };
-    document.getElementById('cancelBtn').onclick = function() { cancelAgent(); };
-    document.getElementById('sendBtn').onclick = function() { sendMessage(); };
-    document.getElementById('langToggleBtn').onclick = function() { Lang.toggle(); };
-    document.getElementById('starBtn').onclick = function() { this.classList.toggle('active'); };
-    document.getElementById('modelSelector').onclick = function(e) { toggleModelDropdown(e); };
-    document.getElementById('modelDropdownFooter').onclick = function() { showView('settings'); };
+    });
+    document.getElementById('scrollBottomBtn').addEventListener('click', function() { scrollBottom(); });
+    document.getElementById('cancelBtn').addEventListener('click', function() { cancelAgent(); });
+    document.getElementById('sendBtn').addEventListener('click', function() { sendMessage(); });
+    document.getElementById('langToggleBtn').addEventListener('click', function() { Lang.toggle(); });
+    document.getElementById('starBtn').addEventListener('click', function() { this.classList.toggle('active'); });
+    document.getElementById('modelSelector').addEventListener('click', function(e) { toggleModelDropdown(e); });
+    document.getElementById('modelDropdownFooter').addEventListener('click', function() { showView('settings'); });
 
     // Event delegation for all .nav-item[data-view] elements
     document.querySelectorAll('.nav-item[data-view]').forEach(function(item) {
@@ -1744,8 +2269,32 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
 
-    showDesktop();
-  initWebSocket();
+    showTerminal();
+    showFileExplorer();
+
+    // Activity Bar
+    document.querySelectorAll('.act-icon[data-panel]').forEach(function(icon) {
+      icon.addEventListener('click', function() {
+        var panel = this.getAttribute('data-panel');
+        document.querySelectorAll('.act-icon').forEach(function(i) { i.classList.remove('active'); });
+        this.classList.add('active');
+
+        var chatP = document.getElementById('sidebar-chat');
+        var filesP = document.getElementById('sidebar-files');
+        var gitP = document.getElementById('sidebar-git');
+        if (chatP) chatP.style.display = 'none';
+        if (filesP) filesP.style.display = 'none';
+        if (gitP) gitP.style.display = 'none';
+
+        if (panel === 'chat') { if (chatP) chatP.style.display = ''; }
+        else if (panel === 'files') { if (filesP) filesP.style.display = ''; showFileExplorer(); }
+        else if (panel === 'git') { if (gitP) gitP.style.display = ''; _loadSidebarGit(); }
+        else if (panel === 'dashboard') { showView('dashboard'); }
+        else if (panel === 'settings') { showView('settings'); }
+      });
+    });
+
+    initWebSocket();
   initEventStream();
 
   // Periodic refresh
@@ -1844,7 +2393,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var div = document.createElement('div');
     div.id = 'uploadPreview';
     div.className = 'upload-preview';
-    div.innerHTML = icon + ' ' + escapeHtml(name) + ' <span class=\"upload-preview-close\" onclick=\"clearUploadPreview()\">✕</span>';
+    div.innerHTML = icon + ' ' + escapeHtml(name) + ' <span class=\"upload-preview-close\" data-click=\"clear-upload\">✕</span>';
     var toolbar = document.querySelector('.input-toolbar');
     if (toolbar) toolbar.parentNode.insertBefore(div, toolbar);
   }
@@ -1900,7 +2449,7 @@ document.addEventListener('DOMContentLoaded', function() {
           return;
         }
         container.innerHTML = sessions.slice(0, 20).map(function(s) {
-          return '<div class=\"bg-card border-main rounded-lg cursor-pointer\" style=\"padding:12px 16px\" onclick=\"showView(\'chat\');loadSession(\'' + (s.id || '') + '\')\">'
+          return '<div class=\"bg-card border-main rounded-lg cursor-pointer\" style=\"padding:12px 16px\" data-click=\"load-session\" data-session=\"' + (s.id || '') + '\">'
             + '<strong>' + escapeHtml(s.name || 'Untitled') + '</strong>'
             + '<span class=\"text-muted text-xs\" style=\"float:right\">' + (s.branch || 'main') + '</span>'
             + '<br><span class=\"text-muted text-sm\">' + (s.created || '') + ' · ' + (s.msg_count || 0) + ' messages</span>'
@@ -1934,7 +2483,7 @@ document.addEventListener('DOMContentLoaded', function() {
           }
           html += '<div class="bg-card border-main rounded-lg p-16 mb-12">'
             + '<h3 class="text-accent" style="margin:0 0 4px">' + doc + (tasks.length ? ' <span style="font-size:14px">' + tasks.join(' · ') + '</span>' : '') + '</h3>'
-            + '<pre class="text-pre-wrap text-sm text-secondary max-h-400 overflow-y-auto" style="line-height:1.5">' + (content || '(empty — start a chat to auto-create)') + '</pre>'
+            + '<pre class="text-pre-wrap text-sm text-secondary max-h-400 overflow-y-auto line-height-1_5">' + (content || '(empty — start a chat to auto-create)') + '</pre>'
             + '</div>';
           if (loaded === docs.length) {
             document.getElementById('planContent').innerHTML = html || '<p>No plan docs yet. Start a chat to auto-create them.</p>';
@@ -1984,3 +2533,565 @@ document.addEventListener('DOMContentLoaded', function() {
     area.insertAdjacentHTML('beforeend', diffHtml);
   };
 });
+
+// ═══════════════ SIDEBAR GIT PANEL (VS Code-style) ═══════════════════
+async function _loadSidebarGit() {
+  var body = document.getElementById('sidebar-git-body');
+  if (!body) return;
+  body.innerHTML = '<div class="sg-loading">Loading...</div>';
+  try {
+    var r = await fetch('/api/git');
+    var d = await r.json();
+    var branch = (d.branch || '').replace(/^\*\s*/, '') || 'main';
+    var changes = d.changes || '';
+    var files = changes ? changes.split('\n').filter(Boolean) : [];
+    var html = '<div class="sg-branch">🌿 ' + escapeHtml(branch) + '</div>';
+
+    if (!files.length) {
+      html += '<div class="sg-empty">No changes</div>';
+    } else {
+      html += '<div class="sg-files">';
+      files.forEach(function(f) {
+        var m = f.match(/^([ MARCUD?!])\s+(.+)/);
+        var code = m ? m[1].trim() : ' ';
+        var path = m ? m[2] : f;
+        var cls = code === 'M' ? 'M' : code === 'A' ? 'A' : code === 'D' ? 'D' : code === '?' ? 'U' : '';
+        html += '<div class="sg-file ' + cls + '"><span class="sg-indicator">' + code + '</span>' + escapeHtml(path) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    html += '<div class="sg-actions">'
+      + '<textarea class="sg-msg" id="sg-commit-msg" placeholder="Commit message..." rows="2"></textarea>'
+      + '<div class="sg-btns">'
+      + '<button class="sg-btn primary" data-click="sg-commit">✓ Commit</button>'
+      + '<button class="sg-btn" data-click="sg-push">↑ Push</button>'
+      + '<button class="sg-btn" data-click="sg-pull">↓ Pull</button>'
+      + '<button class="sg-btn" data-click="sg-refresh">↻</button>'
+      + '</div></div>';
+
+    body.innerHTML = html;
+  } catch(e) {
+    body.innerHTML = '<div class="sg-empty err">' + escapeHtml(e.message) + '</div>';
+  }
+}
+CLICK_HANDLERS['sg-commit'] = function() {
+  var msg = document.getElementById('sg-commit-msg')?.value.trim();
+  fetch('/api/git/commit', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message: msg || 'Auto-commit'}) })
+    .then(function(r){return r.json()}).then(function(d) {
+      showToast(d.status === 'committed' ? '✓ Committed' : 'Failed', d.status === 'committed' ? 'success' : 'error');
+      if (d.status === 'committed') { var m = document.getElementById('sg-commit-msg'); if (m) m.value = ''; _loadSidebarGit(); }
+    }).catch(function(e) { showToast(e.message, 'error'); });
+};
+CLICK_HANDLERS['sg-push'] = function() {
+  showToast('Pushing...', 'info');
+  fetch('/api/git/push', { method: 'POST' }).then(function(r){return r.json()}).then(function(d) {
+    showToast(d.status === 'pushed' ? '✓ Pushed' : (d.error || 'Failed'), 'success');
+  }).catch(function(e) { showToast(e.message, 'error'); });
+};
+CLICK_HANDLERS['sg-pull'] = function() {
+  showToast('Pulling...', 'info');
+  fetch('/api/git/pull', { method: 'POST' }).then(function(r){return r.json()}).then(function(d) {
+    showToast(d.status === 'pulled' ? '✓ Pulled' : (d.error || 'Failed'), 'success');
+  }).catch(function(e) { showToast(e.message, 'error'); });
+};
+CLICK_HANDLERS['sg-refresh'] = function() { _loadSidebarGit(); };
+
+// ═══════════════ PHASE 3: ULTRA-SMART CANVAS SYSTEM ═══════════════════
+
+// ── Analysis Engine: deep content understanding ──
+function __analyzeContent(c) {
+  if (!c || typeof c !== 'string' || c.trim().length < 20) return null;
+  var a = {
+    headings: [], headWords: [], tableCount: 0, codeCount: 0, listCount: 0,
+    wordCount: 0, charCount: 0, avgWordLen: 0, codeRatio: 0, tableRatio: 0,
+    hasFAQ: false, hasChangelog: false, hasRecipe: false, hasAPIDoc: false,
+    hasTutorial: false, hasDataReport: false, hasTimeline: false,
+    hasComparison: false, hasTravel: false, hasGlossary: false,
+    hasTaskList: false, hasArchitecture: false, isStructured: false,
+    sections: [], sigStrength: 0,
+  };
+  a.wordCount = c.split(/\s+/).length;
+  a.charCount = c.length;
+  a.avgWordLen = a.wordCount ? Math.round(a.charCount / a.wordCount) : 0;
+
+  var h = c.match(/^#{2,4}\s+.+/gm);
+  if (h) a.headings = h.map(function(v) { return { level: v.match(/^#+/)[0].length, text: v.replace(/^#+\s*/, '') }; });
+  a.headWords = (c.match(/\b(?:introduction|overview|conclusion|summary|setup|installation|usage|configuration|api|examples?|faq|troubleshooting|license)\b/gi) || []);
+
+  a.tableCount = (c.match(/^\|.+\|[\s\S]*?^\|.+\|$/gm) || []).length;
+  a.codeCount = (c.match(/```[\s\S]*?```/g) || []).length;
+  a.listCount = (c.match(/^[*-]\s/gm) || []).length;
+
+  a.codeRatio = a.wordCount ? a.codeCount / (a.wordCount / 50) : 0;
+  a.tableRatio = a.wordCount ? a.tableCount / (a.wordCount / 100) : 0;
+
+  // FAQ detection: Q: / A: or Question: / Answer: patterns
+  var qaLines = c.match(/^(?:[-*]\s*)?(?:\*\*)?[QAqa][^:]*:{1,2}\s+/gm);
+  a.hasFAQ = (qaLines || []).length >= 4;
+
+  // Changelog: version numbers + dates
+  a.hasChangelog = (c.match(/^#{1,3}\s+v?\d+\.\d+/gm) || []).length >= 2
+    || (c.match(/^##?\s*\[\d+\.\d+/) || []).length >= 1;
+
+  // Recipe: ingredients + steps + time
+  a.hasRecipe = /\b(ingredients?|instructions?|steps?|prep[ .]time|cook[ .]time|servings?)\b/i.test(c)
+    && (c.match(/^[*-]\s/gm) || []).length >= 3;
+
+  // API Doc: endpoints + methods + parameters
+  a.hasAPIDoc = /\b(GET|POST|PUT|DELETE|PATCH|endpoint|API|request|response|parameter)\b/i.test(c)
+    && a.headWords.indexOf('api') !== -1 || (c.match(/\b(GET|POST|PUT|DELETE)\s+\/\S+/g) || []).length >= 1;
+
+  // Tutorial: prerequisites + step-by-step + examples
+  a.hasTutorial = /\b(prerequisites?|getting started|step[\s-]by[\s-]step|tutorial|guide|walkthrough)\b/i.test(c)
+    && a.headings.length >= 2 && a.codeCount >= 1;
+
+  // Data Report: numbers, percentages, trends
+  a.hasDataReport = (c.match(/\d+\.?\d*\s*(?:%|GB|MB|KB|ms|sec|users|requests|growing|declining|increased|decreased)/g) || []).length >= 4
+    && a.tableCount >= 1;
+
+  // Travel itinerary: Day N, times, locations
+  a.hasTravel = /\b(Day\s+\d+|itinerary|hotel|flight|check-in|depart|arrive)\b/im.test(c)
+    && a.headings.length >= 2;
+
+  // Comparison: vs, versus, pros/cons
+  a.hasComparison = /\b(vs\.?|versus|alternatives?|pros?|cons?|advantages?|disadvantages?)\b/i.test(c)
+    && (a.tableCount >= 1 || a.listCount >= 4);
+
+  // Glossary: **term**: definition
+  var gm = c.match(/^\*\*[^*]+\*\*\s*[:—\-]/gm);
+  a.hasGlossary = (gm || []).length >= 3;
+
+  // Timeline: Year at start of list items
+  a.hasTimeline = (c.match(/^[*-]\s+\d{4}[\s:]/gm) || []).length >= 2;
+
+  // Task list: - [ ] or - [x]
+  a.hasTaskList = /^\s*[*-]\s*\[[\sxX]\]/m.test(c);
+
+  // Architecture/system design
+  a.hasArchitecture = /\b(?:architecture|system design|components?|layers?|pipeline|infrastructure)\b/i.test(c)
+    && a.headings.length >= 2;
+
+  // Signal strength: number of positive detections
+  var signals = [
+    a.headings.length >= 2, a.tableCount >= 1, a.codeCount >= 1,
+    a.hasFAQ, a.hasChangelog, a.hasRecipe, a.hasAPIDoc, a.hasTutorial,
+    a.hasDataReport, a.hasTravel, a.hasComparison, a.hasGlossary,
+    a.hasTimeline, a.hasTaskList, a.hasArchitecture
+  ];
+  a.sigStrength = signals.filter(function(s) { return s; }).length;
+
+  a.isStructured = a.sigStrength >= 2 || a.headings.length >= 2 || a.tableCount >= 1;
+
+  // Sections by h2
+  var lines = c.split('\n');
+  var cur = { heading: null, body: [] };
+  for (var i = 0; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) {
+      if (cur.heading || cur.body.length) a.sections.push(cur);
+      cur = { heading: lines[i].replace(/^##\s*/, ''), body: [] };
+    } else cur.body.push(lines[i]);
+  }
+  if (cur.heading || cur.body.length) a.sections.push(cur);
+
+  return a;
+}
+
+// ── Canvas Registry ──
+var __canvasTypes = [];
+function __registerCanvas(c) { __canvasTypes.push(c); }
+
+// ── Smart Dispatcher ──
+function canvasDispatcher(content) {
+  var a = __analyzeContent(content);
+  if (!a || a.wordCount < 30) return null;
+
+  var best = null, bestScore = -1;
+  for (var i = 0; i < __canvasTypes.length; i++) {
+    var r = __canvasTypes[i].detect(a, content);
+    if (r && r.score > bestScore) {
+      best = { name: __canvasTypes[i].name, data: r.data, render: __canvasTypes[i].render, score: r.score };
+      bestScore = r.score;
+    }
+  }
+  // Fallback: always render with at least base enhancements
+  if (!best || bestScore < 20) {
+    var fbData = { headings: a.headings, sections: a.sections };
+    best = { name: 'fallback', data: fbData, render: function(d, c) { return __smartFallback(c, d); }, score: 10 };
+  }
+  return best;
+}
+
+// ── Length factor: short content → lower score ──
+function __lenFactor(wc) {
+  if (wc < 80) return 0.3;
+  if (wc < 150) return 0.6;
+  if (wc < 300) return 0.9;
+  if (wc > 1500) return 0.85;
+  return 1.0;
+}
+
+// ── Document Canvas: structured docs, guides, reports ──
+__registerCanvas({
+  name: 'document',
+  detect: function(a) {
+    if (a.headings.length < 2 || a.wordCount < 100) return null;
+    var base = a.headings.length >= 4 ? 80 : a.headings.length >= 3 ? 70 : 50;
+    if (a.hasTutorial) base += 15;
+    if (a.hasDataReport) base += 10;
+    if (a.headWords.length >= 2) base += 5;
+    return { score: base * __lenFactor(a.wordCount), data: { headings: a.headings } };
+  },
+  render: function(d, c) {
+    var tocHTML = '<div class="can-toc-hdr">📑 Contents (' + d.headings.length + ')</div>'
+      + d.headings.map(function(h) {
+        var id = h.text.replace(/[^\w\u0600-\u06FF\s-]/g, '').replace(/\s+/g, '-').toLowerCase();
+        return '<a href="#can-s-' + id + '" class="can-toc-i" style="padding-left:' + ((h.level - 2) * 14 + 4) + 'px">' + escapeHtml(h.text) + '</a>';
+      }).join('');
+    var html = parseMarkdown(c);
+    d.headings.forEach(function(h) {
+      var id = h.text.replace(/[^\w\u0600-\u06FF\s-]/g, '').replace(/\s+/g, '-').toLowerCase();
+      var esc = escapeHtml(h.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      html = html.replace(new RegExp('<h' + h.level + '>' + esc + '</h' + h.level + '>'), '<h' + h.level + ' id="can-s-' + id + '">' + escapeHtml(h.text) + '</h' + h.level + '>');
+    });
+    return '<div class="can-doc"><div class="can-toc">' + tocHTML + '</div><div class="can-body">' + html + '</div></div>';
+  }
+});
+
+// ── Table Canvas: data tables ──
+__registerCanvas({
+  name: 'table',
+  detect: function(a) {
+    if (!a.tableCount) return null;
+    var base = 50 + a.tableCount * 12;
+    if (a.hasDataReport) base += 15;
+    if (a.hasComparison) base += 10;
+    if (a.tableRatio > 0.3) base += 10;
+    return { score: base * __lenFactor(a.wordCount), data: { count: a.tableCount } };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<table>/g, '<table class="can-tbl">');
+    html = html.replace(/<th>/g, '<th class="can-tbl-h">');
+    return '<div class="can-tables">' + html + '</div>';
+  }
+});
+
+// ── Code Canvas: tutorials, code-heavy docs ──
+__registerCanvas({
+  name: 'code',
+  detect: function(a) {
+    if (!a.codeCount || a.codeRatio < 0.2) return null;
+    var base = 40 + Math.min(a.codeCount * 20, 60);
+    if (a.hasAPIDoc) base += 15;
+    if (a.hasTutorial) base += 10;
+    if (a.codeRatio > 0.6) base += 15;
+    return { score: base * __lenFactor(a.wordCount), data: { count: a.codeCount } };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    var idx = 0;
+    html = html.replace(/<pre><code class="language-(\w+)">/g, function(m, l) {
+      idx++;
+      return '<div class="can-cd"><div class="can-cd-h"><span class="can-cd-l">' + l + '</span><span class="can-cd-n">#' + idx + '</span></div><pre><code class="language-' + l + '">';
+    });
+    html = html.replace(/<pre><code>/g, function() {
+      idx++;
+      return '<div class="can-cd"><div class="can-cd-h"><span class="can-cd-l">code</span><span class="can-cd-n">#' + idx + '</span></div><pre><code>';
+    });
+    html = html.replace(/<\/code><\/pre>/g, '</code></pre></div>');
+    return '<div class="can-codes">' + html + '</div>';
+  }
+});
+
+// ── Travel Canvas ──
+__registerCanvas({
+  name: 'travel',
+  detect: function(a) {
+    if (!a.hasTravel) return null;
+    return { score: 85 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<strong>(Day\s+\d+[^<]*)<\/strong>/gi, '<span class="can-day">📅 $1</span>');
+    html = html.replace(/<h3>([^<]+)<\/h3>/g, function(m, t) {
+      if (/(hotel|flight|loc|activity|meal|transport)/i.test(t)) return '<h3 class="can-trv-h">📍 ' + t + '</h3>';
+      return m;
+    });
+    return '<div class="can-trv">' + html + '</div>';
+  }
+});
+
+// ── Comparison Canvas ──
+__registerCanvas({
+  name: 'comparison',
+  detect: function(a) {
+    if (!a.hasComparison) return null;
+    return { score: 75 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<table>/g, '<table class="can-tbl can-cmp">');
+    html = html.replace(/(✅|Pros?|Advantages?):/gi, '<span class="can-pro">✅ $1</span>');
+    html = html.replace(/(❌|Cons?|Disadvantages?):/gi, '<span class="can-con">❌ $1</span>');
+    return '<div class="can-cmp-w">' + html + '</div>';
+  }
+});
+
+// ── Glossary Canvas ──
+__registerCanvas({
+  name: 'glossary',
+  detect: function(a) {
+    if (!a.hasGlossary) return null;
+    return { score: 70 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var items = [];
+    c.split('\n').forEach(function(l) {
+      var m = l.match(/^\*\*([^*]+)\*\*\s*[:—\-]\s*(.+)/);
+      if (m) items.push({ term: m[1], def: m[2] });
+    });
+    // Show rest of content + glossary
+    var nonGlossary = c.split('\n').filter(function(l) { return !l.match(/^\*\*[^*]+\*\*\s*[:—\-]/); }).join('\n');
+    var rest = nonGlossary.trim() ? parseMarkdown(nonGlossary) : '';
+    var glHTML = items.length ? '<div class="can-gloss"><div class="can-gloss-h">📖 ' + items.length + ' terms</div>'
+      + items.map(function(i) {
+        return '<div class="can-gloss-r"><span class="can-gloss-t">' + escapeHtml(i.term) + '</span><span class="can-gloss-d">' + parseMarkdown(i.def) + '</span></div>';
+      }).join('') + '</div>' : '';
+    return '<div class="can-gloss-w">' + rest + glHTML + '</div>';
+  }
+});
+
+// ── Timeline Canvas ──
+__registerCanvas({
+  name: 'timeline',
+  detect: function(a) {
+    if (!a.hasTimeline) return null;
+    return { score: 70 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<ul>/g, '<ul class="can-tl">');
+    html = html.replace(/<li>/g, '<li class="can-tl-i">');
+    return '<div class="can-tl-w">' + html + '</div>';
+  }
+});
+
+// ── Task List Canvas ──
+__registerCanvas({
+  name: 'tasks',
+  detect: function(a) {
+    if (!a.hasTaskList) return null;
+    return { score: 60 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<input[^>]*checked[^>]*>/g, '<span class="can-chk done">✅</span>');
+    html = html.replace(/<input[^>]*>/g, '<span class="can-chk">⬜</span>');
+    html = html.replace(/<li>/g, '<li class="can-task-i">');
+    return '<div class="can-tasks">' + html + '</div>';
+  }
+});
+
+// ── Architecture Canvas ──
+__registerCanvas({
+  name: 'architecture',
+  detect: function(a) {
+    if (!a.hasArchitecture) return null;
+    return { score: 80 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<pre><code class="language-(\w+)">/g, function(m, l) {
+      return '<div class="can-arc-c"><div class="can-arc-l">⚙ ' + l + '</div><pre><code class="language-' + l + '">';
+    });
+    html = html.replace(/<\/code><\/pre>/g, '</code></pre></div>');
+    return '<div class="can-arc">' + html + '</div>';
+  }
+});
+
+// ── FAQ Canvas ──
+__registerCanvas({
+  name: 'faq',
+  detect: function(a) {
+    if (!a.hasFAQ) return null;
+    return { score: 65 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    // Style Q/A pairs
+    html = html.replace(/^<p><strong>(Q|Question)[^:]*:<\/strong>/gm, '<p class="can-faq-q">❓ $1:</p>');
+    html = html.replace(/^<p><strong>(A|Answer)[^:]*:<\/strong>/gm, '<p class="can-faq-a">💡 $1:</p>');
+    return '<div class="can-faq-w">' + html + '</div>';
+  }
+});
+
+// ── Changelog Canvas ──
+__registerCanvas({
+  name: 'changelog',
+  detect: function(a) {
+    if (!a.hasChangelog) return null;
+    return { score: 75 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<h2>v?(\d+\.\d+)/g, '<h2 class="can-cl-h">🚀 v$1');
+    html = html.replace(/<h3>v?(\d+\.\d+)/g, '<h3 class="can-cl-h">🔹 v$1');
+    html = html.replace(/<li>(added|new|feat):/gi, '<li class="can-cl-add">✨ $1:');
+    html = html.replace(/<li>(fixed|bugfix|fix):/gi, '<li class="can-cl-fix">🐛 $1:');
+    html = html.replace(/<li>(changed|updated|improve):/gi, '<li class="can-cl-chg">🔄 $1:');
+    html = html.replace(/<li>(removed|deprecated):/gi, '<li class="can-cl-rm">🗑️ $1:');
+    return '<div class="can-cl-w">' + html + '</div>';
+  }
+});
+
+// ── Recipe Canvas ──
+__registerCanvas({
+  name: 'recipe',
+  detect: function(a) {
+    if (!a.hasRecipe) return null;
+    return { score: 75 * __lenFactor(a.wordCount), data: {} };
+  },
+  render: function(d, c) {
+    var html = parseMarkdown(c);
+    html = html.replace(/<h2>/g, '<h2 class="can-rec-h">👨‍🍳 ');
+    html = html.replace(/<li>(ingredients?):/gi, '<li class="can-rec-ing">🛒 $1:');
+    html = html.replace(/<li>(steps?|instructions?):/gi, '<li class="can-rec-st">📋 $1:');
+    return '<div class="can-rec-w">' + html + '</div>';
+  }
+});
+
+// ── Smart Fallback: enhances ALL content ──
+function __smartFallback(content, data) {
+  var html = parseMarkdown(content);
+  // Numbered headings
+  var idx = 0;
+  html = html.replace(/<h([23])>/g, function(m, l) {
+    idx++;
+    return '<h' + l + ' id="can-fb-' + idx + '" class="can-fb-h">' + idx + '. ';
+  });
+  // Enhance tables
+  html = html.replace(/<table>/g, '<table class="can-tbl">');
+  // Enhance single code blocks
+  html = html.replace(/<pre><code>/g, '<div class="can-cd can-fb"><pre><code>');
+  html = html.replace(/<\/code><\/pre>/g, '</code></pre></div>');
+  // Checkboxes
+  html = html.replace(/\[ \]/g, '<span class="can-chk">⬜</span>');
+  html = html.replace(/\[x\]/gi, '<span class="can-chk done">✅</span>');
+  return '<div class="can-fb-w">' + html + '</div>';
+}
+
+// ── Main integration ──
+function _tryCanvasRender() {
+  var el = S._activeAITextEl;
+  if (!el) return;
+  // Use raw markdown from dataset (preserves formatting), fallback to text
+  var content = el.dataset?.raw || el.textContent || el.innerText || '';
+  if (!content.trim() || content.trim().length < 20) return;
+
+  var canvas = canvasDispatcher(content);
+  if (canvas && canvas.render) {
+    el.innerHTML = canvas.render(canvas.data, content);
+    el.classList.add('can-active');
+    // Save canvas metadata to the last message for session persistence
+    var msgs = S.messages;
+    if (msgs && msgs.length) {
+      var last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant') {
+        last.canvas = { type: canvas.name, data: canvas.data };
+      }
+    }
+    // Add canvas badge
+    var badge = document.createElement('div');
+    badge.className = 'can-badge';
+    var labels = { document: '📑 Document', table: '📊 Table', code: '💻 Code', travel: '✈️ Travel',
+      comparison: '⚖️ Comparison', glossary: '📖 Glossary', timeline: '📅 Timeline',
+      tasks: '✅ Tasks', architecture: '🏗️ Architecture', faq: '❓ FAQ', changelog: '📋 Changelog', recipe: '👨‍🍳 Recipe' };
+    badge.textContent = labels[canvas.name] || '🎨 Canvas';
+    el.parentElement?.insertBefore(badge, el);
+  }
+}
+
+// ── Dynamic Canvas CSS ──
+var _canCSS = document.createElement('style');
+_canCSS.textContent = ''
+  // Document
+  + '.can-doc{display:flex;gap:20px;position:relative}'
+  + '.can-toc{flex:0 0 180px;position:sticky;top:8px;max-height:calc(100vh-250px);overflow-y:auto;padding:8px 4px;border-right:1px solid var(--border-light)}'
+  + '.can-toc-hdr{font-weight:700;color:var(--text-primary);margin-bottom:10px;font-size:11px;letter-spacing:.5px;padding-bottom:6px;border-bottom:1px solid var(--border-light)}'
+  + '.can-toc-i{display:block;padding:4px 6px;color:var(--text-muted);text-decoration:none;border-radius:4px;transition:all .12s;font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+  + '.can-toc-i:hover{color:var(--accent);background:var(--fill-hover)}'
+  + '.can-body{flex:1;min-width:0}'
+  + '.can-body h2{margin-top:4px}'
+  // Tables
+  + '.can-tbl{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}'
+  + '.can-tbl-h,.can-tbl th{background:var(--accent-dim);color:var(--accent);padding:10px 14px;text-align:left;font-weight:600;border:1px solid var(--border-main);font-size:12px}'
+  + '.can-tbl td{padding:8px 14px;border:1px solid var(--border-main);color:var(--text-secondary)}'
+  + '.can-tbl tr:nth-child(even){background:var(--bg-input)}'
+  + '.can-tbl tr:hover{background:var(--fill-hover)}'
+  + '.can-cmp th:first-child{background:var(--success-dim);color:var(--success)}'
+  + '.can-cmp th:last-child{background:var(--error-dim);color:var(--error)}'
+  // Code
+  + '.can-cd{position:relative;margin:16px 0;border-radius:8px;overflow:hidden;border:1px solid var(--border-main)}'
+  + '.can-cd-h{display:flex;justify-content:space-between;padding:4px 12px;background:var(--bg-input);border-bottom:1px solid var(--border-light);font-size:10px}'
+  + '.can-cd-l{color:var(--accent);font-weight:600;text-transform:uppercase}'
+  + '.can-cd-n{color:var(--text-muted)}'
+  + '.can-cd pre{margin:0;padding:12px;background:var(--bg-canvas)}'
+  // Travel
+  + '.can-day{background:var(--accent-dim);color:var(--accent);padding:4px 14px;border-radius:var(--radius-full);font-weight:600;font-size:12px;margin:8px 0;display:inline-block}'
+  + '.can-trv-h{color:var(--text-primary);font-size:14px;margin:8px 0 4px}'
+  // Comparison
+  + '.can-cmp-w{padding:4px 0}'
+  + '.can-pro{color:var(--success);font-weight:600}'
+  + '.can-con{color:var(--error);font-weight:600}'
+  // Glossary
+  + '.can-gloss{border:1px solid var(--border-main);border-radius:10px;overflow:hidden;margin:12px 0}'
+  + '.can-gloss-h{padding:8px 14px;background:var(--bg-input);font-weight:600;font-size:12px;color:var(--text-primary);border-bottom:1px solid var(--border-light)}'
+  + '.can-gloss-r{display:flex;padding:8px 14px;border-bottom:1px solid var(--border-light);gap:12px;font-size:13px}'
+  + '.can-gloss-r:last-child{border-bottom:none}'
+  + '.can-gloss-t{flex:0 0 120px;font-weight:600;color:var(--accent)}'
+  + '.can-gloss-d{flex:1;color:var(--text-secondary)}'
+  + '.can-gloss-d p{margin:0}'
+  // Timeline
+  + '.can-tl-w{padding:4px 0 4px 16px;border-left:2px solid var(--accent-dim);margin:8px 0}'
+  + '.can-tl{padding:0;list-style:none}'
+  + '.can-tl-i{padding:6px 0 6px 12px;position:relative;font-size:13px;color:var(--text-secondary)}'
+  + '.can-tl-i::before{content:"";position:absolute;left:-21px;top:12px;width:8px;height:8px;border-radius:50%;background:var(--accent)}'
+  // Tasks
+  + '.can-tasks{padding:4px 0}'
+  + '.can-task-i{list-style:none;padding:4px 0;font-size:13px;color:var(--text-secondary)}'
+  + '.can-chk{margin-right:6px;font-size:14px}'
+  // Architecture
+  + '.can-arc-c{margin:12px 0;border:1px solid var(--border-main);border-radius:8px;overflow:hidden}'
+  + '.can-arc-l{padding:4px 12px;background:var(--bg-input);font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border-light)}'
+  // FAQ
+  + '.can-faq-q{background:var(--bg-input);padding:8px 12px;border-radius:6px;margin:8px 0 4px;font-weight:500;color:var(--text-primary)}'
+  + '.can-faq-a{padding:4px 12px 8px;color:var(--text-secondary);border-left:2px solid var(--accent);margin:0 0 12px}'
+  // Changelog
+  + '.can-cl-h{color:var(--accent)}'
+  + '.can-cl-add{color:var(--success)}'
+  + '.can-cl-fix{color:var(--warning)}'
+  + '.can-cl-chg{color:var(--text-primary)}'
+  + '.can-cl-rm{color:var(--error)}'
+  // Recipe
+  + '.can-rec-h{color:var(--accent)}'
+  + '.can-rec-ing{list-style:none;font-weight:500;color:var(--text-secondary)}'
+  + '.can-rec-st{list-style:none;font-weight:500;color:var(--text-secondary)}'
+  // Fallback
+  + '.can-fb-w{padding:2px 0}'
+  + '.can-fb-h{cursor:pointer;color:var(--text-primary)}'
+  + '.can-fb-h:hover{color:var(--accent)}'
+  // Active state
+  + '.can-active .ai-footer{margin-top:12px;padding-top:8px;border-top:1px solid var(--border-light)}'
+  + '.can-badge{display:inline-block;padding:2px 10px;font-size:10px;border-radius:999px;background:var(--accent-dim);color:var(--accent);margin:4px 0 0;font-weight:600;letter-spacing:.3px}'
+  // Responsive
+  + '@media(max-width:820px){.can-doc{flex-direction:column}.can-toc{flex:none;position:static;max-height:none;border-right:none;border-bottom:1px solid var(--border-light);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;padding:4px 0}.can-toc-hdr{width:100%}.can-toc-i{display:inline-block;padding:2px 8px;border:1px solid var(--border-light);border-radius:999px;font-size:11px}}'
+  + '@media(max-width:820px){.can-gloss-r{flex-direction:column;gap:4px}.can-gloss-t{flex:none}}';
+document.head.appendChild(_canCSS);
+
+// ── Hook into streaming completion ──
+var _origFinishThinking = window.finishThinking;
+window.finishThinking = function() {
+  if (_origFinishThinking) _origFinishThinking();
+  _tryCanvasRender();
+};

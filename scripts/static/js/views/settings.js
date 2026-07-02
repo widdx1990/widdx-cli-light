@@ -35,13 +35,13 @@ async function showModelSetupView(area) {
   var tabGeneral = ''
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-microchip"></i> Active Provider</div>'
     +   '<select id="ms-provider" class="settings-select" onchange="onMSProviderChange(this.value)">' + provOpts + '</select></div>'
-    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-thermometer-half"></i> Temperature: <span id="ms-temp-value" style="color:var(--accent);font-weight:600">' + (settings.temperature || 0.7) + '</span></div>'
-    +   '<input type="range" min="0" max="2" step="0.1" value="' + (settings.temperature || 0.7) + '" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById(\'ms-temp-value\').textContent=this.value">'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-thermometer-half"></i> Temperature: <span id="ms-temp-value" class="text-semibold" style="color:var(--accent)">' + (settings.temperature || 0.7) + '</span></div>'
+    +   '<input type="range" min="0" max="2" step="0.1" value="' + (settings.temperature || 0.7) + '" class="w-full" style="accent-color:var(--accent)" oninput="document.getElementById(\'ms-temp-value\').textContent=this.value">'
     + '</div>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-quote-left"></i> System Prompt</div>'
-    +   '<textarea id="ms-prompt" class="settings-input" style="min-height:80px;resize:vertical;padding:10px;line-height:1.5;font-family:var(--font-mono)">' + escapeHtml(settings.system_prompt || '') + '</textarea>'
+    +   '<textarea id="ms-prompt" class="settings-input resize-v line-height-1_5 text-mono" style="min-height:80px;padding:10px">' + escapeHtml(settings.system_prompt || '') + '</textarea>'
     + '</div>'
-    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-arrow-right-arrow-left"></i> Max Turns <span style="font-weight:400;color:var(--text-muted)">(conversation limit)</span></div>'
+    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-arrow-right-arrow-left"></i> Max Turns <span class="text-muted" style="font-weight:400">(conversation limit)</span></div>'
     +   '<input id="ms-max-turns" type="number" min="1" max="100" class="settings-input" value="' + (settings.max_turns || 10) + '">'
     + '</div>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-palette"></i> Theme</div>'
@@ -57,9 +57,9 @@ async function showModelSetupView(area) {
     +   '</select>'
     + '</div>'
     + '<div class="settings-card" style="opacity:0.6"><div class="settings-card-label"><i class="fa-solid fa-file-code"></i> Config File</div>'
-    +   '<code style="font-size:11px;color:var(--text-muted)">' + escapeHtml(settings.config_path || '—') + '</code>'
+    +   '<code class="text-11 text-muted">' + escapeHtml(settings.config_path || '—') + '</code>'
     + '</div>'
-    + '<div style="display:flex;gap:10px;align-items:center"><button onclick="saveGeneralSettings()" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save</button><span id="ms-status" style="font-size:var(--font-size-sm);color:var(--text-muted)"></span></div>';
+    + '<div class="flex-ac gap-10"><button id="save-general-btn" data-click="save-general-settings" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save</button><span id="ms-status" class="text-sm text-muted"></span></div>';
 
   var modelOpts = {};
   providers.forEach(function(p) {
@@ -76,51 +76,51 @@ async function showModelSetupView(area) {
     var badge = pid === 'opencode-zen' ? '🆓 FREE' : pid === 'deepseek' ? '🔑 API KEY' : pid === 'openai' ? '🔑 API KEY' : pid === 'ollama' ? '💻 LOCAL' : '📦 GGUF';
 
     return '<div class="settings-card" style="border-left:3px solid ' + (isActive ? 'var(--accent)' : 'transparent') + '">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      + '<div class="flex-ac-sb mb-8">'
       + '<strong>' + escapeHtml(p.name) + '</strong>'
       + '<span style="font-size:10px;font-weight:600;padding:2px 10px;border-radius:999px;background:' + (isActive ? 'var(--accent-dim)' : 'var(--fill-active)') + ';color:' + (isActive ? 'var(--accent)' : 'var(--text-tertiary)') + '">' + badge + '</span>'
       + '</div>'
-      + '<div class="settings-card-label" style="font-size:11px">Model</div>'
+      + '<div class="settings-card-label text-11">Model</div>'
       + '<select id="prov-model-' + pid + '" class="settings-select">' + modelOpts[pid] + '</select>'
-      + '<div class="settings-card-label" style="font-size:11px;margin-top:6px">Base URL</div>'
+      + '<div class="settings-card-label text-11" style="margin-top:6px">Base URL</div>'
       + '<input id="prov-url-' + pid + '" class="settings-input" value="' + escapeHtml(currentUrl) + '" placeholder="' + escapeHtml(defaultUrl) + '">'
-      + (needsKey ? '<div class="settings-card-label" style="font-size:11px;margin-top:6px">API Key</div>'
+      + (needsKey ? '<div class="settings-card-label text-11" style="margin-top:6px">API Key</div>'
         + '<input id="prov-key-' + pid + '" type="password" class="settings-input" placeholder="' + (isActive && prov.has_key ? 'Key exists' : 'Enter API key') + '">' : '')
-      + (pid === 'deepseek' ? '<div style="margin-top:8px;display:flex;align-items:center;gap:8px">'
+      + (pid === 'deepseek' ? '<div class="flex-ac gap-8 mt-8">'
         + '<input type="checkbox" id="thinking-toggle" ' + (settings.thinking !== false ? 'checked' : '') + '>'
-        + '<span style="font-size:var(--font-size-sm);color:var(--text-secondary)">🧠 Deep reasoning (slower, more accurate)</span>'
+        + '<span class="text-sm text-secondary">🧠 Deep reasoning (slower, more accurate)</span>'
         + '</div>' : '')
       + '</div>';
   }).join('');
 
-  tabProviders += '<div style="display:flex;gap:10px;align-items:center;margin-top:4px;flex-wrap:wrap">'
-    + '<button onclick="saveAllProviders()" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save All Providers</button>'
-    + '<button onclick="refreshProviderModels()" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border-main);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font-size:12px"><i class="fa-solid fa-rotate"></i> Refresh Models</button>'
-    + '<span id="prov-status" style="font-size:var(--font-size-sm);color:var(--text-muted)"></span></div>';
+  tabProviders += '<div class="flex-ac gap-10" style="margin-top:4px;flex-wrap:wrap">'
+    + '<button id="save-providers-btn" data-click="save-all-providers" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save All Providers</button>'
+    + '<button data-click="refresh-provider-models" class="rounded-6 border-main text-secondary cursor-pointer text-12" style="padding:6px 14px;background:var(--bg-card)"><i class="fa-solid fa-rotate"></i> Refresh Models</button>'
+    + '<span id="prov-status" class="text-sm text-muted"></span></div>';
 
   var tabNetwork = ''
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-toggle-on"></i> Enable Proxy</div>'
-    +   '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">'
+    +   '<label class="flex-ac gap-8 cursor-pointer">'
     +     '<input type="checkbox" id="settings-proxy-enabled" ' + (proxy.enabled ? 'checked' : '') + ' onchange="document.getElementById(\'settings-proxy-label\').textContent=this.checked?\'Enabled\':\'Disabled\'">'
-    +     '<span id="settings-proxy-label" style="font-size:var(--font-size-sm);color:var(--text-secondary)">' + (proxy.enabled ? 'Enabled' : 'Disabled') + '</span>'
+    +     '<span id="settings-proxy-label" class="text-sm text-secondary">' + (proxy.enabled ? 'Enabled' : 'Disabled') + '</span>'
     +   '</label></div>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-link"></i> HTTP Proxy</div><input id="settings-proxy-http" class="settings-input" placeholder="http://proxy:8080" value="' + escapeHtml(proxy.http || '') + '"></div>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-link"></i> HTTPS Proxy</div><input id="settings-proxy-https" class="settings-input" placeholder="https://proxy:8443" value="' + escapeHtml(proxy.https || '') + '"></div>'
-    + '<div style="display:flex;gap:10px;align-items:center"><button onclick="saveProxySettings()" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save</button><span id="settings-proxy-status" style="font-size:var(--font-size-sm);color:var(--text-muted)"></span></div>';
+    + '<div class="flex-ac gap-10"><button data-click="save-proxy-settings" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save</button><span id="settings-proxy-status" class="text-sm text-muted"></span></div>';
 
   var tabSecurity = ''
-    + '<h4 style="font-size:var(--font-size-sm);color:var(--text-secondary);margin:0 0 8px">Permissions</h4>'
+    + '<h4 class="text-sm text-secondary" style="margin:0 0 8px">Permissions</h4>'
     + _renderPermissions(perms)
-    + '<h4 style="font-size:var(--font-size-sm);color:var(--text-secondary);margin:16px 0 8px">API Keys</h4>'
+    + '<h4 class="text-sm text-secondary" style="margin:16px 0 8px">API Keys</h4>'
     + _renderApiKeys(apikeys);
 
   var tabResources = ''
-    + '<h4 style="font-size:var(--font-size-sm);color:var(--text-secondary);margin:0 0 8px">Token Budget</h4>'
+    + '<h4 class="text-sm text-secondary" style="margin:0 0 8px">Token Budget</h4>'
     + _renderTokenBudget(tokens)
-    + '<h4 style="font-size:var(--font-size-sm);color:var(--text-secondary);margin:16px 0 8px">GGUF Models</h4>'
+    + '<h4 class="text-sm text-secondary" style="margin:16px 0 8px">GGUF Models</h4>'
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-upload"></i> Load Model</div>'
-    + '<div style="display:flex;gap:8px"><input id="settings-gguf-path" class="settings-input" placeholder="/path/to/model.gguf">'
-    + '<button onclick="loadGGUFSettings()" class="send-btn" style="width:auto;padding:0 16px;border-radius:6px">Load</button></div></div>'
+    + '<div class="flex gap-8"><input id="settings-gguf-path" class="settings-input" placeholder="/path/to/model.gguf">'
+    + '<button data-click="load-gguf-settings" class="send-btn w-auto rounded-6" style="padding:0 16px">Load</button></div></div>'
     + '<div id="settings-gguf-list">' + _renderGGUFList(gguf) + '</div>';
 
   var tabAutomation = ''
@@ -136,14 +136,14 @@ async function showModelSetupView(area) {
     + '.settings-tab.active{color:var(--accent);border-bottom-color:var(--accent)}'
     + '</style>'
     + '<div class="settings-tabs">'
-    +   '<div class="settings-tab active" data-tab="general" onclick="switchSettingsTab(\'general\')"><i class="fa-solid fa-sliders"></i> General</div>'
-    +   '<div class="settings-tab" data-tab="providers" onclick="switchSettingsTab(\'providers\')"><i class="fa-solid fa-cloud"></i> Providers</div>'
-    +   '<div class="settings-tab" data-tab="network" onclick="switchSettingsTab(\'network\')"><i class="fa-solid fa-plug"></i> Network</div>'
-    +   '<div class="settings-tab" data-tab="security" onclick="switchSettingsTab(\'security\')"><i class="fa-solid fa-shield-halved"></i> Security</div>'
-    +   '<div class="settings-tab" data-tab="resources" onclick="switchSettingsTab(\'resources\')"><i class="fa-solid fa-coins"></i> Resources</div>'
-    +   '<div class="settings-tab" data-tab="automation" onclick="switchSettingsTab(\'automation\')"><i class="fa-solid fa-arrows-rotate"></i> Automation</div>'
-    +   '<div class="settings-tab" data-tab="connections" onclick="switchSettingsTab(\'connections\');loadConnectionsTab()"><i class="fa-solid fa-tower-broadcast"></i> Connections</div>'
-    +   '<div class="settings-tab" data-tab="mcp" onclick="switchSettingsTab(\'mcp\');loadMCPTab()"><i class="fa-solid fa-plug"></i> MCP</div>'
+    +   '<div class="settings-tab active" data-tab="general" data-click="switch-settings-tab"><i class="fa-solid fa-sliders"></i> General</div>'
+    +   '<div class="settings-tab" data-tab="providers" data-click="switch-settings-tab"><i class="fa-solid fa-cloud"></i> Providers</div>'
+    +   '<div class="settings-tab" data-tab="network" data-click="switch-settings-tab"><i class="fa-solid fa-plug"></i> Network</div>'
+    +   '<div class="settings-tab" data-tab="security" data-click="switch-settings-tab"><i class="fa-solid fa-shield-halved"></i> Security</div>'
+    +   '<div class="settings-tab" data-tab="resources" data-click="switch-settings-tab"><i class="fa-solid fa-coins"></i> Resources</div>'
+    +   '<div class="settings-tab" data-tab="automation" data-click="switch-settings-tab"><i class="fa-solid fa-arrows-rotate"></i> Automation</div>'
+    +   '<div class="settings-tab" data-tab="connections" data-click="switch-settings-tab-connections"><i class="fa-solid fa-tower-broadcast"></i> Connections</div>'
+    +   '<div class="settings-tab" data-tab="mcp" data-click="switch-settings-tab-mcp"><i class="fa-solid fa-plug"></i> MCP</div>'
     + '</div>'
     + '<div id="settings-tab-general" class="settings-tab-content">' + tabGeneral + '</div>'
     + '<div id="settings-tab-providers" class="settings-tab-content" style="display:none">' + tabProviders + '</div>'
@@ -181,13 +181,13 @@ function _renderPermissions(perms) {
   var levels = perms.levels || ['permissive','normal','strict','silent'];
   var current = perms.level || 'normal';
   var descs = {permissive:'Allow all commands', normal:'Block dangerous patterns', strict:'Read-only + safe tools', silent:'Read-only, no confirmations'};
-  return '<div style="display:flex;flex-direction:column;gap:6px">'
+  return '<div class="flex flex-col gap-6">'
     + levels.map(function(l) {
       var active = l === current;
-      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:' + (active ? 'var(--accent-dim)' : 'var(--bg-input)') + ';border-radius:6px;cursor:pointer" onclick="setPermLevel(\'' + l + '\')">'
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:' + (active ? 'var(--accent-dim)' : 'var(--bg-input)') + ';border-radius:6px;cursor:pointer" data-click="set-perm-level" data-level="' + l + '">'
         + '<input type="radio" name="perm-level" ' + (active ? 'checked' : '') + ' style="accent-color:var(--accent)">'
-        + '<div><strong>' + l + '</strong><br><span style="font-size:11px;color:var(--text-tertiary)">' + (descs[l] || '') + '</span></div>'
-        + (active ? '<span style="margin-left:auto;color:var(--accent);font-weight:600">Current</span>' : '')
+        + '<div><strong>' + l + '</strong><br><span class="text-11" style="color:var(--text-tertiary)">' + (descs[l] || '') + '</span></div>'
+        + (active ? '<span class="text-semibold" style="margin-left:auto;color:var(--accent)">Current</span>' : '')
         + '</div>';
     }).join('') + '</div>';
 }
@@ -196,91 +196,91 @@ function _renderTokenBudget(tokens) {
   var pct = tokens.percentage || 0;
   var barColor = pct > 80 ? 'var(--error)' : pct > 50 ? 'var(--warning)' : 'var(--success)';
   return '<div class="settings-card">'
-    + '<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
-    + '<span style="color:var(--text-secondary);font-size:var(--font-size-sm)">Used: ' + (tokens.used || 0).toLocaleString() + '</span>'
-    + '<span style="color:var(--text-secondary);font-size:var(--font-size-sm)">Limit: ' + ((tokens.limit || 0) ? (tokens.limit || 0).toLocaleString() : 'Unlimited') + '</span>'
+    + '<div class="flex" style="justify-content:space-between;margin-bottom:6px">'
+    + '<span class="text-secondary text-sm">Used: ' + (tokens.used || 0).toLocaleString() + '</span>'
+    + '<span class="text-secondary text-sm">Limit: ' + ((tokens.limit || 0) ? (tokens.limit || 0).toLocaleString() : 'Unlimited') + '</span>'
     + '</div>'
     + '<div style="background:var(--fill-active);border-radius:var(--radius-full);height:10px;overflow:hidden;margin-bottom:4px">'
     + '<div style="width:' + Math.min(pct, 100) + '%;height:100%;background:' + barColor + ';border-radius:var(--radius-full);transition:width 0.5s"></div></div>'
-    + '<div style="display:flex;justify-content:space-between;font-size:var(--font-size-xs)">'
+    + '<div class="flex text-xs" style="justify-content:space-between">'
     + '<span style="color:var(--text-tertiary)">' + pct + '% used</span>'
     + '<span style="color:var(--text-tertiary)">' + (tokens.remaining || 0).toLocaleString() + ' remaining</span>'
     + '</div>'
-    + '<button onclick="resetTokenBudgetSettings()" class="btn-primary" style="margin-top:8px;background:var(--warning);color:#000;height:32px;font-size:12px"><i class="fa-solid fa-rotate"></i> Reset</button>'
-    + '<span id="settings-token-status" style="font-size:var(--font-size-sm);color:var(--text-muted);margin-left:8px"></span>'
+    + '<button data-click="reset-token-budget-settings" class="btn-primary mt-8 h-32 text-12" style="background:var(--warning);color:#000"><i class="fa-solid fa-rotate"></i> Reset</button>'
+    + '<span id="settings-token-status" class="text-sm text-muted ml-8"></span>'
     + '</div>';
 }
 
 function _renderAutoCommit(ac) {
   return '<div class="settings-card">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between">'
-    + '<div><span style="color:var(--text-primary);font-weight:500">Status</span>'
-    + '<br><span style="color:var(--text-muted);font-size:var(--font-size-sm)">' + (ac.enabled ? '🟢 Running' : '⚪ Stopped') + '</span></div>'
-    + '<button onclick="toggleAutoCommitSettings()" class="send-btn" style="width:auto;padding:6px 18px;border-radius:6px;background:' + (ac.enabled ? 'var(--error)' : 'var(--success)') + '">'
+    + '<div class="flex-ac-sb">'
+    + '<div><span class="text-primary text-bold">Status</span>'
+    + '<br><span class="text-muted text-sm">' + (ac.enabled ? '🟢 Running' : '⚪ Stopped') + '</span></div>'
+    + '<button data-click="toggle-autocommit-settings" class="send-btn w-auto rounded-6" style="padding:6px 18px;background:' + (ac.enabled ? 'var(--error)' : 'var(--success)') + '">'
     + (ac.enabled ? 'Stop' : 'Start') + '</button>'
     + '</div>'
-    + '<div style="margin-top:8px;font-size:var(--font-size-sm);color:var(--text-tertiary)">'
+    + '<div class="mt-8 text-sm" style="color:var(--text-tertiary)">'
     + 'Interval: ' + (ac.interval || '—') + 's · Last commit: ' + (ac.last_commit || 'Never')
     + '</div></div>';
 }
 
 function _renderGGUFList(models) {
   if (!Array.isArray(models) || !models.length) {
-    return '<span style="color:var(--text-muted);font-size:var(--font-size-sm)">No GGUF models loaded.</span>'
-      + '<button onclick="unloadGGUFSettings()" class="btn-primary" style="margin-top:6px;background:var(--error);height:32px;font-size:12px" disabled><i class="fa-solid fa-power-off"></i> Unload</button>';
+    return '<span class="text-muted text-sm">No GGUF models loaded.</span>'
+      + '<button data-click="unload-gguf-settings" class="btn-primary h-32 text-12" style="margin-top:6px;background:var(--error)" disabled><i class="fa-solid fa-power-off"></i> Unload</button>';
   }
   return models.map(function(m) {
     var name = m.name || m.path || 'unknown';
     var loaded = m.loaded ? '🟢' : '⚪';
     var size = m.size ? ' · ' + Math.round(m.size / 1024 / 1024) + 'MB' : '';
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:var(--font-size-sm)">'
+    return '<div class="flex-ac-sb py-6 border-bottom-light text-sm">'
       + '<span>' + loaded + ' ' + escapeHtml(name) + escapeHtml(size) + '</span></div>';
   }).join('')
-    + '<button onclick="unloadGGUFSettings()" class="btn-primary" style="margin-top:8px;background:var(--error);height:32px;font-size:12px"><i class="fa-solid fa-power-off"></i> Unload</button>';
+    + '<button data-click="unload-gguf-settings" class="btn-primary mt-8 h-32 text-12" style="background:var(--error)"><i class="fa-solid fa-power-off"></i> Unload</button>';
 }
 
 function _renderApiKeys(apikeys) {
   var entries = Object.entries(apikeys);
   if (!entries.length) {
-    return '<div class="settings-card"><span style="color:var(--text-muted);font-size:var(--font-size-sm)">No API keys stored. Add one in the Provider section above.</span></div>';
+    return '<div class="settings-card"><span class="text-muted text-sm">No API keys stored. Add one in the Provider section above.</span></div>';
   }
   return entries.map(function(kv) {
     var name = kv[0];
     var info = kv[1] || {};
-    return '<div class="settings-card"><div style="display:flex;align-items:center;gap:10px">'
+    return '<div class="settings-card"><div class="flex-ac gap-10">'
       + '<span style="font-size:18px">🔑</span>'
-      + '<div><strong style="color:var(--text-primary);font-size:var(--font-size-sm)">' + escapeHtml(name) + '</strong>'
-      + '<br><span style="color:var(--text-muted);font-size:11px;font-family:var(--font-mono)">' + escapeHtml(info.masked || '—') + '</span></div>'
-      + (info.has_key ? '<span style="color:var(--success);font-size:11px;margin-left:auto">✓ Configured</span>' : '')
+      + '<div><strong class="text-primary text-sm">' + escapeHtml(name) + '</strong>'
+      + '<br><span class="text-muted text-11 text-mono">' + escapeHtml(info.masked || '—') + '</span></div>'
+      + (info.has_key ? '<span class="text-11" style="color:var(--success);margin-left:auto">✓ Configured</span>' : '')
       + '</div></div>';
   }).join('');
 }
 
 function _renderMCPServers(servers) {
   if (!Array.isArray(servers) || !servers.length) {
-    return '<div class="settings-card"><span style="color:var(--text-muted);font-size:var(--font-size-sm)">No MCP servers configured.</span>'
-      + '<div style="margin-top:8px;display:flex;gap:8px">'
-      + '<input id="settings-mcp-name" class="settings-input" placeholder="Server name" style="flex:1">'
-      + '<input id="settings-mcp-cmd" class="settings-input" placeholder="Command (e.g. npx ...)" style="flex:2">'
-      + '<button onclick="addMCPServerFromSettings()" class="send-btn" style="width:auto;padding:0 16px;border-radius:6px">Add</button>'
+    return '<div class="settings-card"><span class="text-muted text-sm">No MCP servers configured.</span>'
+      + '<div class="mt-8 flex gap-8">'
+      + '<input id="settings-mcp-name" class="settings-input flex-1" placeholder="Server name">'
+      + '<input id="settings-mcp-cmd" class="settings-input flex-2" placeholder="Command (e.g. npx ...)">'
+      + '<button data-click="add-mcp-settings" class="send-btn w-auto rounded-6" style="padding:0 16px">Add</button>'
       + '</div></div>';
   }
-  return '<div style="margin-bottom:8px;display:flex;gap:8px">'
-    + '<input id="settings-mcp-name" class="settings-input" placeholder="Server name" style="flex:1">'
-    + '<input id="settings-mcp-cmd" class="settings-input" placeholder="Command (e.g. npx ...)" style="flex:2">'
-    + '<button onclick="addMCPServerFromSettings()" class="send-btn" style="width:auto;padding:0 16px;border-radius:6px">Add</button>'
+  return '<div class="mb-8 flex gap-8">'
+    + '<input id="settings-mcp-name" class="settings-input flex-1" placeholder="Server name">'
+    + '<input id="settings-mcp-cmd" class="settings-input flex-2" placeholder="Command (e.g. npx ...)">'
+    + '<button data-click="add-mcp-settings" class="send-btn w-auto rounded-6" style="padding:0 16px">Add</button>'
     + '</div>'
     + servers.map(function(s) {
       var name = s.name || s.id || 'unknown';
       var status = s.status || 'unknown';
       var color = status === 'running' ? 'var(--success)' : status === 'error' ? 'var(--error)' : 'var(--text-muted)';
-      return '<div class="settings-card"><div style="display:flex;justify-content:space-between;align-items:center">'
+      return '<div class="settings-card"><div class="flex-ac-sb">'
         + '<div><strong>' + escapeHtml(name) + '</strong></div>'
         + '<div><span style="color:' + color + ';font-size:var(--font-size-sm)">● ' + status + '</span>'
-        + ' <button onclick="restartMCPFromSettings(\'' + escapeHtml(name) + '\')" style="background:none;border:none;color:var(--accent);cursor:pointer" title="Restart">↻</button>'
-        + ' <button onclick="delMCPFromSettings(\'' + escapeHtml(name) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer" title="Remove">✕</button>'
++ ' <button class="btn-icon-accent" data-click="restart-mcp-settings" data-mcp="' + escapeHtml(name) + '" title="Restart">↻</button>'
+         + ' <button class="btn-icon-error" data-click="del-mcp-settings" data-mcp="' + escapeHtml(name) + '" title="Remove">✕</button>'
         + '</div></div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + escapeHtml(s.command || s.description || '') + '</div>'
+        + '<div class="text-11 text-muted" style="margin-top:4px">' + escapeHtml(s.command || s.description || '') + '</div>'
         + '</div>';
     }).join('');
 }
@@ -288,51 +288,51 @@ function _renderMCPServers(servers) {
 function _renderGateway(gw) {
   var channels = gw && gw.channels ? gw.channels : [];
   if (!channels.length) {
-    return '<div style="color:var(--text-muted);font-size:var(--font-size-sm);margin-bottom:12px">No platforms connected.</div>'
+    return '<div class="text-muted text-sm mb-12">No platforms connected.</div>'
       + _renderConnectForm('telegram', 'Telegram', 'fa-telegram', '#0088cc')
       + _renderConnectForm('discord', 'Discord', 'fa-discord', '#5865F2');
   }
   var html = '';
   channels.forEach(function(ch) {
     var isOnline = ch.status === 'connected' || ch.status === 'running';
-    html += '<div class="settings-card"><div style="display:flex;align-items:center;justify-content:space-between">'
-      + '<div style="display:flex;align-items:center;gap:10px">'
+    html += '<div class="settings-card"><div class="flex-ac-sb">'
+      + '<div class="flex-ac gap-10">'
       + '<span style="font-size:24px;color:' + (isOnline ? 'var(--success)' : 'var(--text-muted)') + '">'
       + (ch.name === 'Telegram' ? '✈️' : '💬') + '</span>'
       + '<div><strong>' + escapeHtml(ch.name) + '</strong>'
-      + '<br><span style="font-size:11px;color:var(--text-muted)">' + (ch.message_count || 0) + ' msgs'
+      + '<br><span class="text-11 text-muted">' + (ch.message_count || 0) + ' msgs'
       + (ch.last_message ? ' · ' + new Date(ch.last_message).toLocaleString() : '') + '</span></div></div>'
       + '<span style="font-size:var(--font-size-sm);color:' + (isOnline ? 'var(--success)' : 'var(--text-muted)') + '">'
       + (isOnline ? '● Connected' : '○ Disconnected') + '</span>'
       + '</div>'
-      + (ch.error ? '<div style="margin-top:6px;padding:6px 8px;background:var(--error-dim);border-radius:4px;font-size:11px;color:var(--error)">' + escapeHtml(ch.error) + '</div>' : '')
-      + '<div style="margin-top:8px;display:flex;gap:8px">'
-      +   '<input id="gw-token-' + ch.name.toLowerCase() + '" type="password" class="settings-input" placeholder="New token to reconnect..." style="flex:1;height:34px;font-size:12px">'
-      +   '<button onclick="connectGateway(\'' + ch.name.toLowerCase() + '\')" class="send-btn" style="width:auto;padding:0 14px;border-radius:6px;height:34px;font-size:12px">Connect</button>'
-      +   '<button onclick="disconnectGateway(\'' + ch.name.toLowerCase() + '\')" class="send-btn" style="width:auto;padding:0 14px;border-radius:6px;height:34px;font-size:12px;background:var(--error)">Disconnect</button>'
+      + (ch.error ? '<div class="rounded-4 text-11" style="margin-top:6px;padding:6px 8px;background:var(--error-dim);color:var(--error)">' + escapeHtml(ch.error) + '</div>' : '')
+      + '<div class="mt-8 flex gap-8">'
+      +   '<input id="gw-token-' + ch.name.toLowerCase() + '" type="password" class="settings-input flex-1 h-34 text-12" placeholder="New token to reconnect...">'
+      +   '<button data-click="connect-gateway-settings" data-gw-platform="' + ch.name.toLowerCase() + '" class="send-btn w-auto px-14 rounded-6 h-34 text-12">Connect</button>'
+      +   '<button data-click="disconnect-gateway-settings" data-gw-platform="' + ch.name.toLowerCase() + '" class="send-btn w-auto px-14 rounded-6 h-34 text-12" style="background:var(--error)">Disconnect</button>'
       + '</div></div>';
   });
   return html;
 }
 
 function _renderConnectForm(platform, label, icon, color) {
-  return '<div class="settings-card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+  return '<div class="settings-card"><div class="flex-ac gap-10 mb-8">'
     + '<span style="font-size:20px;color:' + color + '">' + (platform === 'telegram' ? '✈️' : '💬') + '</span>'
     + '<strong>' + escapeHtml(label) + '</strong></div>'
-    + '<div style="display:flex;gap:8px">'
-    + '<input id="gw-token-' + platform + '" type="password" class="settings-input" placeholder="Paste your ' + label + ' bot token..." style="flex:1">'
-    + '<button onclick="connectGateway(\'' + platform + '\')" class="send-btn" style="width:auto;padding:0 16px;border-radius:6px">Connect</button>'
+    + '<div class="flex gap-8">'
+    + '<input id="gw-token-' + platform + '" type="password" class="settings-input flex-1" placeholder="Paste your ' + label + ' bot token...">'
+    + '<button data-click="connect-gateway-settings" data-gw-platform="' + platform + '" class="send-btn w-auto rounded-6" style="padding:0 16px">Connect</button>'
     + '</div></div>';
 }
 
 window.loadMCPTab = function() {
   var container = document.getElementById('settings-tab-mcp');
   if (!container) return;
-  container.innerHTML = '<div style="color:var(--text-muted);font-size:var(--font-size-sm)">Loading...</div>';
+  container.innerHTML = '<div class="text-muted text-sm">Loading...</div>';
   fetch('/api/mcp').then(function(r){return r.json()}).then(function(servers) {
     container.innerHTML = _renderMCPServers(servers);
   }).catch(function(e) {
-    container.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    container.innerHTML = '<span class="text-error">' + escapeHtml(e.message) + '</span>';
   });
 };
 
@@ -368,11 +368,11 @@ window.restartMCPFromSettings = function(name) {
 window.loadConnectionsTab = function() {
   var container = document.getElementById('settings-tab-connections');
   if (!container) return;
-  container.innerHTML = '<div style="color:var(--text-muted);font-size:var(--font-size-sm)">Loading...</div>';
+  container.innerHTML = '<div class="text-muted text-sm">Loading...</div>';
   fetch('/api/dashboard/gateway').then(function(r){return r.json()}).then(function(d) {
     container.innerHTML = _renderGateway(d);
   }).catch(function(e) {
-    container.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    container.innerHTML = '<span class="text-error">' + escapeHtml(e.message) + '</span>';
   });
 };
 
@@ -401,7 +401,7 @@ window.onMSProviderChange = function(providerId) {
 };
 
 window.saveGeneralSettings = function() {
-  var btn = document.querySelector('button[onclick="saveGeneralSettings()"]');
+  var btn = document.getElementById('save-general-btn');
   var status = document.getElementById('ms-status');
   if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
   if (status) status.textContent = 'Saving...';
@@ -429,7 +429,7 @@ window.saveGeneralSettings = function() {
 };
 
 window.saveAllProviders = function() {
-  var btn = document.querySelector('button[onclick="saveAllProviders()"]');
+  var btn = document.getElementById('save-providers-btn');
   var status = document.getElementById('prov-status');
   if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
   if (status) status.textContent = 'Saving...';

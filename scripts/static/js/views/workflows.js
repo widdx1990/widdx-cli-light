@@ -7,7 +7,7 @@ async function showWorkflowsView(area) {
     '<div style="display:flex;gap:8px;margin-bottom:12px">'
     + '<input id="wf-name" style="flex:1;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Workflow name">'
     + '<input id="wf-steps" style="flex:2;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:6px 10px;font-size:13px" placeholder="Steps (comma-separated): research, code, review">'
-    + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" onclick="createWorkflow()">Create</button>'
+    + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" data-click="create-workflow">Create</button>'
     + '</div>'
     + '<div id="workflow-list">Loading...</div>'
   );
@@ -20,9 +20,9 @@ async function showWorkflowsView(area) {
         const id = w.id || '';
         const name = w.name || 'Untitled';
         const steps = w.steps || [];
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+        return '<div class="flex-ac-sb py-8 border-bottom-light">'
           + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + (Array.isArray(steps) ? steps.join(' \u2192 ') : (steps || '')) + '</span></div>'
-          + '<div><button style="background:none;border:none;color:var(--success);cursor:pointer" onclick="runWorkflow(\'' + encodeURIComponent(id) + '\')" title="Run">\u25b6</button></div></div>';
+          + '<div><button class="btn-icon-success" data-click="run-workflow" data-workflow="' + encodeURIComponent(id) + '" title="Run">\u25b6</button></div></div>';
       }).join('');
     } else {
       el.innerHTML = '<span style="color:var(--text-muted)">No workflows created yet</span>';

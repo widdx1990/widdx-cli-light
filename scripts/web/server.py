@@ -94,7 +94,7 @@ app = FastAPI(title="WIDDX Nexus", version="3.2.0")
 
 # ── CORS + Origin validation ───────────────────────────────
 # ISS-009: CSRF / Origin validation — only allow same-origin requests
-ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
+ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8080", "http://127.0.0.1:8080"]
 
 from fastapi.middleware.cors import CORSMiddleware
 

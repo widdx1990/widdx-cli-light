@@ -14,21 +14,21 @@ async function showPermissionsView(area) {
     const current = d.level || 'normal';
     const icons = {permissive:'\ud83d\udfe2', normal:'\ud83d\udd35', strict:'\ud83d\udfe1', silent:'\ud83d\udd34'};
     const descs = {permissive:'Allow all commands', normal:'Block dangerous patterns', strict:'Read-only + safe tools', silent:'Read-only, no confirmations'};
-    el.innerHTML = '<div style="margin-bottom:12px;padding:8px;background:var(--bg-input);border-radius:6px">'
+    el.innerHTML = '<div class="mb-12 p-8 bg-input rounded-6">'
       + 'Current level: <strong>' + (icons[current] || '') + ' ' + current + '</strong></div>'
-      + '<div style="display:flex;flex-direction:column;gap:8px">'
+      + '<div class="flex flex-col gap-8">'
       + levels.map(function(l) {
         const active = l === current;
-        return '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:' + (active ? 'var(--accent)' : 'var(--bg-input)') + ';border-radius:6px;cursor:pointer;color:' + (active ? '#fff' : 'var(--text-primary)') + '" onclick="setPermission(\'' + l + '\')">'
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:' + (active ? 'var(--accent)' : 'var(--bg-input)') + ';border-radius:6px;cursor:pointer;color:' + (active ? '#fff' : 'var(--text-primary)') + '" data-click="set-permission" data-level="' + l + '">'
           + '<span style="font-size:16px">' + (icons[l] || '\u2022') + '</span>'
-          + '<div><strong>' + l + '</strong><br><span style="font-size:11px;opacity:0.7">' + (descs[l] || '') + '</span></div>'
+          + '<div><strong>' + l + '</strong><br><span class="text-11" style="opacity:0.7">' + (descs[l] || '') + '</span></div>'
           + (active ? '<span style="margin-left:auto">\u2713</span>' : '')
           + '</div>';
       }).join('') + '</div>';
     setActivity('Ready', '\u2014');
   } catch(e) {
     const el = document.getElementById('perm-status');
-    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    if (el) el.innerHTML = '<span class="text-error">' + escapeHtml(e.message) + '</span>';
     setActivity('Ready', '\u2014');
   }
 }

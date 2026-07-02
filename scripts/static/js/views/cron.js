@@ -5,14 +5,14 @@ async function showCronView(area) {
   setActivity('Loading', 'cron jobs');
   area.innerHTML = TEMPLATES.view('fa-calendar-clock', 'Scheduled Tasks', 'Manage cron jobs',
     '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-plus"></i> Add Task</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<input id="cron-name" class="settings-input" style="flex:1;min-width:120px" placeholder="Task name">'
-    + '<input id="cron-cmd" class="settings-input" style="flex:2;min-width:200px" placeholder="Command to run">'
-    + '<select id="cron-interval" class="settings-select" style="flex:0 0 auto">'
+    + '<div class="flex gap-8" style="flex-wrap:wrap">'
+    + '<input id="cron-name" class="settings-input flex-1" style="min-width:120px" placeholder="Task name">'
+    + '<input id="cron-cmd" class="settings-input flex-2" style="min-width:200px" placeholder="Command to run">'
+    + '<select id="cron-interval" class="settings-select flex-0-auto">'
     + '<option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option>'
     + '<option value="60">1 hour</option><option value="360">6 hours</option><option value="1440">Daily</option>'
     + '</select>'
-    + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" onclick="addCronJob()">Add</button>'
+    + '<button class="send-btn w-auto px-8 rounded-6" data-click="add-cron">Add</button>'
     + '</div></div>'
     + '<div id="cron-list">' + TEMPLATES.skeleton(3) + '</div>');
   try {
@@ -27,17 +27,17 @@ async function showCronView(area) {
         var interval = j.interval || j.schedule || '?';
         var status = j.status || 'idle';
         var color = status === 'running' ? 'var(--success)' : status === 'error' ? 'var(--error)' : 'var(--text-muted)';
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
-          + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">Every ' + interval + 's · ' + escapeHtml(j.command || '') + '</span></div>'
+        return '<div class="flex-ac-sb py-8 border-bottom-light">'
+          + '<div><strong>' + escapeHtml(name) + '</strong><br><span class="text-11 text-muted">Every ' + interval + 's · ' + escapeHtml(j.command || '') + '</span></div>'
           + '<div><span style="color:' + color + '">● ' + status + '</span>'
-          + ' <button onclick="toggleCron(\'' + encodeURIComponent(j.id || name) + '\')" style="background:none;border:none;color:var(--warning);cursor:pointer" title="Toggle">⏸</button>'
-          + ' <button onclick="delCron(\'' + encodeURIComponent(j.id || name) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer" title="Remove">✕</button></div></div>';
+          + ' <button class="btn-icon-warning" data-click="toggle-cron" data-cron="' + encodeURIComponent(j.id || name) + '" title="Toggle">⏸</button>'
+          + ' <button class="btn-icon-error" data-click="del-cron" data-cron="' + encodeURIComponent(j.id || name) + '" title="Remove">✕</button></div></div>';
       }).join('');
     }
     setActivity('Ready', '—');
   } catch(e) {
     var el2 = document.getElementById('cron-list');
-    if (el2) el2.innerHTML = TEMPLATES.errorRetry(e.message, 'showCronView(document.getElementById(\'messagesArea\'))');
+    if (el2) el2.innerHTML = TEMPLATES.errorRetry(e.message, 'retry-cron-view');
     setActivity('Ready', '—');
   }
 }

@@ -23,7 +23,7 @@ async function showManifestView(area) {
         + '<div><strong style="color:var(--text-primary)">No MANIFEST.json found</strong>'
         + '<br><span style="color:var(--text-muted);font-size:var(--font-size-sm)">' + escapeHtml(d.message || 'Run a scan to create one.') + '</span></div></div></div>';
     }
-    html += '<button onclick="scanManifest()" class="btn-primary"><i class="fa-solid fa-magnifying-glass"></i> Scan Now</button>'
+    html += '<button data-click="scan-manifest" class="btn-primary"><i class="fa-solid fa-magnifying-glass"></i> Scan Now</button>'
       + '<span id="manifest-scan-status" style="margin-left:12px;font-size:var(--font-size-sm);color:var(--text-muted)"></span>';
     document.getElementById('manifest-content').innerHTML = html;
     setActivity('Ready', '\u2014');

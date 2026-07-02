@@ -441,43 +441,47 @@ function filterPalette(query) {
   });
 }
 
+// ═══════════════ COMMAND PALETTE ═══════════════════
+
+const PALETTE_ACTIONS = {
+  'new-task': function() { if (typeof newConversation === 'function') newConversation(); else if (typeof showView === 'function') showView('chat'); },
+  'toggle-sidebar': function() { toggleSidebar(); },
+  'toggle-panel': function() { toggleComputer(); },
+  'toggle-theme': function() { toggleTheme(); },
+  'search': function() { document.getElementById('sidebarSearch')?.focus(); },
+  'view-chat': function() { if (typeof showView === 'function') showView('chat'); },
+  'view-dashboard': function() { if (typeof showView === 'function') showView('dashboard'); },
+  'view-scheduled': function() { if (typeof showView === 'function') showView('scheduler'); },
+  'view-tasks': function() { if (typeof showView === 'function') showView('delegation'); },
+  'view-gateway': function() { if (typeof showView === 'function') showView('gateway'); },
+  'view-memory': function() { if (typeof showView === 'function') showView('memory'); },
+  'view-skills': function() { if (typeof showView === 'function') showView('skills'); },
+  'view-activity': function() { if (typeof showView === 'function') showView('activity'); },
+  'view-settings': function() { if (typeof showView === 'function') showView('settings'); },
+  'view-sessions': function() { if (typeof showView === 'function') showView('sessions'); },
+  'view-mcp': function() { if (typeof showView === 'function') showView('mcp'); },
+  'view-git': function() { if (typeof showView === 'function') showView('git'); },
+  'view-checkpoints': function() { if (typeof showView === 'function') showView('checkpoints'); },
+  'view-doctor': function() { if (typeof showView === 'function') showView('doctor'); },
+  'view-debug': function() { if (typeof showView === 'function') showView('debug'); },
+  'view-permissions': function() { if (typeof showView === 'function') showView('permissions'); },
+  'view-plugins': function() { if (typeof showView === 'function') showView('plugins'); },
+  'view-workflows': function() { if (typeof showView === 'function') showView('workflows'); },
+  'view-proxy': function() { if (typeof showView === 'function') showView('proxy'); },
+  'view-gguf': function() { if (typeof showView === 'function') showView('gguf'); },
+  'view-manifest': function() { if (typeof showView === 'function') showView('manifest'); },
+  'view-tokenbudget': function() { if (typeof showView === 'function') showView('tokenbudget'); },
+  'view-autocommit': function() { if (typeof showView === 'function') showView('autocommit'); },
+  'view-apikeys': function() { if (typeof showView === 'function') showView('apikeys'); },
+  'clear-chat': function() { clearConversation(); },
+  'export': function() { if (typeof _showExportDialog === 'function') _showExportDialog(); },
+  'shortcuts': function() { if (typeof showToast === 'function') showToast('Ctrl+B Sidebar · Ctrl+J Panel · Ctrl+K Command · Ctrl+N New · Esc Close', 'info'); },
+};
+
 function execPaletteAction(action) {
   closeCommandPalette();
-  switch (action) {
-    case 'new-task': if (typeof newConversation === 'function') newConversation(); else if (typeof showView === 'function') showView('chat'); break;
-    case 'toggle-sidebar': toggleSidebar(); break;
-    case 'toggle-panel': toggleComputer(); break;
-    case 'toggle-theme': toggleTheme(); break;
-    case 'search': document.getElementById('sidebarSearch')?.focus(); break;
-    case 'view-chat': if (typeof showView === 'function') showView('chat'); break;
-    case 'view-dashboard': if (typeof showView === 'function') showView('dashboard'); break;
-    case 'view-scheduled': if (typeof showView === 'function') showView('scheduler'); break;
-    case 'view-tasks': if (typeof showView === 'function') showView('delegation'); break;
-    case 'view-gateway': if (typeof showView === 'function') showView('gateway'); break;
-    case 'view-memory': if (typeof showView === 'function') showView('memory'); break;
-    case 'view-skills': if (typeof showView === 'function') showView('skills'); break;
-    case 'view-activity': if (typeof showView === 'function') showView('activity'); break;
-    case 'view-settings': if (typeof showView === 'function') showView('settings'); break;
-    case 'view-sessions': if (typeof showView === 'function') showView('sessions'); break;
-    case 'view-mcp': if (typeof showView === 'function') showView('mcp'); break;
-    case 'view-git': if (typeof showView === 'function') showView('git'); break;
-    case 'view-checkpoints': if (typeof showView === 'function') showView('checkpoints'); break;
-    case 'view-doctor': if (typeof showView === 'function') showView('doctor'); break;
-    case 'view-debug': if (typeof showView === 'function') showView('debug'); break;
-    case 'view-permissions': if (typeof showView === 'function') showView('permissions'); break;
-    case 'view-plugins': if (typeof showView === 'function') showView('plugins'); break;
-    case 'view-workflows': if (typeof showView === 'function') showView('workflows'); break;
-    case 'view-proxy': if (typeof showView === 'function') showView('proxy'); break;
-    case 'view-gguf': if (typeof showView === 'function') showView('gguf'); break;
-    case 'view-manifest': if (typeof showView === 'function') showView('manifest'); break;
-    case 'view-tokenbudget': if (typeof showView === 'function') showView('tokenbudget'); break;
-    case 'view-autocommit': if (typeof showView === 'function') showView('autocommit'); break;
-    case 'view-apikeys': if (typeof showView === 'function') showView('apikeys'); break;
-    case 'clear-chat': clearConversation(); break;
-    case 'export': if (typeof showToast === 'function') showToast('Exporting conversation…', 'info'); break;
-    case 'shortcuts': if (typeof showToast === 'function') showToast('Ctrl+B Sidebar · Ctrl+J Panel · Ctrl+K Command · Ctrl+N New · Esc Close', 'info'); break;
-    default: if (typeof showToast === 'function') showToast('Action: ' + action, 'info');
-  }
+  var fn = PALETTE_ACTIONS[action];
+  if (fn) fn();
 }
 
 // ═══════════════ CONVERSATION MANAGEMENT ═══════════════════
@@ -486,13 +490,20 @@ function newConversation() {
   if (typeof S !== 'undefined') S.messages = [];
   const area = document.getElementById('messagesArea');
   if (!area) return;
-  area.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;color:var(--text-tertiary);padding-top:20vh;"><i class="fa-solid fa-message" style="font-size:48px;opacity:0.2;"></i><div style="font-size:var(--font-size-lg);font-weight:500;color:var(--text-primary);">Start a new task</div><div style="font-size:var(--font-size-sm);color:var(--text-muted);text-align:center;max-width:380px;line-height:1.6;">WIDDX Nexus can explore codebases, debug issues, implement features, deploy applications, and more.</div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px;">' +
-    '<span style="padding:6px 14px;border-radius:var(--radius-full);border:1px solid var(--border-main);font-size:var(--font-size-xs);cursor:pointer;color:var(--text-secondary);" onclick="var el=document.getElementById(\'messageInput\');el.value=\'Debug the authentication module\';el.focus();">🐛 Debug an issue</span>' +
-    '<span style="padding:6px 14px;border-radius:var(--radius-full);border:1px solid var(--border-main);font-size:var(--font-size-xs);cursor:pointer;color:var(--text-secondary);" onclick="var el=document.getElementById(\'messageInput\');el.value=\'Add a new REST API endpoint for user profiles\';el.focus();">✨ Add a feature</span>' +
-    '<span style="padding:6px 14px;border-radius:var(--radius-full);border:1px solid var(--border-main);font-size:var(--font-size-xs);cursor:pointer;color:var(--text-secondary);" onclick="var el=document.getElementById(\'messageInput\');el.value=\'Deploy to production\';el.focus();">🚀 Deploy</span>' +
-    '<span style="padding:6px 14px;border-radius:var(--radius-full);border:1px solid var(--border-main);font-size:var(--font-size-xs);cursor:pointer;color:var(--text-secondary);" onclick="var el=document.getElementById(\'messageInput\');el.value=\'Review the project structure and suggest improvements\';el.focus();">🔍 Review code</span>' +
-    '</div></div>';
-  if (typeof setActivity === 'function') setActivity('Ready', '—');
+  area.innerHTML = '<div class="onboarding" id="onboarding">'
+    + '<div class="onboarding-badge">NEW</div>'
+    + '<div class="onboarding-logo"><svg width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="var(--accent)"/><text x="24" y="32" text-anchor="middle" font-size="28" font-weight="700" fill="#fff">W</text></svg></div>'
+    + '<h1 class="onboarding-title">Welcome to WIDDX</h1>'
+    + '<p class="onboarding-subtitle" style="font-size:var(--font-size-base);color:var(--text-secondary);">Your AI-powered workspace for code & automation</p>'
+    + '<div class="onboarding-actions">'
+    + '<div class="onboarding-card" data-click="send-onboarding" data-msg="Hello! What can you do?"><i class="fa-solid fa-wand-magic-sparkles"></i><div><strong>Introduce yourself</strong><span>Learn about WIDDX capabilities</span></div></div>'
+    + '<div class="onboarding-card" data-click="send-onboarding" data-msg="Write a Python script to analyze text files in a folder"><i class="fa-solid fa-code"></i><div><strong>Write code</strong><span>Generate and run Python scripts</span></div></div>'
+    + '<div class="onboarding-card" data-click="send-onboarding" data-msg="Research the latest AI agent frameworks"><i class="fa-solid fa-compass"></i><div><strong>Research</strong><span>Explore topics in depth</span></div></div>'
+    + '<div class="onboarding-card" data-click="send-onboarding" data-msg="Explain how the UIL pipeline works in WIDDX"><i class="fa-solid fa-brain"></i><div><strong>How WIDDX works</strong><span>Understand the architecture</span></div></div>'
+    + '</div>'
+    + '<div class="onboarding-shortcuts"><span><kbd>Ctrl+K</kbd> Commands</span><span><kbd>Ctrl+B</kbd> Sidebar</span><span><kbd>Ctrl+J</kbd> Tools</span></div>'
+    + '</div>';
+  if (typeof setActivity === 'function') setActivity('Ready', '\u2014');
   document.querySelectorAll('.chat-item').forEach(function(i) { i.classList.remove('active'); });
   if (typeof showToast === 'function') showToast('New conversation started', 'success');
 }
@@ -512,8 +523,8 @@ function createStepCard(title, icon, status) {
   card.className = 'step-card';
   var statusIcon = status === 'done' ? '<i class="fa-solid fa-check"></i>' :
     status === 'running' ? '<i class="fa-solid fa-spinner fa-spin-pulse"></i>' :
-    status === 'error' ? '<i class="fa-solid fa-circle-exclamation" style="color:var(--warning);font-size:12px;"></i>' :
-    '<i class="fa-solid fa-circle" style="color:var(--text-muted);font-size:8px;"></i>';
+    status === 'error' ? '<i class="fa-solid fa-circle-exclamation text-warning text-12"></i>' :
+    '<i class="fa-solid fa-circle text-muted" style="font-size:8px;"></i>';
   var checkClass = status === 'done' ? ' done' : '';
   var checkStyle = status === 'running' ? ' style="border-color:var(--accent);"' : status === 'error' ? ' style="border-color:var(--warning);"' : '';
   card.innerHTML = '<div class="step-head" tabindex="0" role="button" aria-expanded="false"><span class="step-check' + checkClass + '"' + checkStyle + '>' + statusIcon + '</span><i class="fa-solid ' + icon + ' step-icon"></i><span class="step-title">' + escapeHtml(title) + '</span><span class="step-time"></span><i class="fa-solid fa-chevron-down step-chevron"></i></div><div class="step-body"><div class="step-body-inner"></div></div>';
@@ -552,10 +563,10 @@ function updateStepStatus(stepCard, status, timeText) {
     check.innerHTML = '<i class="fa-solid fa-check"></i>';
   } else if (status === 'running') {
     check.style.borderColor = 'var(--accent)';
-    check.innerHTML = '<i class="fa-solid fa-spinner fa-spin-pulse" style="color:var(--accent);font-size:12px;"></i>';
+    check.innerHTML = '<i class="fa-solid fa-spinner fa-spin-pulse text-12" style="color:var(--accent);"></i>';
   } else if (status === 'error') {
     check.style.borderColor = 'var(--warning)';
-    check.innerHTML = '<i class="fa-solid fa-circle-exclamation" style="color:var(--warning);font-size:12px;"></i>';
+    check.innerHTML = '<i class="fa-solid fa-circle-exclamation text-12" style="color:var(--warning);"></i>';
   }
 }
 
@@ -591,7 +602,7 @@ function showConfirm(title, desc, opts) {
     overlay = document.createElement('div');
     overlay.className = 'dialog-overlay';
     overlay.id = 'confirmDialog';
-    overlay.onclick = function(e) { if (e.target === overlay) closeConfirm(false); };
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeConfirm(false); });
     document.body.appendChild(overlay);
   }
   var iconType = opts.type || 'warning';
@@ -601,8 +612,8 @@ function showConfirm(title, desc, opts) {
   var confirmClass = opts.danger ? 'dialog-btn danger' : 'dialog-btn primary';
   overlay.innerHTML = '<div class="dialog-box"><div class="dialog-icon ' + iconType + '"><i class="fa-solid ' + (iconMap[iconType] || 'fa-triangle-exclamation') + '"></i></div><div class="dialog-title">' + escapeHtml(title) + '</div><div class="dialog-desc">' + escapeHtml(desc) + '</div><div class="dialog-actions"><button class="dialog-btn secondary" id="confirmCancel">' + cancelText + '</button><button class="' + confirmClass + '" id="confirmOk">' + confirmText + '</button></div></div>';
   overlay.classList.add('open');
-  document.getElementById('confirmOk').onclick = function() { closeConfirm(true); };
-  document.getElementById('confirmCancel').onclick = function() { closeConfirm(false); };
+  document.getElementById('confirmOk').addEventListener('click', function() { closeConfirm(true); });
+  document.getElementById('confirmCancel').addEventListener('click', function() { closeConfirm(false); });
   document.getElementById('confirmOk').focus();
   return new Promise(function(resolve) { _dialogResolve = resolve; });
 }

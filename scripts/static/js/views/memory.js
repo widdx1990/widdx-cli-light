@@ -6,15 +6,15 @@ var _allMemories = [];
 async function showMemoryView(area) {
   setActivity('Loading', 'memories');
   area.innerHTML = TEMPLATES.view('fa-brain', 'Memory Vault', 'Persistent knowledge store',
-    '<div class="settings-card" style="margin-bottom:12px">'
+    '<div class="settings-card mb-12">'
     + '<div class="settings-card-label"><i class="fa-solid fa-plus"></i> Add Memory</div>'
-    + '<div style="display:flex;gap:8px">'
-    + '<input id="mem-content" class="settings-input" placeholder="Memory content..." style="flex:2">'
-    + '<input id="mem-tags" class="settings-input" placeholder="Tags (optional)" style="flex:1">'
-    + '<button onclick="addMemory()" class="send-btn" style="width:auto;padding:0 16px;border-radius:6px">Add</button>'
+    + '<div class="flex gap-8">'
+    + '<input id="mem-content" class="settings-input flex-2" placeholder="Memory content...">'
+    + '<input id="mem-tags" class="settings-input flex-1" placeholder="Tags (optional)">'
+    + '<button data-click="add-memory" class="send-btn w-auto px-8 rounded-6">Add</button>'
     + '</div></div>'
     + TEMPLATES.filterBar('memory-search', 'Search memories...',
-      '<button class="filter-btn" onclick="loadMemoryView()"><i class="fa-solid fa-rotate"></i> Refresh</button>',
+      '<button class="filter-btn" data-click="load-memory-view"><i class="fa-solid fa-rotate"></i> Refresh</button>',
       'filterMemoryView(this.value)')
     + '<div id="memory-list">' + TEMPLATES.loading('Loading memories...') + '</div>'
   );
@@ -67,15 +67,15 @@ function renderMemoryList(mems) {
     el.innerHTML = '<div class="empty-state" style="padding:24px"><i class="fa-solid fa-brain"></i><h3>No memories yet</h3><p>Use the form above to add a memory, or they are saved automatically.</p></div>';
     return;
   }
-  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px">' + mems.map(function(m) {
+  el.innerHTML = '<div class="flex flex-col gap-4">' + mems.map(function(m) {
     var id = m.id || m.memory_id || '';
     var target = m.name || m.fact || m.target || 'memory';
     var content = (m.description || m.content || m.value || '')?.slice(0, 120);
     return '<div class="activity-item memory-item">'
       + '<div class="activity-icon system"><i class="fa-solid fa-brain"></i></div>'
-      + '<div class="activity-content"><div class="activity-detail" style="font-weight:500;color:var(--text-primary)">' + escapeHtml(target) + '</div>'
+      + '<div class="activity-content"><div class="activity-detail text-bold text-primary">' + escapeHtml(target) + '</div>'
       + '<div class="activity-meta"><span class="activity-agent">' + escapeHtml(content) + '</span></div></div>'
-      + (id ? '<button onclick="delMemory(\'' + escapeHtml(id) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:12px;flex-shrink:0" title="Delete">✕</button>' : '')
+      + (id ? '<button data-click="del-memory" data-memory="' + escapeHtml(id) + '" class="btn-icon-error text-12 flex-shrink-0" title="Delete">✕</button>' : '')
       + '</div>';
   }).join('') + '</div>';
 }

@@ -4,7 +4,7 @@
 async function showCheckpointsView(area) {
   setActivity('Loading', 'checkpoints');
   area.innerHTML = TEMPLATES.view('fa-camera-retro', 'Checkpoints', 'Snapshot-based file saves (no Git required)',
-    '<div style="margin-bottom:12px"><button class="send-btn" style="width:auto;padding:6px 16px;border-radius:6px" onclick="createCheckpoint()"><i class="fa-solid fa-camera"></i> Create Checkpoint</button></div>'
+    '<div class="mb-12"><button class="send-btn w-auto rounded-6" style="padding:6px 16px" data-click="create-checkpoint"><i class="fa-solid fa-camera"></i> Create Checkpoint</button></div>'
     + '<div id="checkpoint-list">Loading...</div>'
   );
   try {
@@ -12,22 +12,22 @@ async function showCheckpointsView(area) {
     const cps = await r.json();
     const el = document.getElementById('checkpoint-list');
     if (!Array.isArray(cps) || !cps.length) {
-      el.innerHTML = '<span style="color:var(--text-muted)">No checkpoints yet.</span>';
+      el.innerHTML = '<span class="text-muted">No checkpoints yet.</span>';
     } else {
       el.innerHTML = cps.map(function(c) {
         const id = c.id || '';
         const ts = c.timestamp || c.created_at || '';
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+        return '<div class="flex-ac-sb py-8 border-bottom-light">'
           + '<span><strong>' + escapeHtml(id.slice(0, 12)) + '</strong> \u00b7 ' + escapeHtml(ts) + '</span>'
           + '<span>'
-          + '<button style="background:none;border:none;color:var(--accent);cursor:pointer" onclick="restoreCheckpoint(\'' + escapeHtml(id) + '\')" title="Restore">\u21a9</button>'
-          + '<button style="background:none;border:none;color:var(--error);cursor:pointer" onclick="delCheckpoint(\'' + escapeHtml(id) + '\')" title="Delete">\u2715</button></span></div>';
+          + '<button class="btn-icon-accent" data-click="restore-checkpoint" data-checkpoint="' + escapeHtml(id) + '" title="Restore">\u21a9</button>'
+          + '<button class="btn-icon-error" data-click="del-checkpoint" data-checkpoint="' + escapeHtml(id) + '" title="Delete">\u2715</button></span></div>';
       }).join('');
     }
     setActivity('Ready', '\u2014');
   } catch(e) {
     const el = document.getElementById('checkpoint-list');
-    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    if (el) el.innerHTML = '<span class="text-error">' + escapeHtml(e.message) + '</span>';
     setActivity('Ready', '\u2014');
   }
 }

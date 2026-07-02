@@ -4,7 +4,7 @@
 async function showSessionsView(area) {
   setActivity('Loading', 'sessions');
   area.innerHTML = TEMPLATES.view('fa-clock-rotate-left', 'Saved Sessions', 'Persistent conversation history',
-    '<div style="margin-bottom:12px"><input id="session-search" style="width:100%;background:var(--bg-input);border:1px solid var(--border-main);border-radius:6px;color:var(--text-primary);padding:8px 12px;font-size:13px;box-sizing:border-box" placeholder="Search sessions..." oninput="searchSessions(this.value)"></div>'
+    '<div class="mb-12"><input id="session-search" class="w-full bg-input border-main rounded-6 text-primary text-13" style="padding:8px 12px;box-sizing:border-box" placeholder="Search sessions..." oninput="searchSessions(this.value)"></div>'
     + '<div id="session-list">Loading...</div>'
   );
   await refreshSessionList();
@@ -18,24 +18,24 @@ async function refreshSessionList() {
     const el = document.getElementById('session-list');
     if (!el) return;
     if (!Array.isArray(sessions) || !sessions.length) {
-      el.innerHTML = '<span style="color:var(--text-muted)">No saved sessions. Chat messages are auto-saved.</span>';
+      el.innerHTML = '<span class="text-muted">No saved sessions. Chat messages are auto-saved.</span>';
     } else {
       el.innerHTML = sessions.map(function(s) {
         const id = s.id || s.session_id || '';
         const name = s.name || 'Untitled';
         const date = s.created_at ? new Date(s.created_at * 1000).toLocaleString() : (s.timestamp || '');
         const msgCount = s.message_count || s.messages?.length || 0;
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
-          + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(date) + ' \u00b7 ' + msgCount + ' messages</span></div>'
+        return '<div class="flex-ac-sb py-8 border-bottom-light">'
+          + '<div><strong>' + escapeHtml(name) + '</strong><br><span class="text-11 text-muted">' + escapeHtml(date) + ' \u00b7 ' + msgCount + ' messages</span></div>'
           + '<div>'
-          + '<button style="background:none;border:none;color:var(--accent);cursor:pointer" onclick="loadSession(\'' + escapeHtml(id) + '\')" title="Load">\uD83D\uDCC2</button>'
-          + '<button style="background:none;border:none;color:var(--success);cursor:pointer" onclick="exportSession(\'' + escapeHtml(id) + '\')" title="Export as Markdown">\uD83D\uDCC4</button>'
-          + '<button style="background:none;border:none;color:var(--error);cursor:pointer" onclick="delSession(\'' + escapeHtml(id) + '\')" title="Delete">\u2715</button></div></div>';
+          + '<button class="btn-icon-accent" data-click="load-session-btn" data-session="' + escapeHtml(id) + '" title="Load">\uD83D\uDCC2</button>'
+          + '<button class="btn-icon-success" data-click="export-session" data-session="' + escapeHtml(id) + '" title="Export as Markdown">\uD83D\uDCC4</button>'
+          + '<button class="btn-icon-error" data-click="del-session" data-session="' + escapeHtml(id) + '" title="Delete">\u2715</button></div></div>';
       }).join('');
     }
   } catch(e) {
     const el = document.getElementById('session-list');
-    if (el) el.innerHTML = '<span style="color:var(--error)">' + escapeHtml(e.message) + '</span>';
+    if (el) el.innerHTML = '<span class="text-error">' + escapeHtml(e.message) + '</span>';
   }
 }
 
@@ -100,13 +100,8 @@ async function loadSidebar() {
         item.className = 'chat-item';
         var sid = s.id || s.session_id || '';
         item.innerHTML = '<div class="chat-item-content"><div class="chat-item-title">' + escapeHtml(s.name || s.title || 'Chat') + '</div><div class="chat-item-meta">' + (s.created_at ? new Date(s.created_at * 1000).toLocaleDateString() : '') + '</div></div>';
-        item.onclick = function() {
-          if (sid && typeof loadSession === 'function') {
-            loadSession(sid);
-          } else {
-            showView('chat');
-          }
-        };
+        item.setAttribute('data-click', 'sidebar-load-session');
+        item.setAttribute('data-sid', sid);
         nav.appendChild(item);
       });
     }

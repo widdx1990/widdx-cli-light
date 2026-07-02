@@ -5,8 +5,8 @@ async function showActivityView(area) {
   setActivity('Loading', 'activity');
   area.innerHTML = TEMPLATES.view('fa-chart-simple', 'Activity Feed', 'Real-time event log',
     '<div class="filter-bar">'
-    + '<button class="filter-btn" onclick="loadActivityView()"><i class="fa-solid fa-rotate"></i> Refresh</button>'
-    + '<span style="font-size:var(--font-size-xs);color:var(--text-muted)">Auto-refreshes every 10s</span>'
+    + '<button class="filter-btn" data-click="load-activity-view"><i class="fa-solid fa-rotate"></i> Refresh</button>'
+    + '<span class="text-xs text-muted">Auto-refreshes every 10s</span>'
     + '</div>'
     + '<div class="activity-feed" id="activity-feed">' + TEMPLATES.loading('Loading activity...') + '</div>'
   );

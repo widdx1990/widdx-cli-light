@@ -15,10 +15,10 @@ async function showPluginsView(area) {
         const name = p.name || p.id || 'unknown';
         const enabled = p.enabled !== false;
         const desc = p.description || p.summary || '';
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+        return '<div class="flex-ac-sb py-8 border-bottom-light">'
           + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(desc.slice(0, 60)) + '</span></div>'
           + '<div><span style="color:' + (enabled ? 'var(--success)' : 'var(--text-muted)') + '">' + (enabled ? '\u25cf Enabled' : '\u25cb Disabled') + '</span>'
-          + ' <button style="background:none;border:none;color:' + (enabled ? 'var(--warning)' : 'var(--success)') + ';cursor:pointer" onclick="togglePlugin(\'' + encodeURIComponent(name) + '\',' + enabled + ')">' + (enabled ? 'Disable' : 'Enable') + '</button></div></div>';
+           + ' <button class="' + (enabled ? 'btn-icon-warning' : 'btn-icon-success') + '" data-click="toggle-plugin" data-plugin="' + encodeURIComponent(name) + '" data-enabled="' + enabled + '">' + (enabled ? 'Disable' : 'Enable') + '</button></div></div>';
       }).join('');
     } else {
       el.innerHTML = '<span style="color:var(--text-muted)">No plugins installed</span>';

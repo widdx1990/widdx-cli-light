@@ -24,7 +24,7 @@ async function showProxyView(area) {
       + '<label class="settings-card-label"><i class="fa-solid fa-link"></i> HTTPS Proxy</label>'
       + '<input id="proxy-https" class="settings-input" placeholder="https://proxy:8443" value="' + escapeHtml(d.https || '') + '">'
       + '</div>'
-      + '<button onclick="saveProxy()" class="btn-primary" style="margin-top:4px"><i class="fa-solid fa-floppy-disk"></i> Save Proxy</button>'
+      + '<button data-click="save-proxy" class="btn-primary" style="margin-top:4px"><i class="fa-solid fa-floppy-disk"></i> Save Proxy</button>'
       + '<span id="proxy-status" style="margin-left:12px;font-size:var(--font-size-sm);color:var(--text-muted)"></span>';
     document.getElementById('proxy-form').innerHTML = html;
     setActivity('Ready', '\u2014');

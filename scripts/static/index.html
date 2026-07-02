@@ -14,6 +14,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"></script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
 <link rel="stylesheet" href="/static/css/style.css?v=1781965833">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/monokai.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/markdown/markdown.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/shell/shell.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/sql/sql.min.js"></script>
 <script>
 // Safe stubs — prevent ReferenceError before external scripts load.
 // Each stub is replaced by the real implementation when its script loads.
@@ -47,62 +59,44 @@
 <script src="/static/js/views/apikeys.js?v=1781966000"></script>
 </head>
 <body>
+<!-- Activity Bar -->
+<div class="act-bar" id="actBar">
+  <div class="act-icon active" data-panel="chat" title="Chat"><i class="fa-solid fa-comment-dots"></i></div>
+  <div class="act-icon" data-panel="files" title="Files"><i class="fa-regular fa-folder-open"></i></div>
+  <div class="act-icon" data-panel="git" title="Git"><i class="fa-solid fa-code-branch"></i></div>
+  <div class="act-icon" data-panel="dashboard" title="Dashboard"><i class="fa-solid fa-gauge-high"></i></div>
+  <div class="act-spacer"></div>
+  <div class="act-icon" data-panel="settings" title="Settings"><i class="fa-solid fa-gear"></i></div>
+</div>
 
-<!-- SIDEBAR — Overlay Drawer -->
+<!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
   <div class="sidebar-brand">
     <div class="brand-logo">W</div>
     <span class="brand-text" data-i18n="brand_name">WIDDX Nexus</span>
-    <span class="brand-badge" data-i18n="brand_badge">v3</span>
   </div>
 
-  <div class="sidebar-new-task" id="sidebarNewTask" onclick="if(typeof newSession==='function')newSession(); else showView('chat'); if(window.innerWidth<820)toggleSidebar()">
-    <i class="fa-solid fa-plus"></i>
-    <span data-i18n="new_chat">New chat</span>
+  <!-- Chat/Sessions Panel -->
+  <div class="sidebar-panel" id="sidebar-chat">
+    <div class="sidebar-new-task" id="sidebarNewTask">
+      <i class="fa-solid fa-plus"></i>
+      <span data-i18n="new_chat">New chat</span>
+    </div>
+    <div class="sidebar-section-header">SESSIONS</div>
+    <input type="text" class="sidebar-search" id="sidebarSearch" placeholder="Search sessions..." autocomplete="off">
+    <nav class="sidebar-nav"></nav>
   </div>
 
-  <div class="sidebar-search-wrap">
-    <i class="fa-solid fa-magnifying-glass"></i>
-    <input type="text" class="sidebar-search" id="sidebarSearch" data-i18n="sidebar_search" data-i18n-attr="placeholder" placeholder="Search conversations…" autocomplete="off">
+  <!-- Files Panel (hidden by default) -->
+  <div class="sidebar-panel" id="sidebar-files" style="display:none">
+    <div class="sidebar-section-header">FILES</div>
+    <div class="sidebar-file-tree-body" id="fe-sidebar-body"></div>
   </div>
 
-  <nav class="sidebar-nav">
-    <div class="nav-item" data-view="scheduler" data-tooltip="Scheduler">
-      <i class="fa-solid fa-calendar-clock"></i>
-      <span data-i18n="nav_scheduler">Scheduler</span>
-      <span class="nav-badge" id="cronBadge" style="display:none">0</span>
-    </div>
-    <div class="nav-item active" data-view="chat" data-tooltip="Chat">
-      <i class="fa-solid fa-comment-dots"></i>
-      <span data-i18n="nav_chat">Chat</span>
-      <span class="nav-badge live-badge" data-i18n="nav_live">● Live</span>
-    </div>
-    <div class="nav-item" data-view="dashboard" data-tooltip="Dashboard">
-      <i class="fa-solid fa-gauge-high"></i>
-      <span data-i18n="nav_dashboard">Dashboard</span>
-    </div>
-    <div class="nav-item" data-view="settings" data-tooltip="Settings">
-      <i class="fa-solid fa-sliders"></i>
-      <span data-i18n="nav_settings">Settings</span>
-    </div>
-    <div class="nav-item" data-view="docs" data-tooltip="Project Docs">
-      <i class="fa-solid fa-book"></i>
-      <span>Project Docs</span>
-    </div>
-    <div class="nav-item" data-view="sessions" data-tooltip="All Sessions">
-      <i class="fa-solid fa-clock-rotate-left"></i>
-      <span>Sessions</span>
-    </div>
-    <div class="nav-item" data-view="search" data-tooltip="Search Sessions">
-      <i class="fa-solid fa-magnifying-glass"></i>
-      <span>Search</span>
-    </div>
-    <div class="nav-item" data-view="plan" data-tooltip="Project Plan">
-      <i class="fa-solid fa-list-check"></i>
-      <span>Plan</span>
-      <span class="nav-badge" id="planBadge" style="display:none">0</span>
-    </div>
-  </nav>
+  <div class="sidebar-panel" id="sidebar-git" style="display:none">
+    <div class="sidebar-section-header">SOURCE CONTROL</div>
+    <div class="sidebar-git-body" id="sidebar-git-body"></div>
+  </div>
 
   <div class="sidebar-footer">
     <div class="user-avatar">W</div>
@@ -117,10 +111,10 @@
 </aside>
 
 <!-- Sidebar backdrop (mobile) -->
-<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="if(window.innerWidth<820)toggleSidebar()"></div>
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
 <!-- Floating sidebar toggle -->
-<button class="sidebar-floating-toggle" id="sidebarFloatingToggle" onclick="toggleSidebar()" title="Toggle sidebar (Ctrl+B)">
+<button class="sidebar-floating-toggle" id="sidebarFloatingToggle" title="Toggle sidebar (Ctrl+B)">
   <i class="fa-solid fa-chevron-left"></i>
 </button>
 
@@ -132,35 +126,35 @@
 
       <!-- Chat Header -->
       <header class="chat-header">
-        <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Open navigation">
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Open navigation">
           <i class="fa-solid fa-bars"></i>
         </button>
-        <div class="model-selector" id="modelSelector" onclick="toggleModelDropdown(event)">
+        <div class="model-selector" id="modelSelector">
           <span id="modelName">Loading…</span>
           <i class="fa-solid fa-chevron-down model-chevron"></i>
         </div>
         <div class="model-dropdown" id="modelDropdown" style="display:none">
           <div class="model-dropdown-header" data-i18n="header_switch_model">Switch Model</div>
           <div class="model-dropdown-list" id="modelDropdownList"></div>
-          <div class="model-dropdown-footer" id="modelDropdownFooter" onclick="showView('settings')" data-i18n="header_open_settings">Open Settings</div>
+          <div class="model-dropdown-footer" id="modelDropdownFooter" data-i18n="header_open_settings">Open Settings</div>
         </div>
         <div class="chat-header-spacer"></div>
         <div class="chat-header-actions">
-          <button class="header-btn" id="starBtn" data-i18n="header_star" data-i18n-attr="title" title="Star this chat" onclick="this.classList.toggle('active')">
+          <button class="header-btn" id="starBtn" data-i18n="header_star" data-i18n-attr="title" title="Star this chat">
             <i class="fa-solid fa-star"></i>
           </button>
-          <button class="header-btn" data-i18n="header_share" data-i18n-attr="title" title="Export conversation" onclick="var txt=(typeof S!=='undefined'&&S.messages)?S.messages.map(function(m){return '['+m.role+'] '+(m.content||'')}).join('\n\n---\n\n'):'';navigator.clipboard.writeText(txt).then(function(){showToast('Copied to clipboard!','success')})">
+          <button class="header-btn" data-click="export-chat" data-i18n="header_share" data-i18n-attr="title" title="Export conversation">
             <i class="fa-solid fa-share-nodes"></i>
           </button>
-          <button class="header-btn" data-i18n="header_commands" data-i18n-attr="title" title="Commands (Ctrl+K)" onclick="openCommandPalette()">
+          <button class="header-btn" data-click="open-command-palette" data-i18n="header_commands" data-i18n-attr="title" title="Commands (Ctrl+K)">
             <i class="fa-solid fa-terminal"></i>
           </button>
-          <button class="theme-btn" id="autoModeBtn" onclick="toggleAutoMode()" title="Autonomous Mode: AI plans, executes, verifies, and learns — fully autonomous">
+          <button class="theme-btn" id="autoModeBtn" data-click="toggle-auto-mode" title="Autonomous Mode: AI plans, executes, verifies, and learns — fully autonomous">
             <i class="fa-solid fa-robot"></i>
             <span id="autoModeLabel" style="font-size:9px;margin-left:3px;font-weight:700">AUTO</span>
           </button>
-          <button class="lang-btn" id="langToggleBtn" onclick="Lang.toggle()" title="Switch language" data-i18n="header_toggle_lang">عربي</button>
-          <button class="theme-btn" onclick="toggleTheme()" data-i18n="header_toggle_theme" data-i18n-attr="title" title="Toggle theme">
+<button class="lang-btn" id="langToggleBtn" data-click="lang-toggle" title="Switch language" data-i18n="header_toggle_lang">عربي</button>
+<button class="theme-btn" data-click="toggle-theme" data-i18n="header_toggle_theme" data-i18n-attr="title" title="Toggle theme">
             <i class="fa-solid fa-sun icon-sun"></i>
             <i class="fa-solid fa-moon icon-moon"></i>
           </button>
@@ -174,19 +168,19 @@
           <h1 data-i18n="welcome_title">Welcome to WIDDX Nexus</h1>
           <p><span data-i18n="welcome_sub">Terminal AI Workspace — by</span> <strong data-i18n="welcome_by">MUHAMMAD MUSLIH</strong></p>
           <div class="onboarding-actions">
-            <div class="onboarding-card" onclick="sendOnboardingMsg('Hello! What can you do?')">
+            <div class="onboarding-card" data-click="send-onboarding" data-msg="Hello! What can you do?">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
               <span data-i18n="ob_intro">Introduce yourself</span>
             </div>
-            <div class="onboarding-card" onclick="sendOnboardingMsg('Write a Python script to analyze text files in a folder')">
+            <div class="onboarding-card" data-click="send-onboarding" data-msg="Write a Python script to analyze text files in a folder">
               <i class="fa-solid fa-code"></i>
               <span data-i18n="ob_code">Write code</span>
             </div>
-            <div class="onboarding-card" onclick="sendOnboardingMsg('Research the latest AI agent frameworks')">
+            <div class="onboarding-card" data-click="send-onboarding" data-msg="Research the latest AI agent frameworks">
               <i class="fa-solid fa-compass"></i>
               <span data-i18n="ob_research">Research</span>
             </div>
-            <div class="onboarding-card" onclick="sendOnboardingMsg('Explain how the UIL pipeline works in WIDDX')">
+            <div class="onboarding-card" data-click="send-onboarding" data-msg="Explain how the UIL pipeline works in WIDDX">
               <i class="fa-solid fa-brain"></i>
               <span data-i18n="ob_howwiddx">How WIDDX works</span>
             </div>
@@ -200,7 +194,7 @@
       </div>
 
       <!-- Scroll to bottom -->
-      <button class="scroll-bottom-btn" id="scrollBottomBtn" onclick="scrollBottom()" title="Scroll to bottom">
+      <button class="scroll-bottom-btn" id="scrollBottomBtn" title="Scroll to bottom">
         <i class="fa-solid fa-chevron-down"></i>
       </button>
 
@@ -219,7 +213,7 @@
           <span class="activity-tool" id="activityTool">—</span>
         </div>
         <div class="activity-actions">
-          <button class="activity-btn" onclick="toggleComputer()" data-i18n="panel_computer" data-i18n-attr="title" title="Toggle computer panel">
+          <button class="activity-btn" data-click="toggle-computer" data-i18n="panel_computer" data-i18n-attr="title" title="Toggle computer panel">
             <i class="fa-solid fa-desktop"></i>
           </button>
         </div>
@@ -231,10 +225,10 @@
           <textarea class="input-textarea" id="messageInput" data-i18n="input_placeholder" data-i18n-attr="placeholder" placeholder="Send a message to WIDDX..." rows="1" onkeydown="if(window.handleInputKey)handleInputKey(event)"></textarea>
           <div class="input-toolbar">
             <div class="input-toolbar-left">
-              <button class="input-toolbar-btn" data-i18n="cmd_actions" data-i18n-attr="title" title="Commands" onclick="openCommandPalette()">
+              <button class="input-toolbar-btn" data-click="open-command-palette" data-i18n="cmd_actions" data-i18n-attr="title" title="Commands">
                 <i class="fa-solid fa-terminal"></i>
               </button>
-              <button class="input-toolbar-btn" id="micBtn" title="Voice input" onclick="toggleVoiceInput()">
+              <button class="input-toolbar-btn" id="micBtn" data-click="toggle-voice-input" title="Voice input">
                 <i class="fa-solid fa-microphone"></i>
               </button>
               <label class="input-toolbar-btn" title="Upload image (vision)" style="cursor:pointer">
@@ -246,8 +240,8 @@
                 <input type="file" id="fileUpload" style="display:none" onchange="handleFileUpload(event)">
               </label>
             </div>
-            <button class="cancel-btn" id="cancelBtn" onclick="cancelAgent()" title="Stop"><i class="fa-solid fa-stop"></i></button>
-        <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send">
+            <button class="cancel-btn" id="cancelBtn" title="Stop"><i class="fa-solid fa-stop"></i></button>
+        <button class="send-btn" id="sendBtn" title="Send">
               <i class="fa-solid fa-paper-plane"></i>
             </button>
           </div>
@@ -261,20 +255,18 @@
     <aside class="right-panel" id="computerPanel">
       <div class="right-panel-header">
         <span class="status-dot running"></span>
-        <span class="right-panel-title" data-i18n="panel_computer">WIDDX Computer</span>
+        <span class="right-panel-title">TOOLS</span>
         <span class="right-panel-subtitle"><i class="fa-solid fa-circle"></i> <span data-i18n="panel_live">Live</span></span>
         <span class="right-panel-header-spacer"></span>
-        <button class="right-panel-close" onclick="toggleComputer()" title="Close">
+        <button class="right-panel-close" data-click="toggle-computer" title="Close">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <div class="right-panel-tabs">
-        <div class="right-panel-tab active" onclick="switchTab(this, 'desktop')"><i class="fa-solid fa-desktop"></i> <span data-i18n="tab_desktop">Desktop</span></div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'terminal')"><i class="fa-solid fa-terminal"></i> <span data-i18n="tab_terminal">Terminal</span></div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'browser')"><i class="fa-solid fa-globe"></i> <span data-i18n="tab_browser">Browser</span></div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'files')"><i class="fa-solid fa-folder"></i> <span data-i18n="tab_files">Files</span></div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'screenshot')"><i class="fa-solid fa-camera"></i> <span>Screenshot</span></div>
-        <div class="right-panel-tab" onclick="switchTab(this, 'processes')"><i class="fa-solid fa-microchip"></i> <span>Processes</span></div>
+        <div class="right-panel-tab active" data-click="switch-right-tab" data-tab="terminal"><i class="fa-solid fa-terminal"></i> <span data-i18n="tab_terminal">Terminal</span></div>
+        <div class="right-panel-tab" data-click="switch-right-tab" data-tab="browser"><i class="fa-solid fa-globe"></i> <span data-i18n="tab_browser">Browser</span></div>
+        <div class="right-panel-tab" data-click="switch-right-tab" data-tab="processes"><i class="fa-solid fa-microchip"></i> <span>Processes</span></div>
+        <div class="right-panel-tab" data-click="switch-right-tab" data-tab="screenshot"><i class="fa-solid fa-camera"></i> <span>Screenshot</span></div>
       </div>
       <div class="right-panel-body" id="panelBody">
         <div class="panel-desktop-view">
@@ -300,47 +292,47 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- Command Palette -->
-<div class="cmd-palette-overlay" id="cmdPaletteOverlay" onclick="if(event.target===this)closeCommandPalette()">
+<div class="cmd-palette-overlay" id="cmdPaletteOverlay" data-click="close-palette-overlay">
   <div class="cmd-palette">
     <input type="text" class="cmd-palette-input" id="cmdPaletteInput" data-i18n="cmd_placeholder" data-i18n-attr="placeholder" placeholder="Type a command or search…" autocomplete="off">
     <div class="cmd-palette-results" id="cmdPaletteResults">
       <div class="cmd-palette-section" data-i18n="cmd_actions">Actions</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('new-task')"><i class="fa-solid fa-plus"></i> <span data-i18n="cmd_new_chat">New Chat</span><span class="shortcut">Ctrl+N</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-sidebar')"><i class="fa-solid fa-sidebar"></i> <span data-i18n="cmd_toggle_nav">Toggle Navigation</span><span class="shortcut">Ctrl+B</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-panel')"><i class="fa-solid fa-desktop"></i> <span data-i18n="cmd_toggle_panel">Toggle Computer Panel</span><span class="shortcut">Ctrl+J</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('toggle-theme')"><i class="fa-solid fa-circle-half-stroke"></i> <span data-i18n="cmd_toggle_theme">Toggle Theme</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof Lang!=='undefined')Lang.toggle()"><i class="fa-solid fa-language"></i> <span data-i18n="cmd_toggle_lang">Switch Language</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="new-task"><i class="fa-solid fa-plus"></i> <span data-i18n="cmd_new_chat">New Chat</span><span class="shortcut">Ctrl+N</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="toggle-sidebar"><i class="fa-solid fa-sidebar"></i> <span data-i18n="cmd_toggle_nav">Toggle Navigation</span><span class="shortcut">Ctrl+B</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="toggle-panel"><i class="fa-solid fa-desktop"></i> <span data-i18n="cmd_toggle_panel">Toggle Computer Panel</span><span class="shortcut">Ctrl+J</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="toggle-theme"><i class="fa-solid fa-circle-half-stroke"></i> <span data-i18n="cmd_toggle_theme">Toggle Theme</span></div>
+      <div class="cmd-palette-item" data-click="lang-toggle"><i class="fa-solid fa-language"></i> <span data-i18n="cmd_toggle_lang">Switch Language</span></div>
       <div class="cmd-palette-section" data-i18n="cmd_views">Views</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-chat')"><i class="fa-solid fa-comment-dots"></i> <span data-i18n="cmd_view_chat">Chat</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-dashboard')"><i class="fa-solid fa-gauge-high"></i> <span data-i18n="cmd_view_dashboard">Dashboard</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-settings')"><i class="fa-solid fa-sliders"></i> <span data-i18n="cmd_view_settings">Settings</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-chat"><i class="fa-solid fa-comment-dots"></i> <span data-i18n="cmd_view_chat">Chat</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-dashboard"><i class="fa-solid fa-gauge-high"></i> <span data-i18n="cmd_view_dashboard">Dashboard</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-settings"><i class="fa-solid fa-sliders"></i> <span data-i18n="cmd_view_settings">Settings</span></div>
       <div class="cmd-palette-section" data-i18n="cmd_tools">Tools</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-scheduled')"><i class="fa-solid fa-calendar-clock"></i> <span data-i18n="cmd_scheduler">Task Scheduler</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-sessions')"><i class="fa-solid fa-clock-rotate-left"></i> <span data-i18n="cmd_sessions">Sessions</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-memory')"><i class="fa-solid fa-brain"></i> <span data-i18n="cmd_memory">Memory</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-skills')"><i class="fa-solid fa-toolbox"></i> <span data-i18n="cmd_skills">Skills</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gateway')"><i class="fa-solid fa-tower-broadcast"></i> <span data-i18n="cmd_gateway">Gateway</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-tasks')"><i class="fa-solid fa-diagram-project"></i> <span data-i18n="cmd_delegation">Delegation</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-activity')"><i class="fa-solid fa-chart-simple"></i> <span data-i18n="cmd_activity">Activity</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-mcp')"><i class="fa-solid fa-plug"></i> <span>MCP Servers</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-git')"><i class="fa-solid fa-code-branch"></i> <span>Git</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-checkpoints')"><i class="fa-solid fa-camera-retro"></i> <span>Checkpoints</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-doctor')"><i class="fa-solid fa-stethoscope"></i> <span>Doctor</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-debug')"><i class="fa-solid fa-bug"></i> <span>Debug</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-permissions')"><i class="fa-solid fa-shield"></i> <span>Permissions</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-plugins')"><i class="fa-solid fa-puzzle-piece"></i> <span>Plugins</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-workflows')"><i class="fa-solid fa-diagram-project"></i> <span>Workflows</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-proxy')"><i class="fa-solid fa-globe"></i> <span>Proxy Settings</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-gguf')"><i class="fa-solid fa-microchip"></i> <span>GGUF Models</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-manifest')"><i class="fa-solid fa-file-invoice"></i> <span>Manifest</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-tokenbudget')"><i class="fa-solid fa-coins"></i> <span>Token Budget</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-autocommit')"><i class="fa-solid fa-arrows-rotate"></i> <span>Auto-Commit</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('view-apikeys')"><i class="fa-solid fa-key"></i> <span>API Keys</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-scheduled"><i class="fa-solid fa-calendar-clock"></i> <span data-i18n="cmd_scheduler">Task Scheduler</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-sessions"><i class="fa-solid fa-clock-rotate-left"></i> <span data-i18n="cmd_sessions">Sessions</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-memory"><i class="fa-solid fa-brain"></i> <span data-i18n="cmd_memory">Memory</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-skills"><i class="fa-solid fa-toolbox"></i> <span data-i18n="cmd_skills">Skills</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-gateway"><i class="fa-solid fa-tower-broadcast"></i> <span data-i18n="cmd_gateway">Gateway</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-tasks"><i class="fa-solid fa-diagram-project"></i> <span data-i18n="cmd_delegation">Delegation</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-activity"><i class="fa-solid fa-chart-simple"></i> <span data-i18n="cmd_activity">Activity</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-mcp"><i class="fa-solid fa-plug"></i> <span>MCP Servers</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-git"><i class="fa-solid fa-code-branch"></i> <span>Git</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-checkpoints"><i class="fa-solid fa-camera-retro"></i> <span>Checkpoints</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-doctor"><i class="fa-solid fa-stethoscope"></i> <span>Doctor</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-debug"><i class="fa-solid fa-bug"></i> <span>Debug</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-permissions"><i class="fa-solid fa-shield"></i> <span>Permissions</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-plugins"><i class="fa-solid fa-puzzle-piece"></i> <span>Plugins</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-workflows"><i class="fa-solid fa-diagram-project"></i> <span>Workflows</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-proxy"><i class="fa-solid fa-globe"></i> <span>Proxy Settings</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-gguf"><i class="fa-solid fa-microchip"></i> <span>GGUF Models</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-manifest"><i class="fa-solid fa-file-invoice"></i> <span>Manifest</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-tokenbudget"><i class="fa-solid fa-coins"></i> <span>Token Budget</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-autocommit"><i class="fa-solid fa-arrows-rotate"></i> <span>Auto-Commit</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="view-apikeys"><i class="fa-solid fa-key"></i> <span>API Keys</span></div>
       <div class="cmd-palette-section" data-i18n="cmd_conversation">Conversation</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('clear-chat')"><i class="fa-solid fa-eraser"></i> <span data-i18n="cmd_clear">Clear Conversation</span></div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('export')"><i class="fa-solid fa-file-export"></i> <span data-i18n="cmd_export">Export</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="clear-chat"><i class="fa-solid fa-eraser"></i> <span data-i18n="cmd_clear">Clear Conversation</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="export"><i class="fa-solid fa-file-export"></i> <span data-i18n="cmd_export">Export</span></div>
       <div class="cmd-palette-section" data-i18n="cmd_help">Help</div>
-      <div class="cmd-palette-item" onclick="if(typeof execPaletteAction==='function')execPaletteAction('shortcuts')"><i class="fa-solid fa-keyboard"></i> <span data-i18n="cmd_shortcuts">Keyboard Shortcuts</span></div>
+      <div class="cmd-palette-item" data-click="exec-palette" data-action="shortcuts"><i class="fa-solid fa-keyboard"></i> <span data-i18n="cmd_shortcuts">Keyboard Shortcuts</span></div>
     </div>
   </div>
 </div>

@@ -8,7 +8,7 @@ async function showMCPView(area) {
     + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
     + '<input id="mcp-name" class="settings-input" style="flex:1;min-width:120px" placeholder="Server name">'
     + '<input id="mcp-cmd" class="settings-input" style="flex:2;min-width:200px" placeholder="Command (e.g. npx @modelcontextprotocol/server-filesystem)">'
-    + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" onclick="addMCPServer()">Add</button>'
+    + '<button class="send-btn" style="width:auto;padding:0 16px;border-radius:6px" data-click="add-mcp">Add</button>'
     + '</div></div>'
     + '<div id="mcp-list">' + TEMPLATES.skeleton(3) + '</div>');
   try {
@@ -22,11 +22,11 @@ async function showMCPView(area) {
         const name = s.name || s.id || 'unknown';
         const status = s.status || 'unknown';
         const statusColor = status === 'running' ? 'var(--success)' : status === 'error' ? 'var(--error)' : 'var(--text-muted)';
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+        return '<div class="flex-ac-sb py-8 border-bottom-light">'
           + '<div><strong>' + escapeHtml(name) + '</strong><br><span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(s.command || s.description || '') + '</span></div>'
           + '<div><span style="color:' + statusColor + '">\u25cf ' + status + '</span>'
-          + ' <button style="background:none;border:none;color:var(--accent);cursor:pointer" onclick="restartMCPServer(\'' + escapeHtml(name) + '\')" title="Restart">\u21bb</button>'
-          + ' <button style="background:none;border:none;color:var(--error);cursor:pointer" onclick="delMCPServer(\'' + escapeHtml(name) + '\')" title="Remove">\u2715</button></div></div>';
+          + ' <button class="btn-icon-accent" data-click="restart-mcp" data-mcp="' + escapeHtml(name) + '" title="Restart">\u21bb</button>'
+          + ' <button class="btn-icon-error" data-click="del-mcp" data-mcp="' + escapeHtml(name) + '" title="Remove">\u2715</button></div></div>';
       }).join('');
     }
     setActivity('Ready', '\u2014');

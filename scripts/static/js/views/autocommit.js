@@ -11,19 +11,19 @@ async function showAutoCommitView(area) {
     const d = await r.json();
     var html = ''
       + '<div class="settings-card">'
-      + '<div style="display:flex;align-items:center;justify-content:space-between">'
-      + '<div><strong style="color:var(--text-primary)">Status</strong>'
-      + '<br><span style="color:var(--text-muted);font-size:var(--font-size-sm)">' + (d.enabled ? '\ud83d\udfe2 Running' : '\u26aa Stopped') + '</span></div>'
-      + '<button onclick="toggleAutoCommit()" class="send-btn" style="width:auto;padding:8px 20px;border-radius:6px;background:' + (d.enabled ? 'var(--error)' : 'var(--success)') + '">'
+      + '<div class="flex-ac-sb">'
+      + '<div><strong class="text-primary">Status</strong>'
+      + '<br><span class="text-muted text-sm">' + (d.enabled ? '\ud83d\udfe2 Running' : '\u26aa Stopped') + '</span></div>'
+      + '<button data-click="toggle-autocommit" class="send-btn" style="width:auto;padding:8px 20px;border-radius:6px;background:' + (d.enabled ? 'var(--error)' : 'var(--success)') + '">'
       + (d.enabled ? 'Stop' : 'Start') + '</button>'
       + '</div></div>'
       + '<div class="settings-card">'
-      + '<div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Interval</span>'
-      + '<strong style="color:var(--text-primary)">' + (d.interval || '\u2014') + 's</strong></div>'
+      + '<div class="flex" style="justify-content:space-between"><span class="text-secondary">Interval</span>'
+      + '<strong class="text-primary">' + (d.interval || '\u2014') + 's</strong></div>'
       + '</div>'
       + '<div class="settings-card">'
-      + '<div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Last Commit</span>'
-      + '<strong style="color:var(--text-primary)">' + (d.last_commit || 'Never') + '</strong></div>'
+      + '<div class="flex" style="justify-content:space-between"><span class="text-secondary">Last Commit</span>'
+      + '<strong class="text-primary">' + (d.last_commit || 'Never') + '</strong></div>'
       + '</div>';
     document.getElementById('autocommit-content').innerHTML = html;
     setActivity('Ready', '\u2014');

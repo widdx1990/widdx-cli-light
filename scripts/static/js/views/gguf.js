@@ -6,9 +6,9 @@ async function showGGUFView(area) {
   area.innerHTML = TEMPLATES.view('fa-box', 'GGUF Models', 'Local GGUF model management',
     '<div class="settings-card">'
     + '<label class="settings-card-label"><i class="fa-solid fa-upload"></i> Load Model</label>'
-    + '<div style="display:flex;gap:8px">'
+    + '<div class="flex gap-8">'
     + '<input id="gguf-path" class="settings-input" placeholder="/path/to/model.gguf">'
-    + '<button onclick="loadGGUF()" class="send-btn" style="width:auto;padding:0 16px;border-radius:6px">Load</button>'
+    + '<button data-click="load-gguf" class="send-btn w-auto px-8 rounded-6">Load</button>'
     + '</div></div>'
     + '<div id="gguf-list">' + TEMPLATES.loading('Loading GGUF models...') + '</div>'
   );
@@ -17,16 +17,16 @@ async function showGGUFView(area) {
     var models = await r.json();
     var el = document.getElementById('gguf-list');
     if (Array.isArray(models) && models.length) {
-      el.innerHTML = '<h4 style="margin-bottom:8px">Available Models</h4>'
+      el.innerHTML = '<h4 class="mb-8">Available Models</h4>'
         + models.map(function(m) {
           var name = m.name || m.path || 'unknown';
           var loaded = m.loaded ? '\ud83d\udfe2 Loaded' : '\u26aa Unloaded';
           var size = m.size ? ' \u00b7 ' + Math.round(m.size / 1024 / 1024) + 'MB' : '';
-          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light)">'
+          return '<div class="flex-ac-sb py-8 border-bottom-light">'
             + '<span><strong>' + escapeHtml(name) + '</strong>' + escapeHtml(size) + '</span>'
             + '<span style="color:' + (m.loaded ? 'var(--success)' : 'var(--text-muted)') + '">' + loaded + '</span></div>';
         }).join('')
-        + '<button onclick="unloadGGUF()" class="btn-primary" style="margin-top:12px;background:var(--error)"><i class="fa-solid fa-power-off"></i> Unload Current</button>';
+        + '<button data-click="unload-gguf" class="btn-primary mt-12" style="background:var(--error)"><i class="fa-solid fa-power-off"></i> Unload Current</button>';
     } else {
       el.innerHTML = TEMPLATES.empty('fa-box', 'No GGUF models found', 'Enter a path above to load a GGUF model.');
     }

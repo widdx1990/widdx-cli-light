@@ -5,7 +5,7 @@ async function showSkillsView(area) {
   setActivity('Loading', 'skills');
   area.innerHTML = TEMPLATES.view('fa-toolbox', 'Skill Studio', 'Browse and manage agent skills',
     TEMPLATES.filterBar('skills-search', 'Search skills...',
-      '<button class="filter-btn" onclick="loadSkillsView()"><i class="fa-solid fa-rotate"></i> Refresh</button>',
+      '<button class="filter-btn" data-click="load-skills-view"><i class="fa-solid fa-rotate"></i> Refresh</button>',
       'filterSkillsView(this.value)')
     + '<div class="skills-grid" id="skills-grid">' + TEMPLATES.loading('Loading skills...') + '</div>'
   );

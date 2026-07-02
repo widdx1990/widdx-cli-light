@@ -15,22 +15,22 @@ async function showTokenBudgetView(area) {
     var pct = d.percentage || 0;
     var html = ''
       + '<div class="settings-card">'
-      + '<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
-      + '<span style="color:var(--text-secondary);font-size:var(--font-size-sm)">Used</span>'
-      + '<strong style="color:var(--text-primary)">' + used.toLocaleString() + '</strong></div>'
+      + '<div class="flex mb-8" style="justify-content:space-between">'
+      + '<span class="text-secondary text-sm">Used</span>'
+      + '<strong class="text-primary">' + used.toLocaleString() + '</strong></div>'
       + '<div style="background:var(--fill-active);border-radius:var(--radius-full);height:10px;overflow:hidden">'
       + '<div style="width:' + Math.min(pct, 100) + '%;height:100%;background:' + (pct > 80 ? 'var(--error)' : pct > 50 ? 'var(--warning)' : 'var(--success)') + ';border-radius:var(--radius-full);transition:width 0.5s"></div></div>'
-      + '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:var(--font-size-xs)">'
+      + '<div class="flex text-xs" style="justify-content:space-between;margin-top:6px">'
       + '<span style="color:var(--text-tertiary)">' + pct + '% used</span>'
       + '<span style="color:var(--text-tertiary)">' + remaining.toLocaleString() + ' remaining</span>'
       + '</div></div>'
       + '<div class="settings-card">'
-      + '<div style="display:flex;justify-content:space-between">'
-      + '<span style="color:var(--text-secondary)">Limit</span>'
-      + '<strong style="color:var(--text-primary)">' + (limit ? limit.toLocaleString() : 'Unlimited') + '</strong>'
+      + '<div class="flex" style="justify-content:space-between">'
+      + '<span class="text-secondary">Limit</span>'
+      + '<strong class="text-primary">' + (limit ? limit.toLocaleString() : 'Unlimited') + '</strong>'
       + '</div></div>'
-      + '<button onclick="resetTokenBudget()" class="btn-primary" style="background:var(--warning);color:#000"><i class="fa-solid fa-rotate"></i> Reset Budget</button>'
-      + '<span id="token-budget-status" style="margin-left:12px;font-size:var(--font-size-sm);color:var(--text-muted)"></span>';
+      + '<button data-click="reset-token-budget" class="btn-primary" style="background:var(--warning);color:#000"><i class="fa-solid fa-rotate"></i> Reset Budget</button>'
+      + '<span id="token-budget-status" class="text-sm text-muted" style="margin-left:12px"></span>';
     document.getElementById('token-budget-content').innerHTML = html;
     setActivity('Ready', '\u2014');
   } catch(e) {
