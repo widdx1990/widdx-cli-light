@@ -808,9 +808,6 @@ function addWSToolCard(name, details) {
 
 CLICK_HANDLERS['copy-msg'] = function(el) { copyMsg(el); };
 CLICK_HANDLERS['toggle-active'] = function(el) { el.classList.toggle('active'); };
-CLICK_HANDLERS['fe-nav'] = function(el) { showFileExplorer(el.getAttribute('data-path')); };
-CLICK_HANDLERS['fe-enter-dir'] = function(el) { _fileExplorerEnterDir(el.getAttribute('data-path')); };
-CLICK_HANDLERS['fe-open-file'] = function(el) { showFileEditor(el.getAttribute('data-path')); };
 CLICK_HANDLERS['fill-input'] = function(el) {
   var inp = document.getElementById('messageInput');
   if (!inp) return;
@@ -828,12 +825,6 @@ CLICK_HANDLERS['editor-save'] = function() { _editorSave(); };
 CLICK_HANDLERS['proc-refresh'] = function() { showProcessManager(); };
 CLICK_HANDLERS['proc-kill'] = function(el) { _killProcess(el.getAttribute('data-pid')); };
 CLICK_HANDLERS['take-screenshot'] = function() { takeScreenshot(); };
-CLICK_HANDLERS['fe-go-up'] = function() { _fileExplorerGoUp(); };
-CLICK_HANDLERS['fe-refresh'] = function() { showFileExplorer(); };
-CLICK_HANDLERS['fe-create-file'] = function() { _fileExplorerCreate(); };
-CLICK_HANDLERS['fe-create-dir'] = function() { _fileExplorerCreateDir(); };
-CLICK_HANDLERS['fe-toggle-dir'] = function(el) { _fileExplorerToggleDir(el); };
-CLICK_HANDLERS['fe-delete'] = function(el) { _fileExplorerDelete(el.getAttribute('data-path')); };
 CLICK_HANDLERS['browser-go'] = function() {
   var bf = document.getElementById('bf');
   var bu = document.getElementById('bu');
@@ -1489,127 +1480,7 @@ CLICK_HANDLERS['browser-toggle-live'] = function() {
   }
 };
 
-/* ═══════════════ PHASE 2: FILE EXPLORER ═══════════════════ */
-
-var _fileExplorerCurrentPath = '.';
-
-
-async function showFileExplorer(dir) {
-  if (dir !== undefined) _fileExplorerCurrentPath = dir;
-  const body = document.getElementById('fe-sidebar-body');
-  if (!body) return;
-  body.innerHTML = ''
-    + '<div class="fe-toolbar">'
-    + '<span class="fe-path" id="fe-path">' + escapeHtml(_fileExplorerCurrentPath) + '</span>'
-    + '<button class="fe-btn" data-click="fe-go-up" title="Go up"><i class="fa-solid fa-arrow-up"></i></button>'
-    + '<button class="fe-btn" data-click="fe-refresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
-    + '<button class="fe-btn" data-click="fe-create-file" title="New file"><i class="fa-solid fa-file-circle-plus"></i></button>'
-    + '<button class="fe-btn" data-click="fe-create-dir" title="New folder"><i class="fa-solid fa-folder-plus"></i></button>'
-    + '</div>'
-    + '<input class="file-explorer-search" id="fe-search" type="text" placeholder="Filter files..." oninput="_fileExplorerSearch(this.value)">'
-    + '<div class="file-explorer-body" id="fe-body" style="flex:1;overflow-y:auto"></div>';
-  _fileExplorerLoadDir(_fileExplorerCurrentPath);
-
-  // Keyboard navigation
-  var feSearch = document.getElementById('fe-search');
-  if (feSearch) {
-    feSearch.addEventListener('keydown', function(e) {
-      _feNavigate(e);
-    });
-  }
-
-  // Double-click on file items
-  var feBody = document.getElementById('fe-body');
-  if (feBody) {
-    feBody.addEventListener('contextmenu', function(e) {
-      var item = e.target.closest('.file-explorer-item');
-      if (!item) return;
-      e.preventDefault();
-      var path = item.getAttribute('data-path');
-      var isDir = item.classList.contains('directory');
-      _fileExplorerContextMenu(e, path, isDir);
-    });
-  }
-}
-
-async function _fileExplorerLoadDir(dirPath) {
-  var body = document.getElementById('fe-body');
-  if (!body) return;
-  _fileExplorerCurrentPath = dirPath;
-  var pathEl = document.getElementById('fe-path');
-  if (pathEl) pathEl.textContent = dirPath;
-  body.innerHTML = '<div class="file-explorer-empty" style="padding:12px"><i class="fa-solid fa-spinner fa-spin"></i><span>Loading...</span></div>';
-
-  try {
-    var r = await fetch('/api/sandbox/files?path=' + encodeURIComponent(dirPath));
-    var d = await r.json();
-    if (d.error) {
-      body.innerHTML = '<div class="file-explorer-empty text-error">' + escapeHtml(d.error) + '</div>';
-      return;
-    }
-    var files = d.files || [];
-    if (!files.length) {
-      body.innerHTML = '<div class="file-explorer-empty"><i class="fa-solid fa-folder-open"></i> <span class="ml-8">Empty directory</span></div>';
-      return;
-    }
-    body.innerHTML = _fileExplorerRenderItems(files, dirPath);
-  } catch(e) {
-    body.innerHTML = '<div class="file-explorer-empty text-error">' + escapeHtml(e.message) + '</div>';
-  }
-}
-
-function _fileExplorerRenderItems(items, basePath, level) {
-  level = level || 0;
-  var html = '';
-  var dirs = items.filter(function(i) { return i.type === 'directory'; });
-  var files = items.filter(function(i) { return i.type === 'file'; });
-
-  dirs.forEach(function(item) {
-    var childPath = item.path || basePath + '/' + item.name;
-    html += '<div class="file-explorer-item directory level-' + level + '" data-click="fe-enter-dir" data-path="' + escapeHtml(childPath) + '">'
-      + '<span class="item-toggle" data-click="fe-toggle-dir" data-path="' + escapeHtml(childPath) + '" data-base="' + escapeHtml(basePath) + '">▶</span>'
-      + '<span class="item-icon">📁</span>'
-      + '<span class="item-name">' + escapeHtml(item.name) + '</span>'
-      + '<span class="item-actions"><button data-click="fe-delete" data-path="' + escapeHtml(childPath) + '" title="Delete">✕</button></span>'
-      + '</div>';
-  });
-
-  files.forEach(function(item) {
-    var filePath = item.path || basePath + '/' + item.name;
-    var icon = _fileIcon(item.name);
-    var size = item.size !== undefined ? _formatSize(item.size) : '';
-    html += '<div class="file-explorer-item level-' + level + '" data-click="fe-open-file" data-path="' + escapeHtml(filePath) + '" title="' + escapeHtml(filePath) + '">'
-      + '<span class="item-icon">' + icon + '</span>'
-      + '<span class="item-name">' + escapeHtml(item.name) + '</span>'
-      + (size ? '<span class="item-meta">' + size + '</span>' : '')
-      + '<span class="item-actions"><button data-click="fe-delete" data-path="' + escapeHtml(filePath) + '" title="Delete">✕</button></span>'
-      + '</div>';
-  });
-
-  return html;
-}
-
-function _fileIcon(name) {
-  var ext = name.split('.').pop().toLowerCase();
-  var icons = {
-    js: '\uD83D\uDCDD', ts: '\uD83D\uDCDD', py: '\uD83D\uDC0D',
-    html: '\uD83C\uDF10', css: '\uD83C\uDFA8', json: '\uD83D\uDCCB',
-    md: '\uD83D\uDCDD', txt: '\uD83D\uDCC4', yml: '\u2699\uFE0F', yaml: '\u2699\uFE0F',
-    toml: '\u2699\uFE0F', cfg: '\u2699\uFE0F', conf: '\u2699\uFE0F',
-    sh: '\uD83D\uDDA5\uFE0F', bash: '\uD83D\uDDA5\uFE0F', zsh: '\uD83D\uDDA5\uFE0F',
-    go: '\uD83C\uDF4E', rs: '\uD83E\uDD16', java:'\u2615',
-    sql: '\uD83D\uDEE0\uFE0F', gitignore:'\uD83D\uDCC1', dockerfile:'\uD83D\uDC33',
-    lock: '\uD83D\uDD12', svg:'\uD83D\uDDBC\uFE0F', png:'\uD83D\uDDBC\uFE0F', jpg:'\uD83D\uDDBC\uFE0F', jpeg:'\uD83D\uDDBC\uFE0F', gif:'\uD83D\uDDBC\uFE0F',
-  };
-  return icons[ext] || '\uD83D\uDCC4';
-}
-
-function _formatSize(bytes) {
-  if (!bytes) return '';
-  if (bytes < 1024) return bytes + 'B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB';
-  return (bytes / 1048576).toFixed(1) + 'MB';
-}
+/* ═══════════════ FILE EXPLORER ═══════════════════ */
 
 /* ── Main area file explorer (for VIEWS['files']) ── */
 var _fileExplorerMainPath = '.';
@@ -1665,238 +1536,7 @@ async function _renderFileExplorerMain(dir) {
   }
 }
 
-function _fileExplorerGoUp() {
-  var parts = _fileExplorerCurrentPath.replace(/^\/+/, '').split('/').filter(Boolean);
-  if (parts.length === 0 || _fileExplorerCurrentPath === '.') return;
-  parts.pop();
-  var parent = parts.length ? '/' + parts.join('/') : '.';
-  showFileExplorer(parent);
-}
-
-function _fileExplorerEnterDir(path) {
-  showFileExplorer(path);
-}
-
-// Keyboard navigation
-window._feNavigate = function(e) {
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    var items = document.querySelectorAll('#fe-body .file-explorer-item');
-    if (!items.length) return;
-    var current = document.querySelector('#fe-body .file-explorer-item.focused');
-    var idx = current ? Array.from(items).indexOf(current) : -1;
-    if (current) current.classList.remove('focused');
-    if (e.key === 'ArrowDown') idx = Math.min(idx + 1, items.length - 1);
-    else idx = Math.max(idx - 1, 0);
-    items[idx].classList.add('focused');
-    items[idx].scrollIntoView({ block: 'nearest' });
-    e.preventDefault();
-  } else if (e.key === 'Enter') {
-    var focused = document.querySelector('#fe-body .file-explorer-item.focused');
-    if (focused) {
-      var path = focused.getAttribute('data-path');
-      if (focused.classList.contains('directory')) showFileExplorer(path);
-      else showFileEditor(path);
-    }
-    e.preventDefault();
-  } else if (e.key === 'Backspace' && document.activeElement === document.getElementById('fe-search')) {
-    // Only go up when search is focused and empty
-    if (!e.target.value) _fileExplorerGoUp();
-  } else if (e.key === 'Escape') {
-    document.querySelectorAll('#fe-body .file-explorer-item.focused').forEach(function(i) { i.classList.remove('focused'); });
-  }
-};
-
-// Inline new file/folder creation
-window._fileExplorerCreate = function() {
-  var body = document.getElementById('fe-body');
-  if (!body) return;
-  var row = document.createElement('div');
-  row.className = 'file-explorer-item fe-new-row';
-  row.innerHTML = '<span class="item-icon">📄</span><input class="fe-inline-input" id="fe-new-file-input" placeholder="filename.ext" autofocus>';
-  body.insertBefore(row, body.firstChild);
-  var inp = document.getElementById('fe-new-file-input');
-  if (!inp) return;
-  inp.focus();
-  inp.addEventListener('keydown', function(ev) {
-    if (ev.key === 'Enter') {
-      var name = inp.value.trim();
-      row.remove();
-      if (!name) return;
-      var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
-      fetch('/api/sandbox/file/create', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({path: fullPath, is_directory: false, content: ''})
-      }).then(function(r){return r.json()}).then(function(d) {
-        if (d.status === 'ok') { showToast('Created: ' + name, 'success'); showFileExplorer(); }
-        else showToast('Error: ' + (d.error || 'Failed'), 'error');
-      }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
-    } else if (ev.key === 'Escape') { row.remove(); }
-  });
-  inp.addEventListener('blur', function() { setTimeout(function() { row.remove(); }, 200); });
-};
-
-window._fileExplorerCreateDir = function() {
-  var body = document.getElementById('fe-body');
-  if (!body) return;
-  var row = document.createElement('div');
-  row.className = 'file-explorer-item fe-new-row';
-  row.innerHTML = '<span class="item-icon">📁</span><input class="fe-inline-input" id="fe-new-dir-input" placeholder="foldername" autofocus>';
-  body.insertBefore(row, body.firstChild);
-  var inp = document.getElementById('fe-new-dir-input');
-  if (!inp) return;
-  inp.focus();
-  inp.addEventListener('keydown', function(ev) {
-    if (ev.key === 'Enter') {
-      var name = inp.value.trim();
-      row.remove();
-      if (!name) return;
-      var fullPath = (_fileExplorerCurrentPath === '.' ? '' : _fileExplorerCurrentPath) + '/' + name;
-      fetch('/api/sandbox/file/create', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({path: fullPath, is_directory: true})
-      }).then(function(r){return r.json()}).then(function(d) {
-        if (d.status === 'ok') { showToast('Created: ' + name, 'success'); showFileExplorer(); }
-        else showToast('Error: ' + (d.error || 'Failed'), 'error');
-      }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
-    } else if (ev.key === 'Escape') { row.remove(); }
-  });
-  inp.addEventListener('blur', function() { setTimeout(function() { row.remove(); }, 200); });
-};
-
-window._fileExplorerToggleDir = function(el) {
-  var path = el.getAttribute('data-path');
-  var base = el.getAttribute('data-base');
-  var parent = el.closest('.file-explorer-item');
-  if (!parent || !path) return;
-
-  // If already expanded, collapse
-  var next = parent.nextElementSibling;
-  if (el.classList.contains('expanded')) {
-    el.classList.remove('expanded');
-    el.textContent = '▶';
-    while (next && next.classList.contains('file-explorer-item') && !next.classList.contains('level-0')) {
-      var n = next;
-      next = n.nextElementSibling;
-      n.remove();
-    }
-    return;
-  }
-
-  el.classList.add('expanded');
-  el.textContent = '▼';
-  var level = parseInt(parent.className.match(/level-(\d+)/)?.[1] || '0', 10) + 1;
-
-  // Fetch children
-  fetch('/api/sandbox/files?path=' + encodeURIComponent(path))
-    .then(function(r){return r.json()})
-    .then(function(d) {
-      if (d.error || !d.files?.length) {
-        el.classList.remove('expanded');
-        el.textContent = '▶';
-        return;
-      }
-      var html = _fileExplorerRenderItems(d.files, path, level);
-      parent.insertAdjacentHTML('afterend', html);
-    })
-    .catch(function() {
-      el.classList.remove('expanded');
-      el.textContent = '▶';
-    });
-};
-
-window._fileExplorerContextMenu = function(e, path, isDir) {
-  e.preventDefault();
-  e.stopPropagation();
-
-  // Remove existing menu
-  var old = document.querySelector('.file-context-menu');
-  if (old) old.remove();
-
-  var menu = document.createElement('div');
-  menu.className = 'file-context-menu';
-  menu.innerHTML = '<div class="ctx-item" data-action="open">📂 Open</div>'
-    + '<div class="ctx-divider"></div>'
-    + '<div class="ctx-item" data-action="rename">✏️ Rename</div>'
-    + '<div class="ctx-item" data-action="copy-path">📋 Copy Path</div>'
-    + '<div class="ctx-divider"></div>'
-    + '<div class="ctx-item danger" data-action="delete">🗑️ Delete</div>';
-
-  menu.style.left = Math.min(e.clientX, window.innerWidth - 170) + 'px';
-  menu.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
-  document.body.appendChild(menu);
-
-  menu.addEventListener('click', function(ev) {
-    var action = ev.target.closest('.ctx-item')?.getAttribute('data-action');
-    if (!action) return;
-    menu.remove();
-    if (action === 'open') {
-      if (isDir) showFileExplorer(path);
-      else showFileEditor(path);
-    } else if (action === 'rename') {
-      _fileExplorerRename(path);
-    } else if (action === 'copy-path') {
-      navigator.clipboard.writeText(path).then(function() { showToast('Path copied', 'success'); });
-    } else if (action === 'delete') {
-      _fileExplorerDelete(path);
-    }
-  });
-
-  // Close on any click outside
-  setTimeout(function() {
-    document.addEventListener('click', function closeMenu() {
-      var m = document.querySelector('.file-context-menu');
-      if (m) m.remove();
-      document.removeEventListener('click', closeMenu);
-    }, { once: true });
-  }, 10);
-};
-
-window._fileExplorerSearch = function(query) {
-  var items = document.querySelectorAll('#fe-body .file-explorer-item');
-  var q = query.toLowerCase().trim();
-  items.forEach(function(el) {
-    var name = el.querySelector('.item-name')?.textContent.toLowerCase() || '';
-    el.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
-  });
-};
-
-window._fileExplorerDelete = function(path) {
-  if (!path) return;
-  showConfirm('Delete ' + path.split('/').pop() + '?', 'This cannot be undone.', { confirmText: 'Delete', danger: true }).then(function(ok) {
-    if (!ok) return;
-    fetch('/api/sandbox/file/delete', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({path: path})
-    }).then(function(r){return r.json()}).then(function(d) {
-      if (d.status === 'ok') {
-        showToast('Deleted', 'success');
-        showFileExplorer();
-      } else {
-        showToast('Error: ' + (d.error || 'Failed'), 'error');
-      }
-    }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
-  });
-};
-
-window._fileExplorerRename = function(oldPath) {
-  if (!oldPath) return;
-  var name = prompt('New name:', oldPath.split('/').pop());
-  if (!name || name === oldPath.split('/').pop()) return;
-  var newPath = oldPath.slice(0, oldPath.lastIndexOf('/') + 1) + name;
-  fetch('/api/sandbox/file/rename', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({old_path: oldPath, new_path: newPath})
-  }).then(function(r){return r.json()}).then(function(d) {
-    if (d.status === 'ok') {
-      showToast('Renamed', 'success');
-      showFileExplorer();
-    } else {
-      showToast('Error: ' + (d.error || 'Failed'), 'error');
-    }
-  }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
-};
+/* ── End of dead code cleanup ── */
 
 /* ═══════════════ PHASE 2: FILE EDITOR ═══════════════════ */
 
@@ -2331,9 +1971,11 @@ document.addEventListener('DOMContentLoaded', function() {
   if (ob) ONBOARDING_HTML = ob.outerHTML;
 
   // Nav clicks are handled via addEventListener below — setupNavClicks() removed (P1 duplicate fix)
-  loadAppTheme();
-  loadStatus();
-  loadProjectSession();
+  var _bootReady = Promise.allSettled([
+    loadAppTheme(),
+    loadStatus(),
+    loadProjectSession(),
+  ]);
   loadSidebar();    // #4: Event listeners — sidebar, header, input
     document.getElementById('sidebarNewTask').addEventListener('click', function() {
       if (typeof newSession === 'function') newSession();
@@ -2622,70 +2264,19 @@ document.addEventListener('DOMContentLoaded', function() {
     diffHtml += '</pre></div>';
     area.insertAdjacentHTML('beforeend', diffHtml);
   };
+
+  // ── Hide boot screen after all init calls complete ──
+  _bootReady.then(function() {
+    var bootScreen = document.getElementById('bootScreen');
+    if (!bootScreen) return;
+    var bootStatus = document.getElementById('bootStatus');
+    if (bootStatus) bootStatus.textContent = 'Ready';
+    bootScreen.classList.add('hidden');
+    setTimeout(function() {
+      if (bootScreen.parentNode) bootScreen.parentNode.removeChild(bootScreen);
+    }, 700);
+  });
 });
-
-// ═══════════════ SIDEBAR GIT PANEL (VS Code-style) ═══════════════════
-async function _loadSidebarGit() {
-  var body = document.getElementById('sidebar-git-body');
-  if (!body) return;
-  body.innerHTML = '<div class="sg-loading">Loading...</div>';
-  try {
-    var r = await fetch('/api/git');
-    var d = await r.json();
-    var branch = (d.branch || '').replace(/^\*\s*/, '') || 'main';
-    var changes = d.changes || '';
-    var files = changes ? changes.split('\n').filter(Boolean) : [];
-    var html = '<div class="sg-branch">🌿 ' + escapeHtml(branch) + '</div>';
-
-    if (!files.length) {
-      html += '<div class="sg-empty">No changes</div>';
-    } else {
-      html += '<div class="sg-files">';
-      files.forEach(function(f) {
-        var m = f.match(/^([ MARCUD?!])\s+(.+)/);
-        var code = m ? m[1].trim() : ' ';
-        var path = m ? m[2] : f;
-        var cls = code === 'M' ? 'M' : code === 'A' ? 'A' : code === 'D' ? 'D' : code === '?' ? 'U' : '';
-        html += '<div class="sg-file ' + cls + '"><span class="sg-indicator">' + code + '</span>' + escapeHtml(path) + '</div>';
-      });
-      html += '</div>';
-    }
-
-    html += '<div class="sg-actions">'
-      + '<textarea class="sg-msg" id="sg-commit-msg" placeholder="Commit message..." rows="2"></textarea>'
-      + '<div class="sg-btns">'
-      + '<button class="sg-btn primary" data-click="sg-commit">✓ Commit</button>'
-      + '<button class="sg-btn" data-click="sg-push">↑ Push</button>'
-      + '<button class="sg-btn" data-click="sg-pull">↓ Pull</button>'
-      + '<button class="sg-btn" data-click="sg-refresh">↻</button>'
-      + '</div></div>';
-
-    body.innerHTML = html;
-  } catch(e) {
-    body.innerHTML = '<div class="sg-empty err">' + escapeHtml(e.message) + '</div>';
-  }
-}
-CLICK_HANDLERS['sg-commit'] = function() {
-  var msg = document.getElementById('sg-commit-msg')?.value.trim();
-  fetch('/api/git/commit', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message: msg || 'Auto-commit'}) })
-    .then(function(r){return r.json()}).then(function(d) {
-      showToast(d.status === 'committed' ? '✓ Committed' : 'Failed', d.status === 'committed' ? 'success' : 'error');
-      if (d.status === 'committed') { var m = document.getElementById('sg-commit-msg'); if (m) m.value = ''; _loadSidebarGit(); }
-    }).catch(function(e) { showToast(e.message, 'error'); });
-};
-CLICK_HANDLERS['sg-push'] = function() {
-  showToast('Pushing...', 'info');
-  fetch('/api/git/push', { method: 'POST' }).then(function(r){return r.json()}).then(function(d) {
-    showToast(d.status === 'pushed' ? '✓ Pushed' : (d.error || 'Failed'), 'success');
-  }).catch(function(e) { showToast(e.message, 'error'); });
-};
-CLICK_HANDLERS['sg-pull'] = function() {
-  showToast('Pulling...', 'info');
-  fetch('/api/git/pull', { method: 'POST' }).then(function(r){return r.json()}).then(function(d) {
-    showToast(d.status === 'pulled' ? '✓ Pulled' : (d.error || 'Failed'), 'success');
-  }).catch(function(e) { showToast(e.message, 'error'); });
-};
-CLICK_HANDLERS['sg-refresh'] = function() { _loadSidebarGit(); };
 
 // ═══════════════ PHASE 3: ULTRA-SMART CANVAS SYSTEM ═══════════════════
 

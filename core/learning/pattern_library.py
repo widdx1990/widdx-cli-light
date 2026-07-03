@@ -288,3 +288,249 @@ class UnifiedPatternStore:
                          f"({source} conf={p.confidence:.2f}, used={p.usage_count}x)")
         lines.append("</proven_patterns>")
         return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Project Template Scaffolding
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass
+class ProjectTemplate:
+    """A reusable project scaffold with files, dependencies, and instructions.
+
+    Small models benefit from templates because they:
+      1. Eliminate boilerplate decisions (folder layout, config files)
+      2. Provide a validated starting point that always compiles
+      3. Include known-good dependency versions and patterns
+    """
+    name: str
+    description: str
+    tags: list[str] = field(default_factory=list)
+    files: dict[str, str] = field(default_factory=dict)  # path -> content
+    dependencies: list[str] = field(default_factory=list)
+    dev_dependencies: list[str] = field(default_factory=list)
+    post_init_commands: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return self.__dict__.copy()
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ProjectTemplate":
+        defaults = {
+            "name": "", "description": "", "tags": [],
+            "files": {}, "dependencies": [], "dev_dependencies": [],
+            "post_init_commands": [],
+        }
+        return cls(**{k: d.get(k, defaults.get(k)) for k in cls.__dataclass_fields__})
+
+
+class TemplateRegistry:
+    """Registry of project templates for scaffolding new projects."""
+
+    def __init__(self):
+        self._templates: dict[str, ProjectTemplate] = {}
+        self._register_builtins()
+
+    def _register_builtins(self):
+        """Register built-in templates."""
+        self.register(self._fastapi_sqlalchemy_template())
+        self.register(self._nextjs_prisma_template())
+        self.register(self._python_cli_template())
+
+    def register(self, template: ProjectTemplate):
+        self._templates[template.name] = template
+
+    def get(self, name: str) -> ProjectTemplate | None:
+        return self._templates.get(name)
+
+    def search(self, query: str = "", tags: list[str] | None = None) -> list[ProjectTemplate]:
+        results = []
+        q = query.lower()
+        for t in self._templates.values():
+            if q and q not in t.name.lower() and q not in t.description.lower():
+                continue
+            if tags and not any(tag in t.tags for tag in tags):
+                continue
+            results.append(t)
+        return results
+
+    @property
+    def list_all(self) -> list[ProjectTemplate]:
+        return list(self._templates.values())
+
+    # ── Built-in templates ─────────────────────────────────
+
+    def _fastapi_sqlalchemy_template(self) -> ProjectTemplate:
+        return ProjectTemplate(
+            name="fastapi-sqlalchemy",
+            description="FastAPI + SQLAlchemy async with Alembic migrations",
+            tags=["api", "web", "database", "python"],
+            dependencies=[
+                "fastapi>=0.110.0", "uvicorn[standard]>=0.27.0",
+                "sqlalchemy[asyncio]>=2.0.25", "alembic>=1.13.0",
+                "pydantic>=2.5.0", "pydantic-settings>=2.1.0",
+            ],
+            dev_dependencies=[
+                "pytest>=8.0.0", "pytest-asyncio>=0.23.0",
+                "httpx>=0.26.0", "ruff>=0.1.0",
+            ],
+            files={
+                "app/__init__.py": "",
+                "app/main.py": (
+                    "from fastapi import FastAPI\n\n"
+                    "app = FastAPI(title=\"My API\")\n\n\n"
+                    "@app.get(\"/health\")\n"
+                    "async def health():\n"
+                    '    return {"status": "ok"}\n'
+                ),
+                "app/database.py": (
+                    "from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker\n\n"
+                    "DATABASE_URL = \"sqlite+aiosqlite:///./db.sqlite3\"\n"
+                    "engine = create_async_engine(DATABASE_URL)\n"
+                    "AsyncSessionLocal = async_sessionmaker(engine)\n"
+                ),
+                "app/models.py": (
+                    "from sqlalchemy.orm import DeclarativeBase\n\n\n"
+                    "class Base(DeclarativeBase):\n"
+                    "    pass\n"
+                ),
+                "app/schemas.py": (
+                    "from pydantic import BaseModel\n\n\n"
+                    "class Message(BaseModel):\n"
+                    "    content: str\n"
+                ),
+                "tests/__init__.py": "",
+                "tests/test_health.py": (
+                    "from httpx import AsyncClient, ASGITransport\n"
+                    "from app.main import app\n\n\n"
+                    "async def test_health():\n"
+                    "    transport = ASGITransport(app=app)\n"
+                    "    async with AsyncClient(transport=transport, base_url=\"http://test\") as cl:\n"
+                    "        r = await cl.get(\"/health\")\n"
+                    "    assert r.status_code == 200\n"
+                    '    assert r.json() == {"status": "ok"}\n'
+                ),
+                "alembic.ini": (
+                    "[alembic]\n"
+                    "script_location = alembic\n"
+                    "sqlalchemy.url = sqlite+aiosqlite:///./db.sqlite3\n"
+                ),
+                "pyproject.toml": (
+                    "[project]\n"
+                    'name = "my-api"\n'
+                    'version = "0.1.0"\n'
+                    'requires-python = ">=3.11"\n'
+                ),
+            },
+            post_init_commands=[
+                "alembic init alembic",
+                "alembic revision --autogenerate -m init",
+                "alembic upgrade head",
+            ],
+        )
+
+    def _nextjs_prisma_template(self) -> ProjectTemplate:
+        return ProjectTemplate(
+            name="nextjs-prisma",
+            description="Next.js 14 App Router + Prisma ORM + Tailwind CSS",
+            tags=["web", "frontend", "database", "typescript"],
+            dependencies=[
+                "next@14", "react@18", "react-dom@18",
+                "@prisma/client@5", "prisma@5",
+            ],
+            dev_dependencies=[
+                "typescript@5", "@types/react@18", "@types/node@20",
+                "tailwindcss@3", "postcss", "autoprefixer",
+            ],
+            files={
+                "prisma/schema.prisma": (
+                    "generator client {\n"
+                    "  provider = \"prisma-client-js\"\n"
+                    "}\n\n"
+                    "datasource db {\n"
+                    "  provider = \"sqlite\"\n"
+                    "  url      = env(\"DATABASE_URL\")\n"
+                    "}\n\n"
+                    'model User {\n'
+                    '  id        String   @id @default(cuid())\n'
+                    '  email     String   @unique\n'
+                    '  name      String?\n'
+                    '  createdAt DateTime @default(now())\n'
+                    "}\n"
+                ),
+                "src/app/page.tsx": (
+                    "export default function Home() {\n"
+                    "  return <main><h1>Hello World</h1></main>\n"
+                    "}\n"
+                ),
+                "src/app/api/health/route.ts": (
+                    "import { NextResponse } from 'next/server'\n\n"
+                    "export async function GET() {\n"
+                    '  return NextResponse.json({ status: "ok" })\n'
+                    "}\n"
+                ),
+                "package.json": (
+                    '{\n'
+                    '  "name": "my-app",\n'
+                    '  "version": "0.1.0",\n'
+                    '  "scripts": {\n'
+                    '    "dev": "next dev",\n'
+                    '    "build": "next build",\n'
+                    '    "start": "next start"\n'
+                    '  }\n'
+                    '}\n'
+                ),
+                "tsconfig.json": (
+                    '{\n'
+                    '  "compilerOptions": {\n'
+                    '    "target": "es2017",\n'
+                    '    "lib": ["dom", "dom.iterable", "esnext"],\n'
+                    '    "module": "esnext",\n'
+                    '    "moduleResolution": "bundler",\n'
+                    '    "jsx": "preserve",\n'
+                    '    "strict": true\n'
+                    '  },\n'
+                    '  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"]\n'
+                    '}\n'
+                ),
+            },
+            post_init_commands=[
+                "npx prisma generate",
+                "npx prisma db push",
+            ],
+        )
+
+    def _python_cli_template(self) -> ProjectTemplate:
+        return ProjectTemplate(
+            name="python-cli",
+            description="Python CLI app with argparse, structured logging, and tests",
+            tags=["cli", "python", "tool"],
+            dependencies=[],
+            dev_dependencies=["pytest>=8.0.0", "ruff>=0.1.0"],
+            files={
+                "src/cli.py": (
+                    "import argparse\n\n\n"
+                    "def main():\n"
+                    '    parser = argparse.ArgumentParser(description="My CLI")\n'
+                    '    parser.add_argument("--name", default="world")\n'
+                    "    args = parser.parse_args()\n"
+                    '    print(f"Hello, {args.name}!")\n\n\n'
+                    'if __name__ == "__main__":\n'
+                    "    main()\n"
+                ),
+                "src/__init__.py": "",
+                "tests/test_cli.py": (
+                    "from src.cli import main\n\n\n"
+                    "def test_main():\n"
+                    "    assert main() is None\n"
+                ),
+                "pyproject.toml": (
+                    "[project]\n"
+                    'name = "my-cli"\n'
+                    'version = "0.1.0"\n'
+                    'requires-python = ">=3.11"\n'
+                    '[project.scripts]\n'
+                    'my-cli = "src.cli:main"\n'
+                ),
+            },
+        )

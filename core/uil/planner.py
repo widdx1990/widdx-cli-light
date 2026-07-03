@@ -152,6 +152,39 @@ def _code_write_steps(classification: ClassificationResult) -> list[TaskStep]:
     return steps
 
 
+def _code_write_tdd_steps(classification: ClassificationResult) -> list[TaskStep]:
+    """TDD-first decomposition: tests BEFORE implementation.
+
+    Small models benefit from writing tests first because tests:
+      1. Define the contract precisely (reducing ambiguity)
+      2. Provide immediate pass/fail feedback
+      3. Prevent hallucinated features not in the spec
+    """
+    return [
+        TaskStep(
+            id="step-1",
+            description="write failing tests first — define expected behavior and edge cases",
+            dependencies=[],
+            tool_hints=["write"],
+            estimated_difficulty=0.4,
+        ),
+        TaskStep(
+            id="step-2",
+            description="implement minimal code to pass the tests — no extra features",
+            dependencies=["step-1"],
+            tool_hints=["write"],
+            estimated_difficulty=0.6,
+        ),
+        TaskStep(
+            id="step-3",
+            description="run tests with verifier — all must pass before proceeding",
+            dependencies=["step-2"],
+            tool_hints=["bash"],
+            estimated_difficulty=0.3,
+        ),
+    ]
+
+
 def _code_modify_steps(classification: ClassificationResult) -> list[TaskStep]:
     """Decompose a code-modify request into ordered steps."""
     return [
@@ -167,12 +200,135 @@ def _code_modify_steps(classification: ClassificationResult) -> list[TaskStep]:
     ]
 
 
+def _code_modify_tdd_steps(classification: ClassificationResult) -> list[TaskStep]:
+    """TDD-first decomposition for modifications: update tests first."""
+    return [
+        TaskStep(
+            id="step-1",
+            description="read existing code and tests to understand current behavior",
+            dependencies=[],
+            tool_hints=["read"],
+            estimated_difficulty=0.3,
+        ),
+        TaskStep(
+            id="step-2",
+            description="update or write new tests that reflect the desired change",
+            dependencies=["step-1"],
+            tool_hints=["write"],
+            estimated_difficulty=0.4,
+        ),
+        TaskStep(
+            id="step-3",
+            description="implement the modification to make the updated tests pass",
+            dependencies=["step-1", "step-2"],
+            tool_hints=["write"],
+            estimated_difficulty=0.5,
+        ),
+        TaskStep(
+            id="step-4",
+            description="run all tests with verifier — old + new must pass",
+            dependencies=["step-3"],
+            tool_hints=["bash"],
+            estimated_difficulty=0.3,
+        ),
+    ]
+
+
+def _complex_tdd_steps(classification: ClassificationResult) -> list[TaskStep]:
+    """TDD-first decomposition for complex multi-file projects."""
+    features = classification.detected_features
+    has_web = features.get("web", False)
+    has_api = features.get("api", False)
+    has_db = features.get("database", False)
+    has_cli = features.get("cli", False)
+
+    steps: list[TaskStep] = []
+
+    steps.append(TaskStep(
+        id="step-1",
+        description="create project structure and initialize dependencies",
+        dependencies=[], tool_hints=["bash", "write"],
+        estimated_difficulty=0.3,
+    ))
+
+    steps.append(TaskStep(
+        id="step-2",
+        description="write integration tests first — define all endpoints and expected responses",
+        dependencies=["step-1"],
+        tool_hints=["write"],
+        estimated_difficulty=0.5,
+    ))
+
+    if has_api:
+        steps.append(TaskStep(
+            id="step-3",
+            description="implement backend API to pass integration tests",
+            dependencies=["step-1", "step-2"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.7,
+        ))
+    elif has_cli:
+        steps.append(TaskStep(
+            id="step-3",
+            description="implement CLI logic to pass integration tests",
+            dependencies=["step-1", "step-2"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.6,
+        ))
+    else:
+        steps.append(TaskStep(
+            id="step-3",
+            description="implement core logic to pass integration tests",
+            dependencies=["step-1", "step-2"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.6,
+        ))
+
+    next_step = 4
+    if has_db:
+        steps.append(TaskStep(
+            id="step-4",
+            description="implement database schema and data layer",
+            dependencies=["step-1"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.5,
+        ))
+        next_step = 5
+
+    if has_web:
+        steps.append(TaskStep(
+            id=f"step-{next_step}",
+            description="build frontend UI components",
+            dependencies=["step-1"],
+            tool_hints=["bash", "write"],
+            estimated_difficulty=0.6,
+        ))
+        next_step += 1
+
+    steps.append(TaskStep(
+        id=f"step-{next_step}",
+        description="run all tests and verify end-to-end",
+        dependencies=["step-2", "step-3"],
+        tool_hints=["bash"],
+        estimated_difficulty=0.4,
+    ))
+
+    return steps
+
+
 # Map TaskType → decomposition factory
 # All factories accept ClassificationResult (populated by analyzer)
 _DECOMPOSERS = {
     TaskType.COMPLEX: _complex_steps,
     TaskType.CODE_WRITE: _code_write_steps,
     TaskType.CODE_MODIFY: _code_modify_steps,
+}
+
+# TDD variants — tests before implementation
+_TDD_DECOMPOSERS = {
+    TaskType.COMPLEX: _complex_tdd_steps,
+    TaskType.CODE_WRITE: _code_write_tdd_steps,
+    TaskType.CODE_MODIFY: _code_modify_tdd_steps,
 }
 
 
@@ -201,18 +357,23 @@ class TaskPlanner:
     Full decomposition for COMPLEX / CODE_WRITE / CODE_MODIFY.
     Minimal 1-step plan for all other task types.
 
+    Supports TDD-first mode: tests are written BEFORE implementation,
+    giving small models a precise contract to satisfy.
+
     Pure logic. No LLM. No MCP. No I/O.
     """
 
     def plan(self, classification: ClassificationResult,
              user_input: str,
-             context: dict | None = None) -> Plan:
+             context: dict | None = None,
+             use_tdd: bool = False) -> Plan:
         """Generate an execution plan from a classification result.
 
         Args:
             classification: Result of TaskAnalyzer.analyze().
             user_input: Raw user input text.
             context: Optional context (reserved for future use).
+            use_tdd: When True, use TDD-first decomposition (tests before code).
 
         Returns:
             Plan with steps, dependencies, and decision trace.
@@ -296,7 +457,19 @@ class TaskPlanner:
         except Exception:
             pass
 
-        if task_type in _DECOMPOSERS:
+        if use_tdd and task_type in _TDD_DECOMPOSERS:
+            decomposer = _TDD_DECOMPOSERS[task_type]
+            steps = decomposer(classification)
+            is_minimal = False
+            decision_steps.append(DecisionStep(
+                component="TaskPlanner",
+                input_summary=f"type={task_type.value}, tdd=True",
+                output=f"tdd-decomposed: {len(steps)} step(s)",
+                score=1.0,
+                detail=f"TDD-first decomposition into {len(steps)} steps "
+                       f"(tests before implementation)",
+            ))
+        elif task_type in _DECOMPOSERS:
             decomposer = _DECOMPOSERS[task_type]
             steps = decomposer(classification)
             is_minimal = False

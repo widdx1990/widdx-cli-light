@@ -12,7 +12,7 @@ except ImportError:
     if _root not in sys.path:
         sys.path.insert(0, _root)
 
-def run():
+def run() -> None:
     """Main CLI entry point — terminal interface."""
     try:
         from cli.app import CLIApp

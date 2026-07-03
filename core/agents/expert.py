@@ -121,6 +121,70 @@ YOUR WORKFLOW:
 5. Verify fixes don't introduce new problems
 6. Document prevention measures for the future"""
 
+ARCHITECT_PROMPT = """You are WIDDX Nexus — Architect, the system design expert.
+Your role: Design, structure, model, plan-components, data-flow.
+You define the high-level architecture, component relationships, data flow,
+and technology choices before any code is written.
+Output: Architecture diagram-as-text, component tree, data model, API design.
+
+AVAILABLE TOOLS:
+{tool_descriptions}
+
+YOUR WORKFLOW:
+1. Understand the full requirements from the orchestrator plan
+2. Define system boundaries and major components
+3. Design data models, API contracts, and message formats
+4. Specify component responsibilities and interactions
+5. Identify cross-cutting concerns (auth, logging, error handling)
+6. Document architecture decisions and trade-offs
+
+CRITICAL: Focus on structure over implementation. Define WHAT each
+component does, not HOW. Leave implementation details to the Coder."""
+
+TESTER_PROMPT = """You are WIDDX Nexus — Tester, the test engineering expert.
+Your role: Test, verify, write-tests, coverage, integration-test.
+You write comprehensive test suites before and during implementation.
+You follow TDD principles: tests define the contract.
+Output: Test files, coverage reports, edge case analysis, test plan.
+
+AVAILABLE TOOLS:
+{tool_descriptions}
+
+YOUR WORKFLOW:
+1. Read the architecture design and implementation files
+2. Identify all testable units, integration points, and edge cases
+3. Write unit tests for every function and method
+4. Write integration tests for component interactions
+5. Verify test coverage — find untested paths
+6. Ensure tests are deterministic and idempotent
+
+CRITICAL: Tests must be:
+- Independent (no shared state between tests)
+- Fast (no network calls in unit tests)
+- Deterministic (same result every run)
+- Self-documenting (clear test names and assertions)"""
+
+SECURITY_REVIEWER_PROMPT = """You are WIDDX Nexus — Security Reviewer, the security audit expert.
+Your role: Security-audit, vulnerability-scan, threat-model, compliance-check.
+You identify OWASP Top 10 vulnerabilities, data leaks, injection flaws,
+authentication weaknesses, and authorization gaps.
+Output: Security report with severity ratings, fix recommendations, threat model.
+
+AVAILABLE TOOLS:
+{tool_descriptions}
+
+YOUR WORKFLOW:
+1. Review all code and configuration files
+2. Check for injection vulnerabilities (SQL, NoSQL, command, LDAP)
+3. Verify authentication and authorization mechanisms
+4. Check for sensitive data exposure (secrets in code, missing encryption)
+5. Audit for broken access control and insecure deserialization
+6. Validate input sanitization and output encoding
+7. Check dependency versions for known CVEs
+8. Verify HTTPS, CORS, CSP, and other security headers
+9. Rate each finding: CRITICAL / HIGH / MEDIUM / LOW
+10. Provide specific fix code for CRITICAL and HIGH findings"""
+
 # ── Profile registry ───────────────────────────────────────────────────
 
 EXPERT_PROFILES: dict[str, ExpertProfile] = {
@@ -153,6 +217,24 @@ EXPERT_PROFILES: dict[str, ExpertProfile] = {
         role_title="Error Resolution Expert",
         capabilities=["debug", "analyze-error", "trace", "fix"],
         prompt_template=DEBUGGER_PROMPT,
+    ),
+    "architect": ExpertProfile(
+        name="widdx-architect",
+        role_title="System Design Expert",
+        capabilities=["design", "structure", "model", "plan-components", "data-flow"],
+        prompt_template=ARCHITECT_PROMPT,
+    ),
+    "tester": ExpertProfile(
+        name="widdx-tester",
+        role_title="Test Engineering Expert",
+        capabilities=["test", "verify", "write-tests", "coverage", "integration-test"],
+        prompt_template=TESTER_PROMPT,
+    ),
+    "security_reviewer": ExpertProfile(
+        name="widdx-security-reviewer",
+        role_title="Security Audit Expert",
+        capabilities=["security-audit", "vulnerability-scan", "threat-model", "compliance-check"],
+        prompt_template=SECURITY_REVIEWER_PROMPT,
     ),
 }
 
@@ -250,10 +332,11 @@ class ExpertTeam:
 
     # Complexity signals
     _MEDIUM_SIGNALS = {"api", "frontend", "backend", "database", "auth",
-                       "test", "docker", "ui", "route"}
+                       "test", "docker", "ui", "route", "security", "deploy"}
     _COMPLEX_SIGNALS = {"full stack", "full-stack", "microservice",
                         "architecture", "complete project", "web app",
-                        "cli tool", "scaffold", "مشروع", "تطبيق كامل"}
+                        "cli tool", "scaffold", "مشروع", "تطبيق كامل",
+                        "enterprise", "distributed", "multi-service"}
 
     def __init__(self, provider, tool_defs: list, cfg: dict, state: dict):
         """Initialize an ExpertTeam with shared provider, tools, and state.
@@ -313,13 +396,16 @@ class ExpertTeam:
 
     def run(self, user_input: str) -> str:
         """
-        Adaptive expert pipeline:
-          Level 1 (simple)    -> orchestrator + coder + reviewer        (3 calls)
-          Level 2 (medium)    -> +researcher                            (4 calls)
-          Level 3 (complex)   -> full pipeline + debugger               (5-6 calls)
+        Adaptive 8-role expert pipeline:
+          Level 1 (simple)    -> orchestrator + architect + coder + tester + reviewer + synth
+          Level 2 (medium)    -> +researcher + security_reviewer
+          Level 3 (complex)   -> full pipeline + debugger
 
         KG-aware: Uses KnowledgeGraph to detect project languages and
         select domain-specific experts (Python, JS, etc.).
+
+        8 roles: orchestrator, architect, researcher, coder, tester,
+                 reviewer, debugger, security_reviewer.
         """
         self._log = []
         project_dir = self._generate_project_dir(user_input)
@@ -328,7 +414,9 @@ class ExpertTeam:
         # ── KG: detect project languages for expert selection ──
         lang_hints = self._detect_project_languages()
 
+        # ═══════════════════════════════════════════════════════
         # Phase 1: Orchestrator (always)
+        # ═══════════════════════════════════════════════════════
         self._print_phase("1", "widdx-orchestrator", "Creating project plan")
         plan = self._run("orchestrator", user_input)
         ctx = "\n--- PROJECT DIRECTORY ---\n%s\n\n--- ORCHESTRATOR PLAN ---\n%s\n" % (project_dir, plan)
@@ -345,12 +433,29 @@ class ExpertTeam:
             pass
         n = 2
 
-        # Phase 2: Researcher for medium+ complexity (or KG-detected needs)
+        # ═══════════════════════════════════════════════════════
+        # Phase 1.5: Architect (medium+) — design before building
+        # ═══════════════════════════════════════════════════════
+        architecture = ""
+        if complexity >= 2:
+            self._print_phase(str(n), "widdx-architect", "Designing system architecture")
+            architecture = self._run("architect",
+                "Design the complete system architecture for:\n%s" % user_input, context=ctx)
+            ctx = self._build_context(
+                project_dir=project_dir,
+                plan=plan,
+                architecture=architecture,
+            )
+            n += 1
+
+        # ═══════════════════════════════════════════════════════
+        # Phases 2-3: Researcher + Coder (parallel for medium+)
+        # ═══════════════════════════════════════════════════════
         research = ""
+        code = ""
         if complexity >= 2 or lang_hints:
             self._print_phase(str(n), "widdx-researcher", "Researching requirements")
 
-            # ── Parallel: Researcher + Coder run concurrently ────
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=2) as pool:
                 research_future = pool.submit(
@@ -364,27 +469,24 @@ class ExpertTeam:
                     context=ctx,
                 )
 
-                # Wait for coder first — reviewer doesn't need research
                 code = coder_future.result()
                 review_ctx = self._build_context(
                     project_dir=project_dir,
                     plan=plan,
                     code=code,
                 )
-
-                # Collect research when it finishes (may still be running)
                 research = research_future.result()
 
             ctx = self._build_context(
                 project_dir=project_dir,
                 plan=plan,
+                architecture=architecture,
                 research=research,
                 code=code,
             )
             self._print_phase_done("Research+Code", "Completed in parallel")
             n += 2
         else:
-            # Simple task: sequential Coder only
             self._print_phase(str(n), "widdx-coder", "Implementing solution")
             code = self._run("coder",
                 "Implement the complete project with high quality:\n%s" % user_input, context=ctx)
@@ -396,11 +498,31 @@ class ExpertTeam:
             )
             n += 1
 
-        # Phase 4: Reviewer (always) — starts as soon as Coder finishes
+        # ═══════════════════════════════════════════════════════
+        # Phase 3.5: Tester (always) — tests after implementation
+        # ═══════════════════════════════════════════════════════
+        self._print_phase(str(n), "widdx-tester", "Writing and running tests")
+        tests = self._run("tester",
+            "Write and run comprehensive tests for:\n%s" % user_input, context=ctx)
+        ctx = self._build_context(
+            project_dir=project_dir,
+            plan=plan,
+            architecture=architecture,
+            research=research,
+            code=code,
+            tests=tests,
+        )
+        n += 1
+
+        # ═══════════════════════════════════════════════════════
+        # Phase 4: Reviewer (always)
+        # ═══════════════════════════════════════════════════════
         self._print_phase(str(n), "widdx-reviewer", "Reviewing implementation")
         review = self._run("reviewer", "Review the implementation thoroughly.", context=review_ctx)
 
-        # Phase 5: Debugger (only for medium+ complexity with issues)
+        # ═══════════════════════════════════════════════════════
+        # Phase 5: Debugger (only for medium+ with issues)
+        # ═══════════════════════════════════════════════════════
         needs_fix = self._needs_fix(review)
         if needs_fix and complexity >= 2:
             self._print_phase(">", "widdx-debugger", "Fixing issues")
@@ -418,7 +540,20 @@ class ExpertTeam:
         ctx += "\n--- FINAL REVIEW ---\n%s\n" % review
         n += 1
 
-        # Phase 6: Orchestrator synthesis (always)
+        # ═══════════════════════════════════════════════════════
+        # Phase 6: Security Reviewer (medium+) — audit after review
+        # ═══════════════════════════════════════════════════════
+        security_report = ""
+        if complexity >= 2:
+            self._print_phase(str(n), "widdx-security-reviewer", "Performing security audit")
+            security_report = self._run("security_reviewer",
+                "Audit the complete project for security vulnerabilities:\n%s" % user_input, context=ctx)
+            ctx += "\n--- SECURITY REPORT ---\n%s\n" % security_report
+            n += 1
+
+        # ═══════════════════════════════════════════════════════
+        # Phase 7: Orchestrator synthesis (always)
+        # ═══════════════════════════════════════════════════════
         self._print_phase(str(n), "widdx-orchestrator", "Synthesizing final report")
         final = self._run("orchestrator", "Synthesize the final project report.", context=ctx)
 

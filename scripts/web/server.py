@@ -23,8 +23,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sqlite3
 import sys
+import threading
 import time
 from typing import Any
 
@@ -53,14 +53,6 @@ except ImportError as e:
     sys.exit(1)
 
 logger = logging.getLogger("widdx.web")
-
-# ── Log sanitization ─────────────────────────────────────────
-from core.utils import sanitize_log
-
-def _safe_log(msg: str, *args: Any) -> None:
-    """Log a message with sensitive data redacted."""
-    safe_msg = sanitize_log(msg % args if args else msg)
-    logger.debug(safe_msg)
 
 # ── Pydantic models for input validation ────────────────────
 from pydantic import BaseModel, Field
@@ -121,6 +113,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+@app.middleware("http")
+async def _add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws:; img-src 'self' data:; font-src 'self'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
 
 # ── Mount static files ──────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -295,9 +295,7 @@ class FileCreatePayload(BaseModel):
     is_directory: bool = Field(default=False)
     content: str = Field(default="", max_length=5000000)
 
-class FileRenamePayload(BaseModel):
-    path: str = Field(..., min_length=1, max_length=10000)
-    new_name: str = Field(..., min_length=1, max_length=1000)
+
 
 
 @app.get("/api/sandbox/file")
@@ -361,70 +359,6 @@ async def sandbox_file_delete(path: str = ""):
             shutil.rmtree(file_path)
             return {"status": "ok", "deleted": str(file_path)}
         return {"error": "Path not found"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.post("/api/sandbox/file/create")
-async def sandbox_file_create(payload: FileCreatePayload):
-    """Create a new file or directory."""
-    try:
-        file_path = Path(payload.path).resolve()
-        project_root = Path.cwd().resolve()
-        fp_str = str(file_path)
-        pr_str = str(project_root)
-        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
-            return {"error": "Access denied"}
-        if payload.is_directory:
-            file_path.mkdir(parents=True, exist_ok=True)
-            return {"status": "ok", "created": str(file_path), "type": "directory"}
-        else:
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(payload.content, encoding="utf-8")
-            return {"status": "ok", "created": str(file_path), "type": "file"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.post("/api/sandbox/file/delete")
-async def sandbox_file_delete_post(payload: FileCreatePayload):
-    """Alias: POST endpoint matching the frontend call.
-    Delegates to the existing DELETE /api/sandbox/file logic."""
-    try:
-        path = payload.path
-        if not path:
-            return {"error": "Path is required"}
-        file_path = Path(path).resolve()
-        project_root = Path.cwd().resolve()
-        fp_str = str(file_path)
-        pr_str = str(project_root)
-        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
-            return {"error": "Access denied"}
-        if file_path.is_file():
-            file_path.unlink()
-            return {"status": "ok", "deleted": str(file_path)}
-        elif file_path.is_dir():
-            import shutil
-            shutil.rmtree(file_path)
-            return {"status": "ok", "deleted": str(file_path)}
-        return {"error": "Path not found"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.post("/api/sandbox/file/rename")
-async def sandbox_file_rename(payload: FileRenamePayload):
-    """Rename a file or directory."""
-    try:
-        old_path = Path(payload.path).resolve()
-        project_root = Path.cwd().resolve()
-        fp_str = str(old_path)
-        pr_str = str(project_root)
-        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
-            return {"error": "Access denied"}
-        new_path = old_path.parent / payload.new_name
-        old_path.rename(new_path)
-        return {"status": "ok", "old": str(old_path), "new": str(new_path)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -996,62 +930,27 @@ async def api_version():
     return get_dashboard().app_version()
 
 
-# ── SQLite-backed rate limiter (ISS-005) ────────────────────────
-# State survives server restarts. Uses the same .widdx directory
-# as the rest of the project's persistence layer.
-_RATELIMIT_MAX = 30   # max requests
-_RATELIMIT_WINDOW = 60   # per N seconds
-_RL_DB: sqlite3.Connection | None = None
-
-
-def _rl_db() -> sqlite3.Connection:
-    """Return the rate-limiter SQLite connection (lazy init)."""
-    global _RL_DB
-    if _RL_DB is None:
-        db_path = Path.home() / ".widdx" / "ratelimit.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        _RL_DB = sqlite3.connect(str(db_path))
-        _RL_DB.execute("""
-            CREATE TABLE IF NOT EXISTS ratelimit (
-                client_ip  TEXT NOT NULL,
-                ts         REAL NOT NULL
-            )
-        """)
-        _RL_DB.execute(
-            "CREATE INDEX IF NOT EXISTS idx_rl_ip_ts ON ratelimit(client_ip, ts)"
-        )
-        _RL_DB.commit()
-    return _RL_DB
+# ── In-memory rate limiter ────────────────────────────────────
+# Simple dict + lock — no disk I/O per request.
+# Single-process app (uvicorn with 1 worker) so in-memory is safe.
+_RATELIMIT_MAX = 30
+_RATELIMIT_WINDOW = 60
+_RATELIMIT_STORE: dict[str, list[float]] = {}
+_RATELIMIT_LOCK = threading.Lock()
 
 
 def _check_rate_limit(client_ip: str) -> bool:
-    """Return True if request is allowed, False if rate-limited.
-
-    Uses SQLite-backed storage so rate-limit state survives server
-    restarts — prevents the restart-bypass attack vector (ISS-005).
-
-    Only deletes expired entries for the requesting client to avoid
-    affecting other clients' rate-limit state (ISS-014).
-    """
+    """Return True if request is allowed, False if rate-limited."""
     now = time.time()
     cutoff = now - _RATELIMIT_WINDOW
-    db = _rl_db()
-    # Purge only this client's expired entries — not ALL clients
-    db.execute(
-        "DELETE FROM ratelimit WHERE client_ip = ? AND ts < ?",
-        (client_ip, cutoff),
-    )
-    # Count recent requests from this client
-    row = db.execute(
-        "SELECT COUNT(*) FROM ratelimit WHERE client_ip = ? AND ts >= ?",
-        (client_ip, cutoff),
-    ).fetchone()
-    if row and row[0] >= _RATELIMIT_MAX:
-        db.commit()
-        return False
-    # Record this request
-    db.execute("INSERT INTO ratelimit (client_ip, ts) VALUES (?, ?)", (client_ip, now))
-    db.commit()
+    with _RATELIMIT_LOCK:
+        timestamps = _RATELIMIT_STORE.get(client_ip, [])
+        timestamps = [t for t in timestamps if t >= cutoff]
+        if len(timestamps) >= _RATELIMIT_MAX:
+            _RATELIMIT_STORE[client_ip] = timestamps
+            return False
+        timestamps.append(now)
+        _RATELIMIT_STORE[client_ip] = timestamps
     return True
 
 
@@ -1088,12 +987,17 @@ async def websocket_chat(websocket: WebSocket):
     """
     await websocket.accept()
     logger.info("WebSocket connected")
+    client = websocket.client.host if websocket.client else "unknown"
     loop = asyncio.get_running_loop()
     stream_task: asyncio.Task | None = None
     cancel_flag = False
 
     try:
         while True:
+            if not _check_rate_limit(client):
+                await websocket.send_json({"type": "error", "data": "Rate limited — 30 req/min max"})
+                await websocket.send_json({"type": "done", "data": ""})
+                continue
             data = await websocket.receive_text()
             payload = json.loads(data)
 

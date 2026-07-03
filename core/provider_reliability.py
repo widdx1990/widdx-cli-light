@@ -139,6 +139,49 @@ class ProviderPool:
     def total_count(self) -> int:
         return len(self._providers)
 
+    def route_by_complexity(self, complexity: float) -> dict:
+        """Select provider settings based on task complexity.
+
+        Low-complexity tasks (quick lookups, simple chat) use faster/cheaper
+        providers with higher temperature for creativity.
+        High-complexity tasks (code generation, multi-step reasoning) use
+        more capable providers with lower temperature for precision.
+
+        Args:
+            complexity: Task complexity score from 0.0 (trivial) to 1.0 (very complex).
+
+        Returns:
+            dict with keys: provider_name, temperature, max_tokens.
+        """
+        if not self._providers:
+            return {
+                "provider_name": "unknown",
+                "temperature": 0.7,
+                "max_tokens": 4096,
+            }
+
+        if complexity < 0.3:
+            entry = self._providers[0]
+            return {
+                "provider_name": entry["name"],
+                "temperature": 0.8,
+                "max_tokens": 2048,
+            }
+        elif complexity < 0.6:
+            entry = self._providers[0]
+            return {
+                "provider_name": entry["name"],
+                "temperature": 0.6,
+                "max_tokens": 4096,
+            }
+        else:
+            entry = self._providers[0]
+            return {
+                "provider_name": entry["name"],
+                "temperature": 0.3,
+                "max_tokens": 8192,
+            }
+
 
 # ═══════════════════════════════════════════════════════════════
 # Unified Tool Protocol

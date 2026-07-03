@@ -108,30 +108,28 @@ class UnifiedIntelligenceLayer:
         self.knowledge = KnowledgeBase()
         self.provider = provider
 
-    # ── Project context injection (GAP #4) ──────────────────────
+    # ── Context Pipeline: HierarchicalContext + RAG + Pruner ────
     @staticmethod
-    def _get_project_context_snippet(project_dir: str = "") -> str:
-        """Return a compact project map for injection into coding prompts."""
+    def _get_context_pipeline(messages: list | None = None,
+                               goal: str = "",
+                               max_tokens: int = 4096) -> str:
+        """Build pruned, RAG-enriched context for code tasks.
+
+        Chains HierarchicalContext → DynamicRAG → ContextPruner into
+        a single compact prompt snippet injected into the executor input.
+        """
         try:
-            from pathlib import Path as _Path
-            from core.repo_mapper import RepoMapper
-            target = _Path(project_dir) if project_dir else _Path.cwd()
-            mapper = RepoMapper(target)
-            mapper.scan()
-            stats = mapper.stats()
-            if not stats or stats.get("files", 0) == 0:
+            from core.context.pipeline import ContextPipeline
+            pipe = ContextPipeline(max_tokens=max_tokens, enable_rag=True)
+            result = pipe.run(goal=goal, messages=messages or [])
+            rendered = result.render()
+            if not rendered.strip():
                 return ""
-            lines = [
-                f"Project: {target.name}",
-                f"Files: {stats.get('files', '?')}",
-            ]
-            if stats.get("languages"):
-                lines.append(f"Languages: {', '.join(stats['languages'][:8])}")
             return (
                 "\n\n---\n"
-                "Project structure (follow existing patterns and naming conventions):\n"
-                + "\n".join(lines) +
-                "\n---\n"
+                "Project context (hierarchical, RAG-enriched):\n"
+                f"{rendered}\n"
+                "---\n"
             )
         except Exception:
             return ""
@@ -271,16 +269,24 @@ class UnifiedIntelligenceLayer:
                 decision.tool_defs = self._tool_defs  # give all tools so LLM can still help
 
         # Step 2.5: Plan — ALWAYS runs (Phase 2.1: dead-code removal)
-        plan = self.planner.plan(classification, user_input)
+        # Enable TDD-first mode for code tasks with medium+ complexity
+        use_tdd = (
+            classification.task_type
+            in (TaskType.CODE_WRITE, TaskType.CODE_MODIFY, TaskType.COMPLEX)
+            and classification.complexity >= 0.4
+        )
+        plan = self.planner.plan(classification, user_input, use_tdd=use_tdd)
         decision.plan.decomposed = plan
         decision.decision_path.append(DecisionStep(
             component="TaskPlanner",
             input_summary=f"type={classification.task_type.value}",
             output=f"{'minimal' if plan.is_minimal else 'decomposed'}: "
-                   f"{len(plan.steps)} step(s)",
+                   f"{len(plan.steps)} step(s) "
+                   f"{'(TDD)' if use_tdd else ''}",
             score=1.0,
             detail=("Minimal (simple task)" if plan.is_minimal
-                    else "Full decomposition with dependency graph"),
+                    else f"Full decomposition with dependency graph"
+                         f"{', TDD-first' if use_tdd else ''}"),
         ))
 
         # Step 3: Build ExecutionContext with per-step telemetry
@@ -311,6 +317,26 @@ class UnifiedIntelligenceLayer:
         t0 = time.perf_counter()
         err_msg: str | None = None
 
+        # ── Route-by-complexity: set temperature/max_tokens from complexity ──
+        try:
+            from core.provider_reliability import ProviderPool
+            pool = ProviderPool()
+            route_cfg = pool.route_by_complexity(classification.complexity)
+            ctx_cfg = ctx.cfg or {}
+            ctx_cfg["temperature"] = ctx_cfg.get("temperature", route_cfg["temperature"])
+            ctx_cfg["max_tokens"] = ctx_cfg.get("max_tokens", route_cfg["max_tokens"])
+            decision.decision_path.append(DecisionStep(
+                component="RouteByComplexity",
+                input_summary=f"complexity={classification.complexity:.2f}",
+                output=f"temp={route_cfg['temperature']} tokens={route_cfg['max_tokens']}",
+                score=1.0 - classification.complexity * 0.3,
+                detail=f"Route-by-complexity: complexity {classification.complexity:.2f} "
+                       f"→ temperature {route_cfg['temperature']} "
+                       f"max_tokens {route_cfg['max_tokens']}",
+            ))
+        except Exception:
+            pass
+
         # Inject plan steps into executor input so LLM-guided executors follow the plan
         enriched_input = user_input
         if plan and plan.steps and not plan.is_minimal:
@@ -324,9 +350,13 @@ class UnifiedIntelligenceLayer:
                 f"Follow this plan step by step."
             )
 
-        # Inject project context for code tasks so the AI follows existing patterns
-        if classification.task_type in (TaskType.CODE_WRITE, TaskType.CODE_MODIFY):
-            project_ctx = self._get_project_context_snippet()
+        # Inject hierarchical context for code tasks (RAG-enriched, pruned)
+        if classification.task_type in (TaskType.CODE_WRITE, TaskType.CODE_MODIFY, TaskType.COMPLEX):
+            project_ctx = self._get_context_pipeline(
+                messages=messages,
+                goal=user_input,
+                max_tokens=4096,
+            )
             if project_ctx:
                 enriched_input = enriched_input + project_ctx
 

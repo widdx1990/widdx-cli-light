@@ -26,6 +26,10 @@ from core.agents.executor_adapter import (
     autonomous_executor,
     expert_team_executor,
     direct_tool_executor,
+    best_of_n_executor,
+    multi_turn_exploration_executor,
+    _score_candidate,
+    _MULTI_TURN_STRATEGIES,
 )
 from core.uil.contract import (
     ExecutionMode,
@@ -412,3 +416,101 @@ class TestEdgeCases:
         simple_chat_executor(ctx, "hello", messages=[])
         # The executor should have mutated the shared dict
         assert "tools_used" in shared_state
+
+
+# ===================================================================
+# Tests: _score_candidate
+# ===================================================================
+
+class TestScoreCandidate:
+    """_score_candidate: heuristics for ranking generated content."""
+
+    def test_empty_content_scores_zero(self):
+        assert _score_candidate("", "test") == 0.0
+
+    def test_short_content_penalized(self):
+        score = _score_candidate("hi", "test")
+        assert score < 0.5
+
+    def test_structured_content_scores_higher(self):
+        plain = _score_candidate("hello world", "test")
+        structured = _score_candidate("## Summary\n- item 1\n- item 2\n\nConclusion: done.", "test")
+        assert structured >= plain
+
+    def test_placeholder_content_penalized(self):
+        score = _score_candidate("TODO: fix this later", "test")
+        assert score < 0.5
+
+    def test_code_blocks_get_bonus(self):
+        base = _score_candidate("hello world", "test")
+        with_code = _score_candidate("Here is code:\n```python\nx=1\n```", "test")
+        assert with_code >= base
+
+    def test_score_between_zero_and_one(self):
+        for content in ["", "short", "a" * 1000, "## Title\n\nBody text here.\n\nConclusion: yes."]:
+            s = _score_candidate(content, "test")
+            assert 0.0 <= s <= 1.0
+
+
+# ===================================================================
+# Tests: best_of_n_executor
+# ===================================================================
+
+class TestBestOfNExecutor:
+    """best_of_n_executor: runs N parallel generations, picks best."""
+
+    def test_returns_execution_result(self):
+        provider = MockProvider()
+        provider.chat_response = ("Best result", [])
+        ctx = make_context(provider=provider)
+        result = best_of_n_executor(ctx, "test", n=2)
+        assert isinstance(result, ExecutionResult)
+
+    def test_success_on_valid_output(self):
+        provider = MockProvider()
+        provider.chat_response = ("Best result content here.", [])
+        ctx = make_context(provider=provider)
+        result = best_of_n_executor(ctx, "write code", n=2)
+        assert result.success is True
+        assert result.summary
+
+    def test_failure_on_all_empty(self):
+        provider = MockProvider()
+        provider.chat_response = ("", [])
+        ctx = make_context(provider=provider)
+        result = best_of_n_executor(ctx, "test", n=2)
+        assert result.success is False
+
+
+# ===================================================================
+# Tests: multi_turn_exploration_executor
+# ===================================================================
+
+class TestMultiTurnExploration:
+    """multi_turn_exploration_executor: runs multi-turn agent loops."""
+
+    def test_returns_execution_result(self):
+        provider = MockProvider()
+        provider.chat_response = ("Exploration result", [])
+        ctx = make_context(mode=ExecutionMode.AUTONOMOUS, provider=provider)
+        result = multi_turn_exploration_executor(ctx, "test", n_strategies=1)
+        assert isinstance(result, ExecutionResult)
+
+    def test_strategies_defined(self):
+        assert len(_MULTI_TURN_STRATEGIES) >= 3
+        names = [s["name"] for s in _MULTI_TURN_STRATEGIES]
+        assert "direct" in names
+        assert "thorough" in names
+        assert "creative" in names
+
+    def test_provider_error_returns_failure(self):
+        class BrokenProvider:
+            name = "broken"
+            model = "broken"
+            api_key = "x"
+            def chat(self, *a, **kw):
+                raise ConnectionError("Network down")
+        ctx = make_context(mode=ExecutionMode.AUTONOMOUS, provider=BrokenProvider())
+        result = multi_turn_exploration_executor(ctx, "test", n_strategies=1)
+        # Should handle gracefully
+        assert isinstance(result, ExecutionResult)

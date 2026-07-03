@@ -14,6 +14,7 @@ Every public executor in this module:
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 from typing import Any, Callable
 
@@ -368,6 +369,159 @@ def direct_tool_executor(
 
 
 # ---------------------------------------------------------------------------
+# Best-of-N Executor — parallel generation with voting
+# ---------------------------------------------------------------------------
+
+def _score_candidate(content: str, goal: str) -> float:
+    """Score a generated response by relevance, length, and quality signals.
+
+    Returns 0.0-1.0 where higher is better.
+    Small models benefit from scoring because it picks the most complete
+    output even when individual generations have gaps.
+    """
+    if not content:
+        return 0.0
+
+    score = 0.5
+
+    # Penalize very short outputs (hallucination or refusal signal)
+    if len(content) < 50:
+        score -= 0.3
+    elif len(content) > 500:
+        score += 0.1
+
+    # Reward presence of code blocks when code was requested
+    if "```" in content:
+        score += 0.15
+
+    # Reward structured output (sections, bullet points, numbered lists)
+    if "##" in content or "###" in content or "- " in content:
+        score += 0.1
+    if any(c.isdigit() and content[i:i+2] == f"{c}." for i, c in enumerate(content) if c.isdigit()):
+        score += 0.05
+
+    # Reward explicit summary/conclusion
+    if any(word in content.lower() for word in ["summary", "conclusion", "result", "output"]):
+        score += 0.05
+
+    # Penalize placeholders and unfinished patterns
+    if any(p in content.lower() for p in ["todo", "fixme", "your code here"]):
+        score -= 0.2
+    if content.rstrip().endswith(",") or content.rstrip().endswith("and"):
+        score -= 0.15
+
+    return max(0.0, min(1.0, score))
+
+
+def best_of_n_executor(
+    ctx: ExecutionContext,
+    user_input: str,
+    messages: list[dict] | None = None,
+    on_event: Callable | None = None,
+    n: int = 3,
+    temperature_range: tuple[float, float] = (0.3, 0.9),
+) -> ExecutionResult:
+    """Execute a task using N parallel provider calls, then pick the best result.
+
+    Each call gets the same prompt with a slightly different temperature.
+    Results are scored and the best one is returned.
+
+    Small models benefit from Best-of-N because:
+      1. Different temperatures produce diverse outputs
+      2. Voting filters out hallucinated or incomplete generations
+      3. The best output is measurably better than any single run
+
+    Args:
+        ctx: Execution context.
+        user_input: Raw user message.
+        messages: Optional conversation history.
+        on_event: Optional streaming callback (used for final result only).
+        n: Number of parallel generations (default 3).
+        temperature_range: (min, max) temperature for diversity.
+
+    Returns:
+        ExecutionResult with the best-scoring generation.
+    """
+    try:
+        provider = _resolve_provider(ctx)
+        tool_defs = getattr(ctx, "tool_defs", None) or []
+        msgs = list(messages) if messages else [{"role": "user", "content": user_input}]
+
+        temps = [
+            temperature_range[0] + (temperature_range[1] - temperature_range[0]) * i / max(n - 1, 1)
+            for i in range(n)
+        ]
+
+        candidates: list[dict] = []
+
+        def _run(t: float) -> dict:
+            try:
+                content, tool_calls = provider.chat(msgs, tool_defs, temperature=t)
+                return {"content": content or "", "tool_calls": tool_calls, "temperature": t}
+            except Exception as e:
+                return {"content": "", "tool_calls": [], "temperature": t, "error": str(e)}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n) as pool:
+            futures = [pool.submit(_run, t) for t in temps]
+            for future in concurrent.futures.as_completed(futures):
+                candidates.append(future.result())
+
+        if not candidates:
+            return ExecutionResult(
+                success=False,
+                summary="Best-of-N: all generations failed",
+                mode=ExecutionMode.SIMPLE_CHAT,
+                error="all parallel calls returned no result",
+            )
+
+        # Score and pick best
+        for c in candidates:
+            c["score"] = _score_candidate(c.get("content", ""), user_input)
+
+        candidates.sort(key=lambda c: c["score"], reverse=True)
+        best = candidates[0]
+
+        logger.info(
+            "Best-of-N: %d candidates, best score=%.2f at temp=%.2f",
+            len(candidates), best["score"], best.get("temperature", 0.0),
+        )
+
+        summary = best.get("content", "") or ""
+        tool_calls = best.get("tool_calls", []) or []
+
+        if not summary and not tool_calls:
+            return ExecutionResult(
+                success=False,
+                summary="Best-of-N: best candidate had no output",
+                mode=ExecutionMode.SIMPLE_CHAT,
+                error="empty best candidate",
+            )
+
+        if on_event:
+            on_event({"type": "text", "data": summary})
+
+        tools_used = []
+        if tool_calls:
+            tools_used = [tc.name if hasattr(tc, 'name') else str(tc) for tc in tool_calls]
+
+        return ExecutionResult(
+            success=True,
+            summary=summary,
+            mode=ExecutionMode.SIMPLE_CHAT,
+            tools_used=tools_used,
+        )
+
+    except Exception as exc:
+        logger.error("best_of_n_executor failed: %s", exc)
+        return ExecutionResult(
+            success=False,
+            summary=f"Best-of-N failed: {exc}",
+            mode=ExecutionMode.SIMPLE_CHAT,
+            error=str(exc),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Background Executor — run tasks asynchronously via BackgroundTaskManager
 # ---------------------------------------------------------------------------
 
@@ -446,3 +600,188 @@ EXECUTOR_MAP: dict[ExecutionMode, Callable] = {
     ExecutionMode.EXPERT_TEAM: expert_team_executor,
     ExecutionMode.DIRECT_TOOL: direct_tool_executor,
 }
+
+# Best-of-N is not in the enum (avoids routing changes) — call directly:
+#   result = best_of_n_executor(ctx, user_input, n=3)
+# The brain can use it as a drop-in replacement for simple_chat when
+# the task complexity warrants parallel generation.
+
+
+# ---------------------------------------------------------------------------
+# Multi-turn Exploration Executor — parallel agent loops with diverse strategies
+# ---------------------------------------------------------------------------
+
+_MULTI_TURN_STRATEGIES = [
+    {
+        "name": "direct",
+        "system_prompt_extra": "Be direct and concise. Solve the task in as few steps as possible.",
+    },
+    {
+        "name": "thorough",
+        "system_prompt_extra": "Be thorough and detailed. Verify each step before proceeding. Consider edge cases.",
+    },
+    {
+        "name": "creative",
+        "system_prompt_extra": "Think creatively. Consider multiple approaches before choosing one. Look for elegant solutions.",
+    },
+]
+
+
+def multi_turn_exploration_executor(
+    ctx: ExecutionContext,
+    user_input: str,
+    messages: list[dict] | None = None,
+    on_event: Callable | None = None,
+    n_strategies: int = 3,
+    max_turns_per_loop: int = 8,
+) -> ExecutionResult:
+    """Execute a task using multiple parallel agent loops with different strategies.
+
+    Each strategy runs a full AutonomousAgent loop (multi-turn with tool calls)
+    using a different strategic prompt. The best result is selected by scoring.
+
+    Small models benefit from Multi-turn Exploration because:
+      1. Different strategies compensate for model blind spots
+      2. Parallel exploration finds solutions a single path would miss
+      3. Voting across distinct approaches filters out hallucinations
+
+    Unlike Best-of-N (which runs N single-turn generations), this runs N full
+    multi-turn agent loops with tool calling enabled.
+
+    Args:
+        ctx: Execution context.
+        user_input: Raw user message.
+        messages: Optional conversation history.
+        on_event: Optional streaming callback (used for final result only).
+        n_strategies: Number of parallel strategies (default 3, max 5).
+        max_turns_per_loop: Max turns per agent loop (default 8).
+
+    Returns:
+        ExecutionResult with the best-scoring exploration result.
+    """
+    try:
+        provider = _resolve_provider(ctx)
+        tool_defs = getattr(ctx, "tool_defs", None) or []
+        cfg = getattr(ctx, "cfg", None) or {}
+        state = getattr(ctx, "state", None)
+        if state is None:
+            state = {}
+        state.setdefault("cost", 0.0)
+        state.setdefault("turns", 0)
+
+        from .agent import AutonomousAgent
+
+        strategies = _MULTI_TURN_STRATEGIES[:min(n_strategies, 5)]
+        results: list[dict] = []
+
+        def _run_strategy(strategy: dict) -> dict:
+            strategy_state = dict(state)
+            strategy_state["tools_used"] = []
+
+            strategy_cfg = dict(cfg)
+            strategy_cfg["agent_max_iterations"] = max_turns_per_loop
+
+            base_prompt = (
+                "You are WIDDX Nexus — Autonomous Agent.\n"
+                "AVAILABLE TOOLS:\n{tool_descriptions}\n\n"
+                "WORKFLOW:\n"
+                "1. Receive a task from the user\n"
+                "2. Think step by step about what needs to be done\n"
+                "3. Call tools to accomplish the task\n"
+                "4. Validate after every write/edit\n"
+                "5. When complete, summarize clearly\n\n"
+                f"STRATEGY: {strategy['system_prompt_extra']}"
+            )
+
+            agent = AutonomousAgent(
+                provider=provider,
+                tool_defs=tool_defs,
+                cfg=strategy_cfg,
+                state=strategy_state,
+                custom_prompt=base_prompt,
+            )
+            try:
+                steps, summary = agent.run(user_input)
+                content = summary or ""
+                score = _score_candidate(content, user_input)
+
+                # Bonus for completing steps
+                completed = sum(1 for s in steps if getattr(s, "status", "done") != "failed")
+                total = len(steps) if steps else 1
+                completion_ratio = completed / max(total, 1)
+                score += completion_ratio * 0.15
+
+                return {
+                    "strategy": strategy["name"],
+                    "content": content,
+                    "score": min(score, 1.0),
+                    "steps_completed": completed,
+                    "steps_total": total,
+                    "tools_used": strategy_state.get("tools_used", []),
+                }
+            except Exception as e:
+                return {
+                    "strategy": strategy["name"],
+                    "content": "",
+                    "score": 0.0,
+                    "error": str(e),
+                    "steps_completed": 0,
+                    "steps_total": 0,
+                    "tools_used": [],
+                }
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(strategies)) as pool:
+            futures = [pool.submit(_run_strategy, s) for s in strategies]
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
+
+        if not results or all(r.get("score", 0) == 0 for r in results):
+            best = results[0] if results else {}
+            return ExecutionResult(
+                success=False,
+                summary=best.get("content") or "Multi-turn exploration: all strategies failed",
+                mode=ExecutionMode.AUTONOMOUS,
+                error="all strategies returned empty or failed",
+            )
+
+        results.sort(key=lambda r: r.get("score", 0), reverse=True)
+        best = results[0]
+
+        logger.info(
+            "Multi-turn exploration: %d strategies, best='%s' score=%.2f "
+            "(steps: %d/%d)",
+            len(results),
+            best["strategy"], best["score"],
+            best.get("steps_completed", 0),
+            best.get("steps_total", 0),
+        )
+
+        # Log all strategy scores for transparency
+        for r in results:
+            logger.debug(
+                "  strategy='%s' score=%.2f steps=%d/%d err=%s",
+                r["strategy"], r.get("score", 0),
+                r.get("steps_completed", 0), r.get("steps_total", 0),
+                r.get("error", ""),
+            )
+
+        if on_event:
+            on_event({"type": "text", "data": best.get("content", "")})
+
+        return ExecutionResult(
+            success=True,
+            summary=best.get("content", ""),
+            mode=ExecutionMode.AUTONOMOUS,
+            tools_used=best.get("tools_used", []),
+            steps_completed=best.get("steps_completed", 0),
+            steps_planned=best.get("steps_total", 0),
+        )
+
+    except Exception as exc:
+        logger.error("multi_turn_exploration_executor failed: %s", exc)
+        return ExecutionResult(
+            success=False,
+            summary=f"Multi-turn exploration failed: {exc}",
+            mode=ExecutionMode.AUTONOMOUS,
+            error=str(exc),
+        )

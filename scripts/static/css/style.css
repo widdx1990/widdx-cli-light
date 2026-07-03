@@ -139,6 +139,93 @@
 .status-dot.idle { background: var(--text-muted); }
 
 /* ============================================================
+   BOOT SCREEN — Loading overlay shown while app initialises
+   ============================================================ */
+.boot-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-app, #0d0d0f);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 1;
+  visibility: visible;
+}
+.boot-screen.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.boot-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.boot-logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #3182f6, #7c3aed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 34px;
+  box-shadow: 0 4px 24px rgba(49,130,246,0.3);
+  animation: bootLogoPulse 1.8s ease-in-out infinite;
+}
+.boot-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary, #ededef);
+  letter-spacing: -0.5px;
+  margin-top: 4px;
+}
+.boot-subtitle {
+  font-size: 13px;
+  color: var(--text-tertiary, #70707a);
+  font-weight: 400;
+  margin-top: -8px;
+}
+.boot-spinner {
+  width: 32px;
+  height: 32px;
+  margin-top: 8px;
+  position: relative;
+}
+.boot-spinner-ring {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-main, rgba(255,255,255,0.06));
+  border-top-color: var(--accent, #3182f6);
+  border-radius: 50%;
+  animation: bootSpin 0.9s linear infinite;
+}
+.boot-status {
+  font-size: 12.5px;
+  color: var(--text-muted, #8a8a95);
+  font-weight: 400;
+  animation: bootStatusPulse 2s ease-in-out infinite;
+}
+@keyframes bootLogoPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 4px 24px rgba(49,130,246,0.3); }
+  50% { transform: scale(1.04); box-shadow: 0 6px 32px rgba(49,130,246,0.45); }
+}
+@keyframes bootSpin {
+  to { transform: rotate(360deg); }
+}
+@keyframes bootStatusPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* ============================================================
    RESET & BASE
    ============================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -224,11 +311,6 @@ body {
   width: 2px; background: #fff; border-radius: 0;
 }
 .act-spacer { flex: 1; }
-
-/* ── Sidebar panels ── */
-.sidebar-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.sidebar-panel .sidebar-section-header { padding: 10px 14px 4px; }
-.sidebar-panel .sidebar-nav { flex: 1; overflow-y: auto; }
 
 /* ── Nav Category Accordion ── */
 .nav-category { margin-bottom: 1px; }
@@ -385,27 +467,6 @@ body {
   font-size: 12px; transition: all .1s;
 }
 .sidebar-file-tree-btn:hover { background: var(--fill-hover); color: var(--text-primary); }
-
-/* ── File Explorer Toolbar ── */
-.fe-toolbar {
-  display: flex; align-items: center; gap: 1px;
-  padding: 2px 6px; border-bottom: 1px solid rgba(255,255,255,0.03);
-  flex-shrink: 0;
-}
-.fe-path {
-  flex: 1; font-size: 10px; color: rgba(255,255,255,0.25);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding: 0 4px; font-family: var(--font-mono);
-}
-.fe-btn {
-  width: 24px; height: 22px; border: none; border-radius: 3px;
-  background: transparent; color: rgba(255,255,255,0.25);
-  cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;
-  transition: all .08s;
-}
-.fe-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
-
-.sidebar-file-tree-body { flex: 1; overflow-y: auto; }
 
 .chat-item {
   display: flex; align-items: center; gap: 10px;
@@ -2700,17 +2761,6 @@ html[dir="rtl"] .cancel-btn { right: auto; left: 60px; }
 .file-explorer-search:focus { background:var(--bg-main); }
 
 
-/* ── File Explorer focused + inline ── */
-.file-explorer-item.focused { background: rgba(49,130,246,0.08); color: #e8e8e8; }
-.fe-new-row { height: auto; padding: 2px 12px 2px 32px; cursor: default; }
-.fe-new-row:hover { background: transparent; color: inherit; }
-.fe-inline-input {
-  flex: 1; height: 20px; border: none; background: transparent;
-  color: var(--text-primary); font-size: 12px; outline: none;
-  font-family: var(--font-mono); padding: 0 4px;
-}
-.fe-inline-input::placeholder { color: rgba(255,255,255,0.15); }
-
 /* ── File context menu ── */
 .file-context-menu { position:fixed;z-index:1000;background:var(--bg-card);border:1px solid var(--border-main);border-radius:8px;padding:4px;min-width:160px;box-shadow:0 4px 20px rgba(0,0,0,.3); }
 .file-context-menu .ctx-item { display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;border-radius:4px;font-size:12px;color:var(--text-secondary);transition:background .1s; }
@@ -2783,7 +2833,6 @@ html[dir="rtl"] .cancel-btn { right: auto; left: 60px; }
 .ml-8 { margin-left:8px; }
 .ml-auto { margin-left:auto; }
 .p-4 { padding:4px; }
-.p-8 { padding:8px; }
 .px-6 { padding:0 6px; }
 .px-10 { padding:0 10px; }
 .px-14 { padding:0 14px; }
@@ -2944,40 +2993,3 @@ ont-size: 10px; }
 
 /* ── Sidebar Git Panel ── */
 .sidebar-git-body { flex: 1; overflow-y: auto; padding: 4px 0; }
-.sg-branch { padding: 4px 14px; font-size: 11px; color: rgba(255,255,255,0.5); font-weight: 500; }
-.sg-empty { padding: 12px 14px; font-size: 11px; color: rgba(255,255,255,0.2); }
-.sg-empty.err { color: var(--error); }
-.sg-files { padding: 2px 0; }
-.sg-file {
-  display: flex; align-items: center; gap: 6px;
-  padding: 2px 14px; font-size: 12px; color: rgba(255,255,255,0.55);
-  cursor: pointer; transition: background .06s;
-}
-.sg-file:hover { background: rgba(255,255,255,0.04); }
-.sg-indicator {
-  width: 16px; text-align: center; font-size: 10px; font-weight: 600;
-  flex-shrink: 0;
-}
-.sg-file.M .sg-indicator { color: var(--warning); }
-.sg-file.A .sg-indicator { color: var(--success); }
-.sg-file.D .sg-indicator { color: var(--error); }
-.sg-file.U .sg-indicator { color: rgba(255,255,255,0.3); }
-.sg-actions { padding: 8px 10px; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 4px; }
-.sg-msg {
-  width: 100%; padding: 6px 8px; border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 3px; background: rgba(255,255,255,0.02); color: rgba(255,255,255,0.7);
-  font-size: 11px; resize: vertical; outline: none; font-family: var(--font-sans);
-  min-height: 36px; line-height: 1.5;
-}
-.sg-msg:focus { border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); }
-.sg-msg::placeholder { color: rgba(255,255,255,0.15); }
-.sg-btns { display: flex; gap: 2px; margin-top: 4px; flex-wrap: wrap; }
-.sg-btn {
-  padding: 3px 8px; border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 3px; background: rgba(255,255,255,0.02); color: rgba(255,255,255,0.4);
-  font-size: 10px; cursor: pointer; transition: all .08s;
-}
-.sg-btn:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7); }
-.sg-btn.primary { background: var(--accent-dim); border-color: var(--border-accent); color: var(--accent); }
-.sg-btn.primary:hover { background: var(--accent); color: #fff; }
-.sg-loading { padding: 12px 14px; font-size: 11px; color: rgba(255,255,255,0.2); }

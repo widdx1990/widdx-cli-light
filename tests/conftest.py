@@ -1,4 +1,4 @@
-"""Pytest configuration — path setup + KnowledgeBase cleanup."""
+"""Pytest configuration — path setup + KnowledgeBase cleanup + shared fixtures."""
 import sys
 from pathlib import Path
 
@@ -15,6 +15,36 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "asyncio: mark test as an async test (Textual, etc.)"
     )
+
+
+class MockProvider:
+    """Duck-typed mock LLM provider for tests.
+
+    Attributes:
+        chat_response: What ``chat()`` returns as (content, tool_calls).
+        stream_events: What ``stream()`` yields (list of event dicts).
+    """
+
+    def __init__(self):
+        self.name = "mock"
+        self.model = "mock-model"
+        self.chat_response: tuple[str, list] = ("Mock reply", [])
+        self.stream_events: list[dict] = []
+        self.api_key = "test-key"
+
+    def chat(self, messages: list, tools: list | None = None,
+             temperature: float = 0.7) -> tuple[str, list]:
+        return self.chat_response
+
+    def stream(self, messages: list, tools: list | None = None,
+               temperature: float = 0.7):
+        yield from self.stream_events
+
+
+@pytest.fixture
+def mock_provider():
+    """Create a fresh MockProvider for each test."""
+    return MockProvider()
 
 
 @pytest.fixture(autouse=True)
@@ -51,5 +81,5 @@ def clear_knowledge():
         kb = KnowledgeBase()
         kb.clear()
     except Exception:
-        pass  # knowledge module may not be importable — that's fine
+        pass
     yield

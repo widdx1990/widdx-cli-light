@@ -187,3 +187,55 @@ class TestSingleton:
         a = get_reliable_provider()
         b = get_reliable_provider()
         assert a is b
+
+
+# ===================================================================
+# Tests: Route-by-complexity
+# ===================================================================
+
+class TestRouteByComplexity:
+    """ProviderPool.route_by_complexity(): selects provider settings by task complexity."""
+
+    def test_returns_dict_with_keys(self):
+        pool = ProviderPool()
+        pool._providers = [
+            {"provider": MockFailingProvider("p1"), "priority": 1, "name": "p1"},
+        ]
+        route = pool.route_by_complexity(0.5)
+        assert "provider_name" in route
+        assert "temperature" in route
+        assert "max_tokens" in route
+
+    def test_low_complexity_uses_higher_temp(self):
+        pool = ProviderPool()
+        pool._providers = [
+            {"provider": MockFailingProvider("p1"), "priority": 1, "name": "p1"},
+        ]
+        low = pool.route_by_complexity(0.1)
+        high = pool.route_by_complexity(0.9)
+        assert low["temperature"] > high["temperature"]
+
+    def test_low_complexity_uses_fewer_tokens(self):
+        pool = ProviderPool()
+        pool._providers = [
+            {"provider": MockFailingProvider("p1"), "priority": 1, "name": "p1"},
+        ]
+        low = pool.route_by_complexity(0.1)
+        high = pool.route_by_complexity(0.9)
+        assert low["max_tokens"] < high["max_tokens"]
+
+    def test_medium_complexity(self):
+        pool = ProviderPool()
+        pool._providers = [
+            {"provider": MockFailingProvider("p1"), "priority": 1, "name": "p1"},
+        ]
+        route = pool.route_by_complexity(0.5)
+        assert route["temperature"] == 0.6
+        assert route["max_tokens"] == 4096
+
+    def test_empty_pool_returns_defaults(self):
+        pool = ProviderPool()
+        pool._providers = []
+        route = pool.route_by_complexity(0.5)
+        assert route["provider_name"] == "unknown"
+        assert route["temperature"] == 0.7
