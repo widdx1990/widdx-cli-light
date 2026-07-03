@@ -2999,3 +2999,23 @@ ont-size: 10px; }
 .ecp-inner { padding: 6px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); font-size: 0.85em; display: flex; align-items: center; gap: 8px; }
 .ecp-inner i { font-size: 0.9em; }
 .ecp-reason { opacity: 0.7; }
+
+/* ── Tool Pill improved ── */
+.tool-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; margin: 3px 4px; border-radius: 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); font-size: 0.82em; transition: all 0.3s ease; max-height: 40px; opacity: 1; overflow: hidden; }
+.tool-pill.running { border-color: rgba(245,166,35,0.4); background: rgba(245,166,35,0.08); }
+.tool-pill.success { border-color: rgba(76,175,80,0.3); }
+.tool-pill.failed { border-color: rgba(244,67,54,0.3); }
+.tool-pill.collapsed { max-height: 20px; opacity: 0.4; padding: 2px 8px; font-size: 0.7em; margin: 2px 4px; }
+.tool-pill.collapsed .tool-pill-args { display: none; }
+.tool-pill-status { display: flex; align-items: center; }
+.tool-pill-name { font-weight: 600; color: #ddd; }
+.tool-pill-args { color: #888; font-size: 0.85em; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-spinner { width: 12px; height: 12px; border: 2px solid rgba(245,166,35,0.3); border-top-color: #f5a623; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── ECP event fade ── */
+.ecp-event { transition: opacity 1s ease; }
+
+/* ── Thinking block collapse ── */
+.think-strip { transition: max-height 0.3s ease; }
+.think-body { transition: max-height 0.3s ease; }

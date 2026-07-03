@@ -588,6 +588,11 @@ function addECPEvent(action, reason, target) {
     + (reason ? '<span class="ecp-reason" style="font-size:0.8em;color:#888;margin-left:8px">' + escapeHtml(reason) + '</span>' : '')
     + '</div>';
   body.appendChild(el);
+  // Auto-fade ECP events after 4 seconds
+  setTimeout(function() {
+    el.style.opacity = '0.3';
+    el.style.transition = 'opacity 1s';
+  }, 4000);
   scrollBottom();
 }
 
@@ -603,6 +608,7 @@ function addToolCard(toolName, toolArgs) {
   const body = S._activeAIBody;
   const pill = document.createElement('div');
   pill.className = 'tool-pill running';
+  pill.setAttribute('data-tool', toolName);
   var argStr = '';
   if (toolArgs) {
     var vals = Object.values(toolArgs).filter(function(v) { return typeof v === 'string'; });
@@ -614,6 +620,11 @@ function addToolCard(toolName, toolArgs) {
     + (argStr ? '<span class="tool-pill-args">' + argStr + '</span>' : '');
   body.appendChild(pill);
   S._activeToolCard = pill;
+
+  // Auto-collapse previous completed tools
+  var prevTools = body.querySelectorAll('.tool-pill.completed');
+  prevTools.forEach(function(t) { t.classList.add('collapsed'); });
+
   scrollBottom();
   return pill;
 }
@@ -623,10 +634,18 @@ function updateToolCard(success, result) {
   const pill = S._activeToolCard;
   pill.classList.remove('running');
   pill.classList.add(success ? 'success' : 'failed');
+  pill.classList.add('completed');
   var icon = pill.querySelector('.tp-spinner');
   if (icon) icon.outerHTML = success
-    ? '<i class="fa-solid fa-check text-xs text-success"></i>'
-    : '<i class="fa-solid fa-xmark text-xs text-error"></i>';
+    ? '<i class="fa-solid fa-check" style="color:#4caf50"></i>'
+    : '<i class="fa-solid fa-xmark" style="color:#f44336"></i>';
+  
+  // Auto-collapse after 2 seconds
+  var p = pill;
+  setTimeout(function() {
+    p.classList.add('collapsed');
+  }, 2000);
+
   S._activeToolCard = null;
   scrollBottom();
 }
@@ -704,9 +723,9 @@ function handleWSMessage(msg) {
       break;
 
     case 'text':
-      // Streaming response text — auto-collapse thinking
-      if (!S._activeAITextEl) {
-        if (S._activeThinking) finishThinking();
+      // Streaming response text — auto-collapse thinking after response starts
+      if (!S._activeAITextEl && S._activeThinking) {
+        finishThinking();
       }
       appendResponseChunk(msg.data || msg.content || '');
       setActivity('Responding', (msg.data || '').slice(0, 40));
