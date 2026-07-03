@@ -1257,6 +1257,12 @@ const VIEWS = {
     }
     setActivity('Ready', '—');
   },
+  files: function(area) {
+    // Show file explorer in the main area
+    _fileExplorerMainPath = '.';
+    area.innerHTML = '<div id="fe-main" class="file-explorer" style="height:100%;display:flex;flex-direction:column"></div>';
+    _renderFileExplorerMain('.');
+  },
   scheduler: function(area) { showCronView(area); },
   dashboard: function(area) { showDashboardView(area); },
   delegation: function(area) { showDelegationView(area); },
@@ -1603,6 +1609,60 @@ function _formatSize(bytes) {
   if (bytes < 1024) return bytes + 'B';
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB';
   return (bytes / 1048576).toFixed(1) + 'MB';
+}
+
+/* ── Main area file explorer (for VIEWS['files']) ── */
+var _fileExplorerMainPath = '.';
+
+async function _renderFileExplorerMain(dir) {
+  _fileExplorerMainPath = dir || '.';
+  var body = document.getElementById('fe-main');
+  if (!body) return;
+  body.innerHTML = '<div class="px-16 py-12 flex-row-sb"><span class="text-muted text-xs font-mono" id="fe-main-path">' + escapeHtml(_fileExplorerMainPath) + '</span><div class="flex-row gap-4"><button class="quick-port-btn" id="fe-main-up">↑</button><button class="quick-port-btn" id="fe-main-refresh">↻</button></div></div><div id="fe-main-body" class="flex-1 overflow-y-auto px-8" style="min-height:0"></div>';
+  document.getElementById('fe-main-up')?.addEventListener('click', function() {
+    var parts = _fileExplorerMainPath.replace(/^\/+/, '').split('/').filter(Boolean);
+    if (parts.length <= 1) return;
+    parts.pop();
+    _renderFileExplorerMain('/' + parts.join('/'));
+  });
+  document.getElementById('fe-main-refresh')?.addEventListener('click', function() {
+    _renderFileExplorerMain(_fileExplorerMainPath);
+  });
+  try {
+    var r = await fetch('/api/sandbox/files?path=' + encodeURIComponent(_fileExplorerMainPath));
+    var d = await r.json();
+    var feBody = document.getElementById('fe-main-body');
+    if (!feBody) return;
+    if (d.error) { feBody.innerHTML = '<div class="text-error p-16">' + escapeHtml(d.error) + '</div>'; return; }
+    var files = d.files || [];
+    if (!files.length) { feBody.innerHTML = '<div class="text-muted p-16">Empty directory</div>'; return; }
+    var html = '';
+    files.forEach(function(f) {
+      var fullPath = f.path || _fileExplorerMainPath + '/' + f.name;
+      if (f.type === 'directory') {
+        html += '<div class="file-explorer-item directory px-8 py-6 flex-row gap-8 cursor-pointer rounded-sm" style="min-height:32px"><span>📁</span><span class="text-sm">' + escapeHtml(f.name) + '</span></div>';
+      } else {
+        html += '<div class="file-explorer-item px-8 py-6 flex-row gap-8 cursor-pointer rounded-sm" style="min-height:32px"><span>📄</span><span class="text-sm">' + escapeHtml(f.name) + '</span></div>';
+      }
+    });
+    feBody.innerHTML = html;
+    // Add click handlers for each item
+    feBody.querySelectorAll('.file-explorer-item').forEach(function(el, idx) {
+      el.addEventListener('click', function() {
+        var f = files[idx];
+        if (!f) return;
+        var fullPath = f.path || _fileExplorerMainPath + '/' + f.name;
+        if (f.type === 'directory') {
+          _renderFileExplorerMain(fullPath);
+        } else {
+          showFileEditor(fullPath);
+        }
+      });
+    });
+  } catch(e) {
+    var feBody = document.getElementById('fe-main-body');
+    if (feBody) feBody.innerHTML = '<div class="text-error p-16">' + escapeHtml(e.message) + '</div>';
+  }
 }
 
 function _fileExplorerGoUp() {
@@ -2301,27 +2361,26 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     showTerminal();
-    showFileExplorer();
 
-    // Activity Bar
+    // Activity Bar — navigation to views
     document.querySelectorAll('.act-icon[data-panel]').forEach(function(icon) {
       icon.addEventListener('click', function() {
         var panel = this.getAttribute('data-panel');
         document.querySelectorAll('.act-icon').forEach(function(i) { i.classList.remove('active'); });
         this.classList.add('active');
-
-        var chatP = document.getElementById('sidebar-chat');
-        var filesP = document.getElementById('sidebar-files');
-        var gitP = document.getElementById('sidebar-git');
-        if (chatP) chatP.style.display = 'none';
-        if (filesP) filesP.style.display = 'none';
-        if (gitP) gitP.style.display = 'none';
-
-        if (panel === 'chat') { if (chatP) chatP.style.display = ''; }
-        else if (panel === 'files') { if (filesP) filesP.style.display = ''; showFileExplorer(); }
-        else if (panel === 'git') { if (gitP) gitP.style.display = ''; _loadSidebarGit(); }
+        if (panel === 'chat') { showView('chat'); }
         else if (panel === 'dashboard') { showView('dashboard'); }
         else if (panel === 'settings') { showView('settings'); }
+      });
+    });
+
+    // Nav Category accordion toggles
+    document.querySelectorAll('.nav-category-header').forEach(function(header) {
+      header.addEventListener('click', function() {
+        var body = this.nextElementSibling;
+        if (!body || !body.classList.contains('nav-category-body')) return;
+        var opened = body.classList.toggle('open');
+        this.classList.toggle('open', opened);
       });
     });
 

@@ -556,8 +556,15 @@ async def api_cron_toggle(job_id: str) -> dict:
 @app.post("/api/cron")
 async def api_cron_create_frontend(request: Request):
     data = await request.json()
+    # Frontend sends raw minutes (5, 15, 30, 60, 360, 1440)
+    # Parser requires unit suffix like "5m" or "1h"
+    interval_minutes = int(data.get("interval", 60))
+    if interval_minutes >= 60 and interval_minutes % 60 == 0:
+        schedule = f"{interval_minutes // 60}h"
+    else:
+        schedule = f"{interval_minutes}m"
     return get_dashboard().cron_create(
-        schedule=str(data.get("interval", 60)),
+        schedule=schedule,
         prompt=data.get("command", ""),
     )
 

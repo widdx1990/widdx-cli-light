@@ -88,6 +88,14 @@ class DevOpsMixin:
             from core.config.settings import load as load_cfg
             cfg = load_cfg()
             p = create_provider(cfg)
+            # Validate provider name is known
+            known = ["ollama", "gguf", "opencode-zen", "opencode", "deepseek"]
+            provider_name = cfg.get("provider", {}).get("name", "")
+            if provider_name and provider_name not in known:
+                return {
+                    "status": "warning",
+                    "message": f"Unknown provider '{provider_name}' — will fall back to OpenAI-compatible. Provider: {p.name if p else 'None'}",
+                }
             return {"status": "ok" if p else "warning", "message": f"Provider: {p.name if p else 'None'}"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -228,9 +236,9 @@ class DevOpsMixin:
                 capture_output=True, text=True, timeout=10,
             )
             if result.returncode == 0:
-                # Extract hash from output
+                # Extract hash from output: git outputs "[branch hash]"
                 import re
-                m = re.search(r"\[([a-f0-9]{7,})\]", result.stdout)
+                m = re.search(r"\[[\w\-/.]+\s+([a-f0-9]{7,})\]", result.stdout)
                 return {"status": "committed", "hash": m.group(1) if m else "unknown", "message": result.stdout.strip()}
             return {"error": result.stderr.strip() or "Nothing to commit"}
         except Exception as e:
@@ -462,7 +470,15 @@ class DevOpsMixin:
                 "python": version.PYTHON_VERSION,
             }
         except Exception:
-            return {"version": "3.1.0", "build": "dev", "python": _sys.version.split()[0]}
+            # Fallback: read from pyproject.toml directly
+            try:
+                import tomllib
+                with open(Path(__file__).parent.parent.parent / "pyproject.toml", "rb") as f:
+                    pyproject = tomllib.load(f)
+                ver = pyproject.get("project", {}).get("version", "3.2.0")
+            except Exception:
+                ver = "3.2.0"
+            return {"version": ver, "build": "dev", "python": _sys.version.split()[0]}
 
     # ════════════════════════════════════════════════════════
     # NEW: Auto-Commit Status

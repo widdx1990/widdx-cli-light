@@ -4,7 +4,7 @@
    ============================================================ */
 
 /* ----- FONTS ----- */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600;700&display=swap');
+@import url('/static/vendor/fonts/inter.css');
 
 /* ============================================================
    DESIGN TOKENS — Dark Theme (default)
@@ -23,7 +23,7 @@
   --text-primary: #ededef;
   --text-secondary: #b0b0b8;
   --text-tertiary: #70707a;
-  --text-muted: #4a4a55;
+  --text-muted: #8a8a95;
   --text-disabled: #353540;
 
   --accent: #3182f6;
@@ -97,7 +97,7 @@
   --text-primary: #18181b;
   --text-secondary: #52525b;
   --text-tertiary: #9494a0;
-  --text-muted: #a8a8b3;
+  --text-muted: #6b6b76;
   --text-disabled: #d4d4d8;
 
   --accent: #2563eb;
@@ -229,12 +229,39 @@ body {
 .sidebar-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .sidebar-panel .sidebar-section-header { padding: 10px 14px 4px; }
 .sidebar-panel .sidebar-nav { flex: 1; overflow-y: auto; }
-.sidebar-panel .sidebar-search {
+
+/* ── Nav Category Accordion ── */
+.nav-category { margin-bottom: 1px; }
+.nav-category-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: var(--radius-md);
+  color: var(--text-tertiary); font-size: var(--font-size-xs);
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  cursor: pointer; transition: all var(--duration-fast) var(--ease-out);
+  user-select: none; margin-bottom: 1px;
+}
+.nav-category-header:hover { background: var(--fill-hover); color: var(--text-secondary); }
+.nav-category-header i:first-child { font-size: 13px; opacity: 0.5; }
+.nav-category-chevron {
+  margin-left: auto; font-size: 9px; transition: transform var(--duration-normal) var(--ease-out);
+}
+.nav-category-header.open .nav-category-chevron { transform: rotate(180deg); }
+.nav-category-body {
+  overflow: hidden; max-height: 0; transition: max-height var(--duration-slow) var(--ease-out);
+}
+.nav-category-body.open { max-height: 300px; }
+.nav-category-body .nav-item { padding-left: 32px; font-size: var(--font-size-sm); }
+
+.sidebar-search {
   margin: 0 10px 4px; height: 26px; border-radius: 3px;
   border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03);
   color: rgba(255,255,255,0.5); font-size: 11px; padding: 0 10px; outline: none;
 }
-.sidebar-panel .sidebar-search:focus { border-color: rgba(255,255,255,0.12); color: #ccc; }
+.sidebar-search:focus { border-color: rgba(255,255,255,0.12); color: #ccc; }
+
+/* ── Sidebar Sessions Section ── */
+.sidebar-sessions { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.sidebar-sessions .sidebar-nav { flex: 1; overflow-y: auto; }
 
 
 .sidebar-brand {
@@ -492,6 +519,7 @@ body:has(.sidebar.collapsed) .sidebar-floating-toggle i {
 .sidebar.collapsed .sidebar-search-wrap { display: none; }
 
 .sidebar.collapsed .sidebar-nav { padding: 4px 6px; }
+.sidebar.collapsed .sidebar-nav-main { margin-top: 4px; }
 .sidebar.collapsed .nav-section-label { display: none; }
 
 .sidebar.collapsed .nav-item {
@@ -509,6 +537,20 @@ body:has(.sidebar.collapsed) .sidebar-floating-toggle i {
 .sidebar.collapsed .nav-item i { font-size: 20px; flex-shrink: 0; }
 .sidebar.collapsed .nav-item .nav-badge { display: none; }
 .sidebar.collapsed .sidebar-file-tree { display: none; }
+
+/* ── Collapsed: Category accordions ── */
+.sidebar.collapsed .nav-category { margin-bottom: 0; }
+.sidebar.collapsed .nav-category-header {
+  justify-content: center; padding: 8px 0;
+  font-size: 0; gap: 0; margin-bottom: 0;
+}
+.sidebar.collapsed .nav-category-header i:first-child { font-size: 18px; opacity: 0.6; }
+.sidebar.collapsed .nav-category-header span { display: none; }
+.sidebar.collapsed .nav-category-chevron { display: none; }
+.sidebar.collapsed .nav-category-body { display: none; }
+
+/* ── Collapsed: Sessions section ── */
+.sidebar.collapsed .sidebar-sessions { display: none; }
 
 .sidebar.collapsed .chat-item {
   display: none;
