@@ -555,6 +555,43 @@ function finishThinking() {
 }
 
 /**
+ * Add an ECP Control Plane event — styled decision notification.
+ */
+function addECPEvent(action, reason, target) {
+  var wrapper = createAssistantWrapper('');
+  document.getElementById('messagesArea').appendChild(wrapper);
+  var body = wrapper.querySelector('.ai-body');
+  var el = document.createElement('div');
+  el.className = 'ecp-event';
+
+  var icons = {
+    'SWITCH_MODEL': 'fa-rotate', 'REPLAN': 'fa-redo', 'ESCALATE': 'fa-rocket',
+    'ABORT': 'fa-stop-circle', 'CONTINUE': 'fa-arrow-right'
+  };
+  var colors = {
+    'SWITCH_MODEL': '#f5a623', 'REPLAN': '#4a90d9', 'ESCALATE': '#e040fb',
+    'ABORT': '#ff4444', 'CONTINUE': '#00c896'
+  };
+  var labels = {
+    'SWITCH_MODEL': 'Model Switch', 'REPLAN': 'Replan',
+    'ESCALATE': 'Expert Team', 'ABORT': 'Abort'
+  };
+  var icon = icons[action] || 'fa-cog';
+  var color = colors[action] || '#888';
+  var label = labels[action] || action;
+  var targetText = target ? ' → ' + target.split('/').pop() : '';
+
+  el.innerHTML =
+    '<div class="ecp-inner" style="border-left:3px solid ' + color + '">'
+    + '<i class="fa-solid ' + icon + '" style="color:' + color + '"></i>'
+    + '<span class="ecp-label" style="color:' + color + ';font-weight:bold">' + label + targetText + '</span>'
+    + (reason ? '<span class="ecp-reason" style="font-size:0.8em;color:#888;margin-left:8px">' + escapeHtml(reason) + '</span>' : '')
+    + '</div>';
+  body.appendChild(el);
+  scrollBottom();
+}
+
+/**
  * Add a TOOL PILL — compact inline status indicator.
  */
 function addToolCard(toolName, toolArgs) {
@@ -659,6 +696,11 @@ function handleWSMessage(msg) {
 
     case 'tool_result':
       updateToolCard(msg.data?.success !== false, msg.data?.result || msg.data);
+      break;
+
+    case 'ecp':
+      // ECP Control Plane decision — styled system event
+      addECPEvent(msg.data?.action || 'DECISION', msg.data?.reason || '', msg.data?.target || '');
       break;
 
     case 'text':

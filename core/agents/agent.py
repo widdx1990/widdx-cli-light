@@ -441,7 +441,7 @@ class AutonomousAgent:
             if decision.action == ControlActionType.SWITCH_MODEL:
                 target_model = decision.model or "deepseek-v4-pro"
                 print_system_msg(f"🔄 ECP: switching model {current_model_name} → {target_model}: {decision.reason}")
-                self._emit({"type": "text", "data": f"\n[🔄 ECP: Model switch → {target_model}]\n"})
+                self._emit({"type": "ecp", "data": {"action": "SWITCH_MODEL", "target": target_model, "reason": decision.reason}})
                 try:
                     from core.config.settings import load as _load_cfg
                     from core.providers.factory import create_provider as _create_provider
@@ -455,7 +455,7 @@ class AutonomousAgent:
 
             if decision.action == ControlActionType.REPLAN:
                 print_system_msg(f"📋 ECP: replanning — {decision.reason}")
-                self._emit({"type": "text", "data": f"\n[📋 ECP: Replanning — {decision.reason}]\n"})
+                self._emit({"type": "ecp", "data": {"action": "REPLAN", "reason": decision.reason}})
                 try:
                     from core.uil.analyzer import TaskAnalyzer
                     from core.uil.planner import TaskPlanner
@@ -473,7 +473,7 @@ class AutonomousAgent:
 
             if decision.action == ControlActionType.ESCALATE_TO_EXPERT:
                 print_system_msg(f"🚀 ECP: escalating to ExpertTeam — {decision.reason}")
-                self._emit({"type": "text", "data": f"\n[🚀 ECP: Escalating to ExpertTeam]\n"})
+                self._emit({"type": "ecp", "data": {"action": "ESCALATE", "reason": decision.reason}})
                 try:
                     from .expert import ExpertTeam
                     team = ExpertTeam(self.provider, self.tool_defs, dict(self.cfg), self.state)
@@ -489,7 +489,7 @@ class AutonomousAgent:
 
             if decision.action == ControlActionType.ABORT:
                 print_system_msg(f"🛑 ECP: aborting — {decision.reason}")
-                self._emit({"type": "text", "data": f"\n[🛑 ECP: Aborting — {decision.reason}]\n"})
+                self._emit({"type": "ecp", "data": {"action": "ABORT", "reason": decision.reason}})
                 ts.set_messages(messages)
                 ts.set_agent_steps([s.to_dict() for s in self.steps])
                 break

@@ -2993,3 +2993,9 @@ ont-size: 10px; }
 
 /* ── Sidebar Git Panel ── */
 .sidebar-git-body { flex: 1; overflow-y: auto; padding: 4px 0; }
+
+/* ── ECP Control Plane Events ── */
+.ecp-event { margin: 4px 0; }
+.ecp-inner { padding: 6px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); font-size: 0.85em; display: flex; align-items: center; gap: 8px; }
+.ecp-inner i { font-size: 0.9em; }
+.ecp-reason { opacity: 0.7; }
