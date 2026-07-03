@@ -340,84 +340,198 @@ class AutonomousAgent:
 
         print_system_msg("Starting autonomous execution...")
 
-        # ── RuntimeGuard: task-level safety ──
+        # ── Sensor layer: Guard, EI, ESC (report only, no control) ──
         from core.runtime_guard import get_runtime_guard
         guard = get_runtime_guard()
         guard.start_task()
 
-        # ── ExecutionIntelligence: 4-layer monitoring ──
         from core.execution_intelligence import get_execution_intelligence
         ei = get_execution_intelligence()
         ei.start_task(None, user_input)
 
-        # ── ESC: deterministic layer controller ──
         from core.execution_state_controller import get_execution_state_controller
         esc = get_execution_state_controller()
-        esc.signal_complete()  # Reset to L1 at start
+        esc.signal_complete()
+
+        # ── ECP: SOLE DECISION AUTHORITY ──
+        from core.runtime.execution_control_plane import (
+            get_control_plane, ControlActionType, ExecutionSignal, SignalType,
+        )
+        ecp = get_control_plane()
+        current_model_name = self.state.get("model", "")
+        ecp.start_task(current_model=current_model_name)
+
+        # ── Semantic stability + self-healing (periodic, every 10 steps) ──
+        _semantic_interval = 10
+        _semantic_enabled = True
+        try:
+            from core.runtime.semantic import get_self_healing_monitor
+            _sem_healer = get_self_healing_monitor()
+            _sem_healer.start_task(goal=user_input)
+        except Exception:
+            _semantic_enabled = False
+            _sem_healer = None
 
         for iteration in range(start_iteration, max_iter):
-            # Check cancel flag (set by TUI escape key)
             cancel = self.cfg.get("_cancel_flag")
             if cancel and cancel():
                 print_system_msg("🛑 Agent cancelled by user")
                 break
 
-            # ── RuntimeGuard: check safety before LLM call ──
-            if not guard.before_provider_call():
-                print_system_msg("⚠️ RuntimeGuard: pausing due to memory pressure")
-                self._emit({"type": "error", "data": "Paused — high memory usage. Task state saved."})
+            # ═══════════════════════════════════════════
+            # PHASE 1: COLLECT — all sensors report
+            # ═══════════════════════════════════════════
+            guard_signals = guard.collect()
+            for sig in guard_signals:
+                ecp.collect_signal(sig)
+
+            ei_signals = ei.get_control_signals()
+            for sig in ei_signals:
+                ecp.collect_signal(sig)
+
+            esc_state = esc.collect_state()
+            if esc_state["is_deadlocked"]:
+                ecp.collect_signal(ExecutionSignal(
+                    signal_type=SignalType.DEADLOCK,
+                    value=min(1.0, esc_state["escalation_count"] / 5.0),
+                    source="ExecutionStateController",
+                    detail=f"Layer {esc_state['layer']}, escalation #{esc_state['escalation_count']}",
+                ))
+
+            # ═══════════════════════════════════════════
+            # PHASE 1.5: SEMANTIC — periodic cognitive check
+            # ═══════════════════════════════════════════
+            if _semantic_enabled and _sem_healer and iteration % _semantic_interval == 0 and iteration > 0:
+                try:
+                    tools_list = list(set(s.tool_name for s in self.steps)) if self.steps else []
+                    sem_result = _sem_healer.tick(
+                        step=iteration,
+                        tools_used=tools_list or ["read"],
+                        plan_adherence=getattr(ei, '_telemetry', None) and
+                            (1.0 - getattr(ei._telemetry, 'plan_deviation', 0.0)) or 0.8,
+                        current_messages=messages[-20:] if messages else None,
+                        context_size=len(messages),
+                    )
+                    if sem_result.get("needs_healing"):
+                        ops = sem_result.get("operations", [])
+                        for op in ops:
+                            if op["type"] == "REANCHOR_GOAL":
+                                messages.append({"role": "user",
+                                    "content": op["params"]["reanchor_instruction"]})
+                                self._emit({"type": "text", "data": "\n[🧿 Semantic: goal re-anchored]\n"})
+                            elif op["type"] == "SAFE_MODE":
+                                ecp.collect_signal(ExecutionSignal(
+                                    signal_type=SignalType.STUCK, value=0.8,
+                                    source="SemanticHealer", detail="Safe mode from cognitive drift"))
+                except Exception as sem_e:
+                    logger.debug("Semantic check skipped: %s", sem_e)
+
+            # ═══════════════════════════════════════════
+            # PHASE 2: DECIDE — ECP sole authority
+            # ═══════════════════════════════════════════
+            current_model_name = self.state.get("model", "")
+            ecp.note_model(current_model_name)
+            decision = ecp.before_step(
+                step=iteration,
+                context={"task": user_input},
+                messages=messages,
+                current_model=current_model_name,
+            )
+
+            if decision.action == ControlActionType.SWITCH_MODEL:
+                target_model = decision.model or "deepseek-v4-pro"
+                print_system_msg(f"🔄 ECP: switching model {current_model_name} → {target_model}: {decision.reason}")
+                self._emit({"type": "text", "data": f"\n[🔄 ECP: Model switch → {target_model}]\n"})
+                try:
+                    from core.config.settings import load as _load_cfg
+                    from core.providers.factory import create_provider as _create_provider
+                    new_cfg = dict(self.cfg)
+                    new_cfg["provider"] = {"model": target_model}
+                    self.provider = _create_provider(new_cfg, raw=True)
+                    self.state["model"] = target_model
+                except Exception as switch_e:
+                    logger.warning("ECP model switch failed: %s", switch_e)
+                continue
+
+            if decision.action == ControlActionType.REPLAN:
+                print_system_msg(f"📋 ECP: replanning — {decision.reason}")
+                self._emit({"type": "text", "data": f"\n[📋 ECP: Replanning — {decision.reason}]\n"})
+                try:
+                    from core.uil.analyzer import TaskAnalyzer
+                    from core.uil.planner import TaskPlanner
+                    ta = TaskAnalyzer(provider=self.provider)
+                    classification = ta.analyze(user_input)
+                    planner = TaskPlanner()
+                    plan = planner.plan(classification, user_input)
+                    if plan and plan.steps:
+                        plan_text = "\n".join(f"  [{s.id}] {s.description}" for s in plan.steps)
+                        messages.append({"role": "user", "content": f"\n\n[SYSTEM: Plan regenerated ({len(plan.steps)} steps)]\n{plan_text}"})
+                        ecp.set_plan(len(plan.steps))
+                except Exception as replan_e:
+                    logger.warning("ECP replan failed: %s", replan_e)
+                continue
+
+            if decision.action == ControlActionType.ESCALATE_TO_EXPERT:
+                print_system_msg(f"🚀 ECP: escalating to ExpertTeam — {decision.reason}")
+                self._emit({"type": "text", "data": f"\n[🚀 ECP: Escalating to ExpertTeam]\n"})
+                try:
+                    from .expert import ExpertTeam
+                    team = ExpertTeam(self.provider, self.tool_defs, dict(self.cfg), self.state)
+                    expert_summary = team.run(user_input)
+                    print_system_msg(f"ExpertTeam completed: {expert_summary[:200]}")
+                    self._emit({"type": "text", "data": f"\n[ExpertTeam: {expert_summary[:300]}]\n"})
+                    ts.clear()
+                    return self.steps, expert_summary
+                except Exception as expert_e:
+                    logger.warning("ECP ExpertTeam escalation failed: %s", expert_e)
+                    self._emit({"type": "error", "data": f"ExpertTeam failed: {expert_e}"})
+                continue
+
+            if decision.action == ControlActionType.ABORT:
+                print_system_msg(f"🛑 ECP: aborting — {decision.reason}")
+                self._emit({"type": "text", "data": f"\n[🛑 ECP: Aborting — {decision.reason}]\n"})
                 ts.set_messages(messages)
                 ts.set_agent_steps([s.to_dict() for s in self.steps])
                 break
 
-            # ── Provider call with Reliability Layer ──────
+            # ═══════════════════════════════════════════
+            # PHASE 3: EXECUTE — no other authority
+            # ═══════════════════════════════════════════
+
+            # Guard: sensor only (timing)
+            guard.before_provider_call()
+
+            # Provider call
             try:
                 content, tool_calls = self._call_provider_with_retry(messages, temperature, ts)
-                # ESC: provider succeeded → signal recovery
-                try:
-                    esc.signal_recovery()
-                except Exception as esc_e:
-                    logger.warning("ESC signal_recovery failed: %s", esc_e)
+                esc.signal_recovery()
             except Exception as e:
                 print_system_msg(f"❌ Agent halted: {e}")
                 self._emit({"type": "error", "data": f"All providers exhausted: {e}"})
-                # ESC: signal error + check if should escalate
-                try:
-                    esc.signal_error(str(e))
-                    action = esc.get_action()
-                    self._emit({"type": "text", "data": f"\n[🎛 ESC: {action['layer']} — {action['action']} (escalation #{action['escalation']})]\n"})
-                except Exception as esc_e:
-                    logger.warning("ESC error action failed: %s", esc_e)
-                # Save final state for resume
-                if ts:
-                    ts.set_messages(messages)
-                    ts.set_agent_steps([s.to_dict() for s in self.steps])
+                esc.signal_error(str(e))
+                ecp.collect_signal(ExecutionSignal(
+                    signal_type=SignalType.PROVIDER_FAILURE,
+                    value=0.9,
+                    source="AutonomousAgent",
+                    detail=str(e)[:200],
+                ))
+                ts.set_messages(messages)
+                ts.set_agent_steps([s.to_dict() for s in self.steps])
                 break
 
             model = self.state.get("model", "").split("/")[-1] or "unknown"
             self.state["cost"] += estimate_turn_cost(model, 500, 1000)
 
-            # ── RuntimeGuard: detect loops ──
-            if not guard.after_provider_call(content or ""):
-                print_system_msg("⚠️ RuntimeGuard: repetitive loop detected — aborting")
-                self._emit({"type": "error", "data": "Loop detected. Task state saved for review."})
-                # ESC: signal stuck
-                try:
-                    esc.signal_stuck(["Loop detected: repetitive responses"])
-                    action = esc.get_action()
-                    self._emit({"type": "text", "data": f"\n[🎛 ESC: {action['layer']} — {action['action']}]\n"})
-                except Exception as esc_stuck_e:
-                    logger.warning("ESC signal_stuck failed: %s", esc_stuck_e)
-                ts.set_messages(messages)
-                ts.set_agent_steps([s.to_dict() for s in self.steps])
-                break
+            # Guard: sensor only (loop detection)
+            guard.after_provider_call(content or "")
+            esc.signal_stuck(["ECS sensor: step tracked"])
 
             # ── Process tool calls if AI decided to use tools ──
             if tool_calls:
                 tc_list = [
                     {"id": _vid(tc.id), "type": "function",
                      "function": {"name": tc.name,
-                                  "arguments": json.dumps(tc.args, ensure_ascii=False)}}
+                                   "arguments": json.dumps(tc.args, ensure_ascii=False)}}
                     for tc in tool_calls
                 ]
                 if not (resume and messages and messages[-1].get("role") == "assistant" and messages[-1].get("tool_calls")):
@@ -425,13 +539,20 @@ class AutonomousAgent:
                     ts.set_messages(messages)
 
                 for tc in tool_calls:
-                    # ── ExecutionIntelligence: preventive check ──
+                    # ── ExecutionIntelligence: preventive check → ECP signal ──
                     try:
                         check = ei.check_before_action(tc.name, tc.args if hasattr(tc, 'args') else {})
                         if check["warning"]:
                             self._emit({"type": "text", "data": f"\n[⚠️ {check['warning']}]\n"})
                             if check["suggestion"]:
                                 self._emit({"type": "text", "data": f"\n[💡 {check['suggestion']}]\n"})
+                        if not check.get("safe", True):
+                            ecp.collect_signal(ExecutionSignal(
+                                signal_type=SignalType.QUALITY_DEGRADATION,
+                                value=0.6,
+                                source="ExecutionIntelligence",
+                                detail=check.get("warning", "Tool may be unsafe"),
+                            ))
                     except Exception as ei_e:
                         logger.warning("EI check_before_action failed: %s", ei_e)
 
@@ -468,13 +589,89 @@ class AutonomousAgent:
                         }
                     })
 
-                    # ── Loop detection: same tool + same args 3x in a row → abort ──
+                    # ── POST-EXECUTION: sensor collection + ECP decision ──
+                    ecp.note_tool_result(step.status == "done", result)
+
+                    # Collect fresh sensor data
+                    if esc.collect_state()["is_deadlocked"]:
+                        ecp.collect_signal(ExecutionSignal(
+                            signal_type=SignalType.DEADLOCK,
+                            value=0.9,
+                            source="ESC",
+                            detail=f"Layer {esc.collect_state()['layer']}",
+                        ))
+
+                    after_decision = ecp.after_step(
+                        step=iteration,
+                        tool_results={"name": tc.name, "success": step.status == "done"},
+                        messages=messages,
+                        success=step.status == "done",
+                    )
+
+                    if after_decision.action == ControlActionType.SWITCH_MODEL:
+                        target = after_decision.model or "deepseek-v4-pro"
+                        print_system_msg(f"🔄 ECP mid-step: switching model → {target}: {after_decision.reason}")
+                        try:
+                            from core.config.settings import load as _load_cfg
+                            from core.providers.factory import create_provider as _create_provider
+                            new_cfg = dict(self.cfg)
+                            new_cfg["provider"] = {"model": target}
+                            self.provider = _create_provider(new_cfg, raw=True)
+                            self.state["model"] = target
+                        except Exception as s_e:
+                            logger.warning("ECP mid-step model switch failed: %s", s_e)
+                        break  # break out of tool loop, next iteration uses new model
+
+                    if after_decision.action == ControlActionType.REPLAN:
+                        print_system_msg(f"📋 ECP mid-step: replanning — {after_decision.reason}")
+                        try:
+                            from core.uil.analyzer import TaskAnalyzer
+                            from core.uil.planner import TaskPlanner
+                            ta = TaskAnalyzer(provider=self.provider)
+                            classification = ta.analyze(user_input)
+                            planner = TaskPlanner()
+                            plan = planner.plan(classification, user_input)
+                            if plan and plan.steps:
+                                plan_text = "\n".join(f"  [{s.id}] {s.description}" for s in plan.steps)
+                                messages.append({"role": "user", "content": f"\n\n[SYSTEM: Plan regenerated ({len(plan.steps)} steps)]\n{plan_text}"})
+                                ecp.set_plan(len(plan.steps))
+                        except Exception as rp_e:
+                            logger.warning("ECP mid-step replan failed: %s", rp_e)
+                        break  # break out of tool loop, next iteration follows new plan
+
+                    if after_decision.action == ControlActionType.ESCALATE_TO_EXPERT:
+                        print_system_msg(f"🚀 ECP mid-step: escalating to ExpertTeam — {after_decision.reason}")
+                        try:
+                            from .expert import ExpertTeam
+                            team = ExpertTeam(self.provider, self.tool_defs,
+                                              dict(self.cfg), self.state)
+                            expert_summary = team.run(user_input)
+                            self._emit({"type": "text", "data": f"\n[ExpertTeam: {expert_summary[:300]}]\n"})
+                            ts.clear()
+                            return self.steps, expert_summary
+                        except Exception as e_e:
+                            logger.warning("ECP mid-step ExpertTeam escalation failed: %s", e_e)
+                        break
+
+                    if after_decision.action == ControlActionType.ABORT:
+                        print_system_msg(f"🛑 ECP mid-step: aborting — {after_decision.reason}")
+                        ts.set_messages(messages)
+                        ts.set_agent_steps([s.to_dict() for s in self.steps])
+                        return self.steps, f"Aborted: {after_decision.reason}"
+
+                    # ── Loop detection: same tool + same args 3x in a row → ECP signal ──
                     call_sig = (tc.name, json.dumps(tc.args, sort_keys=True))
                     _recent_calls.append(call_sig)
                     if len(_recent_calls) > 3:
                         _recent_calls.pop(0)
                     if len(_recent_calls) >= 3 and len(set(_recent_calls)) == 1:
                         print_system_msg("🔁 Loop detected — same tool called 3 times in a row. Aborting.")
+                        ecp.collect_signal(ExecutionSignal(
+                            signal_type=SignalType.STUCK,
+                            value=0.9,
+                            source="AutonomousAgent",
+                            detail=f"Repeated {tc.name} with same arguments 3x",
+                        ))
                         return self.steps, f"Aborted: repeated {tc.name} with same arguments."
 
                     # ── Progress tracking: count files written + bash successes ──
@@ -484,6 +681,12 @@ class AutonomousAgent:
                         _progress_markers += 1
                     if iteration > 4 and _progress_markers == 0:
                         print_system_msg("⏳ No files written or successful bash commands after 5 iterations — agent may be stuck.")
+                        ecp.collect_signal(ExecutionSignal(
+                            signal_type=SignalType.STUCK,
+                            value=0.6,
+                            source="AutonomousAgent",
+                            detail=f"No progress after {iteration + 1} iterations",
+                        ))
 
                     # If the tool wrote or edited a file, run validation immediately
                     if tc.name in {"write", "edit"} and not step.result.startswith(("❌", "⚠️", "⚠", "⛔", "Error", "Failed", "No such", "File not found")):

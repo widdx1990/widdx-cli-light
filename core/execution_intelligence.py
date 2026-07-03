@@ -211,6 +211,41 @@ class ExecutionIntelligence:
             2
         )
 
+    def get_control_signals(self) -> list:
+        """Return current signals suitable for ECP consumption.
+        
+        Converts monitoring data into actionable signals for the
+        Execution Control Plane to make runtime decisions.
+        """
+        from core.runtime.execution_control_plane import ExecutionSignal, SignalType
+        signals = []
+        t = self._telemetry
+
+        if t.plan_deviation > 0.4:
+            signals.append(ExecutionSignal(
+                signal_type=SignalType.COMPLEXITY_DRIFT,
+                value=t.plan_deviation,
+                source="ExecutionIntelligence",
+                detail=f"Plan deviation {t.plan_deviation:.2f} exceeds threshold",
+            ))
+        if t.avg_quality < 0.4 and len(t.step_details) >= 2:
+            signals.append(ExecutionSignal(
+                signal_type=SignalType.QUALITY_DEGRADATION,
+                value=1.0 - t.avg_quality,
+                source="ExecutionIntelligence",
+                detail=f"Avg quality {t.avg_quality:.2f} below threshold",
+            ))
+        failure_count = sum(1 for s in t.step_details if not s.success)
+        if failure_count >= 3:
+            signals.append(ExecutionSignal(
+                signal_type=SignalType.TOOL_FAILURE_RATE,
+                value=min(1.0, failure_count / max(len(t.step_details), 1)),
+                source="ExecutionIntelligence",
+                detail=f"{failure_count} tool failures detected",
+            ))
+
+        return signals
+
     def get_live_status(self) -> dict:
         """Return current execution status for live monitoring."""
         t = self._telemetry

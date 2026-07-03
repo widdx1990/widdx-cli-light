@@ -258,7 +258,11 @@ class TransactionalWrite:
 # ═══════════════════════════════════════════════════════════════
 
 class RuntimeGuard:
-    """Unified runtime safety — called before/after agent operations."""
+    """Unified runtime sensor — feeds signals to ECP, does NOT block execution.
+
+    Under Unified Control Theory, RuntimeGuard is a PURE SENSOR.
+    It reports state through collect() — ECP is the sole decision authority.
+    """
 
     def __init__(self):
         self._loop_detector = LoopDetector()
@@ -266,33 +270,80 @@ class RuntimeGuard:
         self._turn_start: float = 0.0
         self._total_turns: int = 0
         self._warnings: list[str] = []
+        self._memory_status: MemoryStatus | None = None
+        self._loop_detected: bool = False
+        self._turn_timeout: bool = False
 
     def start_task(self):
         """Called once at the beginning of an autonomous task."""
         self._wall_start = time.time()
         self._loop_detector.reset()
         self._warnings.clear()
+        self._memory_status = None
+        self._loop_detected = False
+        self._turn_timeout = False
+
+    def collect(self) -> list:
+        """Return current signals for ECP. PURE SENSOR — no side effects."""
+        from core.runtime.execution_control_plane import ExecutionSignal, SignalType
+        signals = []
+
+        mem = _get_memory_status()
+        self._memory_status = mem
+        if not mem.healthy:
+            signals.append(ExecutionSignal(
+                signal_type=SignalType.MEMORY_PRESSURE,
+                value=mem.used_pct / 100.0,
+                source="RuntimeGuard",
+                detail=mem.warning,
+            ))
+
+        if self._loop_detected:
+            signals.append(ExecutionSignal(
+                signal_type=SignalType.LOOP_DETECTED,
+                value=0.85,
+                source="RuntimeGuard",
+                detail="Repetitive response loop detected",
+            ))
+            self._loop_detected = False
+
+        if self._turn_timeout:
+            signals.append(ExecutionSignal(
+                signal_type=SignalType.TOKEN_INEFFICIENCY,
+                value=0.7,
+                source="RuntimeGuard",
+                detail=f"Turn timeout exceeded {PER_TURN_TIMEOUT_SECONDS}s",
+            ))
+            self._turn_timeout = False
+
+        if self._wall_start > 0:
+            elapsed = time.time() - self._wall_start
+            if elapsed > MAX_WALL_CLOCK_SECONDS * 0.8:
+                signals.append(ExecutionSignal(
+                    signal_type=SignalType.QUALITY_DEGRADATION,
+                    value=0.7,
+                    source="RuntimeGuard",
+                    detail=f"Wall clock at {elapsed:.0f}s / {MAX_WALL_CLOCK_SECONDS}s",
+                ))
+
+        return signals
 
     def before_provider_call(self) -> bool:
-        """Check safety before calling LLM. Returns True if safe to proceed."""
+        """Track timing and check wall clock. Always returns True (sensor only)."""
         self._check_wall_clock()
         self._turn_start = time.time()
-        mem = _get_memory_status()
-        if not mem.healthy:
-            self._warnings.append(f"MEMORY: {mem.warning}")
-            logger.warning(mem.warning)
-            return False  # Pause — don't crash
         return True
 
     def after_provider_call(self, content: str) -> bool:
-        """Check safety after LLM response. Returns True if not stuck in loop."""
+        """Track loops and timeouts. Always returns True (sensor only)."""
         elapsed = time.time() - self._turn_start
         if elapsed > PER_TURN_TIMEOUT_SECONDS:
             logger.warning("Turn timeout: %.0fs > %ds", elapsed, PER_TURN_TIMEOUT_SECONDS)
-            return False
+            self._turn_timeout = True
+
         if self._loop_detector.is_repetitive(content):
             logger.warning("Loop detected: repetitive responses")
-            return False
+            self._loop_detected = True
         self._total_turns += 1
         return True
 

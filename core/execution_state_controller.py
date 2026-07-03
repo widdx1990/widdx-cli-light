@@ -87,6 +87,26 @@ class ExecutionStateController:
 
     # ── Signal Inputs (called by external components) ──────
 
+    def collect_state(self) -> dict:
+        """Return current ESC state for ECP. PURE SENSOR — no side effects.
+        
+        Returns a dict with layer info, escalation count, and risk signals
+        that ECP uses to make decisions.
+        """
+        return {
+            "layer": self._current_layer.name,
+            "layer_value": self._current_layer.value,
+            "error_count": self._error_count,
+            "consecutive_errors": self._consecutive_errors,
+            "escalation_count": self._escalation_count,
+            "stuck_signals": self._stuck_signals.copy(),
+            "risk_score": self._risk_score,
+            "is_deadlocked": self._escalation_count >= 3,
+            "is_at_max": self._escalation_count >= self._max_escalations,
+            "alternatives_available": self._alternatives_available,
+            "current_layer": self.layer_name,
+        }
+
     # ── Constraint API (called by World Model) ─────────────
 
     def disable_transition(self, from_layer: str, to_layer: str, reason: str):
