@@ -203,7 +203,14 @@ def _check_abort(
     replay_count = sum(
         1 for d in previous_decisions if d.action == ControlActionType.REPLAN
     )
-    if replay_count >= 3:
+    # Dynamic abort limit: 3 for 25-step tasks, proportionally more for longer tasks
+    # A task with 80 steps needs ~10 replans before abort (3 * 80/25 ≈ 10)
+    try:
+        from .policy import _task_scope_multiplier
+        replan_abort_limit = max(3, int(3 * _task_scope_multiplier))
+    except Exception:
+        replan_abort_limit = 3
+    if replay_count >= replan_abort_limit:
         return ControlAction(
             action=ControlActionType.ABORT,
             reason=f"Replanning {replay_count} times without resolution — aborting",

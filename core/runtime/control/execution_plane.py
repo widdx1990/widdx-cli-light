@@ -19,8 +19,9 @@ from .types import (
     ControlAction, ControlActionType, ExecutionSignal, SignalType,
 )
 from .evaluation import evaluate_signals
-from .policy import apply_stabilizers, MAX_TOTAL_CONTROL_ACTIONS
+from .policy import apply_stabilizers, MAX_TOTAL_CONTROL_ACTIONS, set_task_scope as _set_policy_scope
 from .adaptive_policy import get_adaptive_policy
+import sys
 
 logger = logging.getLogger("widdx.ecp")
 
@@ -65,7 +66,13 @@ class ExecutionControlPlane:
         self._total_control_actions = 0
         self._oscillation_pattern.clear()
         self._oscillation_warning_count = 0
-        logger.info("ECP: task started — model=%s", current_model)
+        _set_policy_scope(max(25, plan_steps))
+        logger.info("ECP: task started — model=%s scope=%d", current_model, max(25, plan_steps))
+
+    def set_task_scope(self, estimated_steps: int):
+        """Scale stabilizers for complex long-horizon tasks."""
+        _set_policy_scope(estimated_steps)
+        logger.info("ECP: scope=%d steps (scale=%.1fx)", estimated_steps, estimated_steps/25.0)
 
     # ── Sensor interface ────────────────────────────────
 
@@ -150,16 +157,19 @@ class ExecutionControlPlane:
         cooldown_active = self._action_cooldown > 0
         if cooldown_active:
             self._action_cooldown -= 1
+            self._oscillation_pattern.append(ControlActionType.CONTINUE)
             return ControlAction(action=ControlActionType.CONTINUE, confidence=0.5)
 
-        # Action cap
-        cap_active = self._total_control_actions >= MAX_TOTAL_CONTROL_ACTIONS
+        # Action cap — scales with task complexity
+        scope_mult = getattr(sys.modules.get('core.runtime.control.policy'), '_task_scope_multiplier', 1.0)
+        scaled_cap = max(8, int(MAX_TOTAL_CONTROL_ACTIONS * scope_mult))
+        cap_active = self._total_control_actions >= scaled_cap
         if cap_active:
-            logger.warning("ECP: action cap exhausted (%d), ABORT",
-                           self._total_control_actions)
+            logger.warning("ECP: action cap exhausted (%d/%d), ABORT",
+                           self._total_control_actions, scaled_cap)
             return ControlAction(
                 action=ControlActionType.ABORT,
-                reason=f"Control action cap reached ({MAX_TOTAL_CONTROL_ACTIONS})",
+                reason=f"Control action cap reached ({scaled_cap})",
                 confidence=0.95,
             )
 
@@ -177,6 +187,8 @@ class ExecutionControlPlane:
 
         if raw.action == ControlActionType.SWITCH_MODEL:
             self._model_switch_count += 1
+        if raw.action == ControlActionType.ESCALATE_TO_EXPERT:
+            self._escalated = True  # Prevent re-escalation loop
 
         # Stabilize
         decision, self._oscillation_pattern, self._total_control_actions, \

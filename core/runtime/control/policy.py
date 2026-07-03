@@ -20,6 +20,25 @@ logger = logging.getLogger("widdx.ecp.policy")
 MAX_TOTAL_CONTROL_ACTIONS = 8
 ACTION_COOLDOWN_STEPS = 2
 OSCILLATION_DETECTION_WINDOW = 4
+REPEATED_REPLAN_LIMIT = 2
+# ── Long-horizon scaling factors ──
+_task_scope_multiplier: float = 1.0
+
+
+def set_task_scope(max_steps: int = 25):
+    """Scale all stabilizer thresholds for task complexity.
+
+    Short tasks (≤25 steps): tighter limits, faster intervention.
+    Long tasks (≥50 steps): wider tolerance, more replan attempts.
+
+    Call this once at task start. Default: max_steps=25 (no scaling).
+    """
+    global _task_scope_multiplier
+    _task_scope_multiplier = max(1.0, max_steps / 25.0)
+
+
+def _scaled(value: float, floor: int = 1) -> int:
+    return max(floor, int(value * _task_scope_multiplier))
 
 
 def apply_stabilizers(
@@ -45,10 +64,10 @@ def apply_stabilizers(
         return (decision, oscillation_pattern, total_control_actions,
                 escalated, action_cooldown, oscillation_warning_count, 0)
 
-    # Track the decision pattern
+    # Track the decision pattern (including CONTINUE for gap detection)
     pattern = list(oscillation_pattern)
     pattern.append(decision.action)
-    if len(pattern) > OSCILLATION_DETECTION_WINDOW:
+    if len(pattern) > OSCILLATION_DETECTION_WINDOW * 2:
         pattern.pop(0)
 
     new_escalated = escalated
@@ -68,22 +87,30 @@ def apply_stabilizers(
             ACTION_COOLDOWN_STEPS,
         )
 
-    # ── Guard 2: Repeated REPLAN (2 consecutive) ──
-    if (len(pattern) >= 2
-            and pattern[-2] == ControlActionType.REPLAN
-            and pattern[-1] == ControlActionType.REPLAN):
+    # ── Guard 2: Repeated REPLAN — consecutive only (resets on CONTINUE) ──
+    replan_streak = 0
+    for a in reversed(pattern):
+        if a == ControlActionType.REPLAN:
+            replan_streak += 1
+        elif a == ControlActionType.CONTINUE:
+            break  # CONTINUE resets the streak
+        else:
+            break  # different action resets the streak
+
+    replan_limit = _scaled(REPEATED_REPLAN_LIMIT)
+    if replan_streak >= replan_limit:
         if not new_escalated:
             new_escalated = True
             return (
                 ControlAction(action=ControlActionType.ESCALATE_TO_EXPERT,
-                              reason="Repeated replanning without progress — escalating",
+                              reason=f"Repeated replanning ({replan_limit}x) — escalating",
                               confidence=0.75),
                 pattern, new_total, new_escalated, action_cooldown, new_warnings,
                 ACTION_COOLDOWN_STEPS,
             )
         return (
             ControlAction(action=ControlActionType.ABORT,
-                          reason="Repeated replanning after escalation — aborting",
+                          reason=f"Repeated replanning after escalation ({replan_limit}x) — aborting",
                           confidence=0.9),
             pattern, new_total, new_escalated, action_cooldown, new_warnings,
             ACTION_COOLDOWN_STEPS,
