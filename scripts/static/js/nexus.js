@@ -163,6 +163,7 @@ const _S = {
     tool: '—',
     view: 'chat',
     autoMode: false,
+    userName: 'You',
   },
   stream: {
     ws: null,
@@ -803,13 +804,27 @@ function renderMsg(role, content, canvasMeta) {
 
   if (role === 'user') {
     const t = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+    // Render user content with basic markdown
+    var renderedContent;
+    try {
+      renderedContent = parseMarkdown(content);
+    } catch(e) {
+      renderedContent = escapeHtml(content);
+    }
+    // If no markdown applied (plain text), use escapeHtml for safety
+    if (renderedContent === escapeHtml(content)) {
+      renderedContent = content.replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+    }
     d.innerHTML =
       '<div class="user-meta">'
-      + '<span class="user-avatar-sm">U</span>'
-      + '<span class="user-name-sm">You</span>'
+      + '<div class="user-avatar-sm">' + escapeHtml((S.ui.userName || 'You').charAt(0).toUpperCase()) + '</div>'
+      + '<span class="user-name-sm">' + escapeHtml(S.ui.userName || 'You') + '</span>'
       + '<span class="user-time">' + t + '</span>'
       + '</div>'
-      + '<div class="user-bubble">' + escapeHtml(content) + '</div>';
+      + '<div class="user-bubble">' + renderedContent + '</div>'
+      + '<div class="user-check"><i class="fa-solid fa-check"></i></div>';
   } else if (role === 'assistant') {
     const t = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
     var body;
