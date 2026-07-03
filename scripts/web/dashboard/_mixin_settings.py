@@ -58,7 +58,7 @@ class SettingsMixin:
                 "has_key": bool(provider_cfg.get("api_key")) or _has_keychain_key(current_provider),
             },
             "cli_theme": cfg.get("cli_theme", "dark"),
-            "system_prompt": cfg.get("system_prompt", ""),
+            "system_prompt": "",  # Hardcoded in core/constants.py — not user-editable
             "temperature": cfg.get("temperature", 0.7),
             "max_turns": cfg.get("max_turns", 10),
             "available_providers": providers,
@@ -89,8 +89,7 @@ class SettingsMixin:
                 except Exception:
                     pass
 
-            if "system_prompt" in data:
-                cfg["system_prompt"] = data["system_prompt"]
+            # system_prompt is hardcoded in core/constants.py — not user-editable
             if "temperature" in data:
                 cfg["temperature"] = float(data["temperature"])
             if "max_turns" in data:

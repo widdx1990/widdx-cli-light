@@ -625,6 +625,13 @@ function appendResponseChunk(chunk) {
     S._activeAITextEl.dataset.raw = raw;
     S._activeAITextEl.innerHTML = parseMarkdown(raw);
   }
+  // Ensure streaming cursor is present
+  var rc = S._activeAITextEl;
+  if (rc && !rc.querySelector('.streaming-cursor')) {
+    var cursor = document.createElement('span');
+    cursor.className = 'streaming-cursor';
+    rc.appendChild(cursor);
+  }
   scrollBottom();
 }
 
@@ -667,12 +674,24 @@ function handleWSMessage(msg) {
       showTyping(false);
       S.streaming = false;
       S._processing = false;
+      // Remove streaming cursor
+      if (S._activeAITextEl) {
+        var cur = S._activeAITextEl.querySelector('.streaming-cursor');
+        if (cur) cur.remove();
+      }
+      // Save the completed assistant message to S.messages BEFORE clearing state
+      if (S._activeAITextEl && S._activeAITextEl.dataset.raw) {
+        var finalContent = S._activeAITextEl.dataset.raw.trim();
+        if (finalContent) {
+          S.messages.push({role: 'assistant', content: finalContent, raw: finalContent, canvas: null});
+        }
+      }
+      // Trigger Canvas render while _activeAITextEl is still valid
+      _tryCanvasRender();
       S._activeAIWrapper = null;
       S._activeAIBody = null;
       S._activeToolCard = null;
       S._toolCount = 0;
-      // Trigger Canvas render while _activeAITextEl is still valid
-      _tryCanvasRender();
       S._activeAITextEl = null;
       S._activeThinking = null;
       S._activeThinkingStrip = null;
@@ -685,6 +704,11 @@ function handleWSMessage(msg) {
       showTyping(false);
       S.streaming = false;
       S._processing = false;
+      // Remove streaming cursor
+      if (S._activeAITextEl) {
+        var cur = S._activeAITextEl.querySelector('.streaming-cursor');
+        if (cur) cur.remove();
+      }
       S._activeAIWrapper = null;
       S._activeAIBody = null;
       S._activeAITextEl = null;
@@ -717,7 +741,14 @@ function renderMsg(role, content, canvasMeta) {
   d.className = 'message-wrapper ' + role;
 
   if (role === 'user') {
-    d.innerHTML = '<div class="user-bubble">' + escapeHtml(content) + '</div>';
+    const t = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+    d.innerHTML =
+      '<div class="user-meta">'
+      + '<span class="user-avatar-sm">U</span>'
+      + '<span class="user-name-sm">You</span>'
+      + '<span class="user-time">' + t + '</span>'
+      + '</div>'
+      + '<div class="user-bubble">' + escapeHtml(content) + '</div>';
   } else if (role === 'assistant') {
     const t = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
     var body;
@@ -2961,6 +2992,325 @@ __registerCanvas({
   }
 });
 
+
+// ── Chart Canvas: bar, pie, line charts from numeric data ──
+__registerCanvas({
+  name: 'chart',
+  detect: function(a) {
+    var hasDataTable = a.tableCount > 0 && /\b\d+(\.\d+)?%?\b/g.test(a.raw || '');
+    var hasChartWords = /(chart|graph|plot|distribution|trend|data|statistics?|percentage|compare|breakdown|overview|summary of|metrics)/i.test(a.raw || '');
+    var hasNumericList = a.wordCount > 30 && (a.raw || '').split('\n').filter(function(l) {
+      return /^[\s]*[-*]\s+.+\d+/.test(l) || /^[\s]*\|.*\d+.*\|/.test(l);
+    }).length >= 2;
+    if (hasDataTable || hasChartWords || hasNumericList) {
+      var score = 65 + (hasDataTable ? 15 : 0) + (hasChartWords ? 10 : 0);
+      var data = __parseChartData(a.raw || '');
+      return { score: Math.min(score, 100) * __lenFactor(a.wordCount), data: data };
+    }
+    return null;
+  },
+  render: function(d, c) {
+    if (!d || !d.labels || !d.labels.length) {
+      return __smartFallback(c, { headings: d?.headings, sections: d?.sections });
+    }
+    var chartType = d.type || 'bar';
+    var labels = d.labels || [];
+    var datasets = d.datasets || [{ data: d.values || [], label: 'Values' }];
+    var maxVal = 0;
+    for (var ds = 0; ds < datasets.length; ds++) {
+      for (var v = 0; v < datasets[ds].data.length; v++) {
+        if (datasets[ds].data[v] > maxVal) maxVal = datasets[ds].data[v];
+      }
+    }
+    if (maxVal === 0) maxVal = 100;
+    var colors = ['#3182f6','#34d399','#fbbf24','#f87171','#a78bfa','#f472b6','#2dd4bf','#fb923c'];
+    var svgW = 600, svgH = 320, padL = 60, padR = 20, padT = 30, padB = 50;
+    var chartW = svgW - padL - padR, chartH = svgH - padT - padB;
+    var html = '<div class="can-chart-w">';
+    html += '<div class="can-chart-ctrls">';
+    var types = ['bar', 'pie', 'line'];
+    for (var t = 0; t < types.length; t++) {
+      html += '<button class="can-chart-btn' + (types[t] === chartType ? ' active' : '') + '" data-click="switch-chart" data-chart="' + types[t] + '">' + types[t].charAt(0).toUpperCase() + types[t].slice(1) + '</button>';
+    }
+    html += '</div><div class="can-chart-svg-wrap">';
+    if (chartType === 'pie') {
+      var total = 0;
+      for (var v = 0; v < datasets[0].data.length; v++) total += datasets[0].data[v];
+      if (total === 0) total = 1;
+      var cx = 200, cy = 160, r = 140;
+      var startAngle = -Math.PI / 2;
+      html += '<svg viewBox="0 0 400 320" class="can-chart-svg">';
+      for (var v = 0; v < datasets[0].data.length; v++) {
+        var val = datasets[0].data[v];
+        var angle = (val / total) * 2 * Math.PI;
+        var endAngle = startAngle + angle;
+        var x1 = cx + r * Math.cos(startAngle);
+        var y1 = cy + r * Math.sin(startAngle);
+        var x2 = cx + r * Math.cos(endAngle);
+        var y2 = cy + r * Math.sin(endAngle);
+        var large = angle > Math.PI ? 1 : 0;
+        html += '<path d="M' + cx + ',' + cy + ' L' + x1 + ',' + y1 + ' A' + r + ',' + r + ' 0 ' + large + ',1 ' + x2 + ',' + y2 + ' Z" fill="' + colors[v % colors.length] + '" opacity="0.85" class="can-chart-seg"><title>' + escapeHtml(labels[v] || '') + ': ' + val + ' (' + Math.round(val / total * 100) + '%)</title></path>';
+        startAngle = endAngle;
+      }
+      html += '</svg><div class="can-chart-legend">';
+      for (var v = 0; v < datasets[0].data.length; v++) {
+        var pct = Math.round(datasets[0].data[v] / total * 100);
+        html += '<div class="can-chart-legend-i"><span class="can-chart-legend-dot" style="background:' + colors[v % colors.length] + '"></span>' + escapeHtml(labels[v] || '') + ' <strong>' + datasets[0].data[v] + '</strong> <span class="can-chart-legend-pct">(' + pct + '%)</span></div>';
+      }
+      html += '</div>';
+    } else if (chartType === 'line') {
+      html += '<svg viewBox="0 0 ' + svgW + ' ' + svgH + '" class="can-chart-svg">';
+      var gridLines = 5;
+      for (var g = 0; g <= gridLines; g++) {
+        var y = padT + (chartH / gridLines) * g;
+        var val = maxVal - (maxVal / gridLines) * g;
+        html += '<line x1="' + padL + '" y1="' + y + '" x2="' + (svgW - padR) + '" y2="' + y + '" stroke="var(--border-light)" stroke-width="1" stroke-dasharray="4,4"/>';
+        html += '<text x="' + (padL - 8) + '" y="' + (y + 4) + '" text-anchor="end" class="can-chart-axis-label">' + (val >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val)) + '</text>';
+      }
+      for (var ds = 0; ds < datasets.length; ds++) {
+        var dset = datasets[ds];
+        var points = [];
+        for (var v = 0; v < dset.data.length; v++) {
+          var x = padL + (chartW / (Math.max(dset.data.length - 1, 1))) * v;
+          var yVal = dset.data[v];
+          var y = padT + chartH - (yVal / maxVal) * chartH;
+          points.push(x + ',' + y);
+          html += '<circle cx="' + x + '" cy="' + y + '" r="4" fill="' + colors[ds % colors.length] + '" class="can-chart-point"><title>' + escapeHtml(labels[v] || '') + ': ' + yVal + '</title></circle>';
+        }
+        html += '<polyline points="' + points.join(' ') + '" fill="none" stroke="' + colors[ds % colors.length] + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.8"/>';
+      }
+      for (var v = 0; v < labels.length; v++) {
+        var x = padL + (chartW / (Math.max(labels.length - 1, 1))) * v;
+        html += '<text x="' + x + '" y="' + (svgH - 12) + '" text-anchor="' + (v === 0 ? 'start' : v === labels.length - 1 ? 'end' : 'middle') + '" class="can-chart-axis-label">' + escapeHtml((labels[v] || '').slice(0, 12)) + '</text>';
+      }
+      html += '</svg>';
+    } else {
+      html += '<svg viewBox="0 0 ' + svgW + ' ' + svgH + '" class="can-chart-svg">';
+      var gridLines = 5;
+      for (var g = 0; g <= gridLines; g++) {
+        var y = padT + (chartH / gridLines) * g;
+        var val = maxVal - (maxVal / gridLines) * g;
+        html += '<line x1="' + padL + '" y1="' + y + '" x2="' + (svgW - padR) + '" y2="' + y + '" stroke="var(--border-light)" stroke-width="1" stroke-dasharray="4,4"/>';
+        html += '<text x="' + (padL - 8) + '" y="' + (y + 4) + '" text-anchor="end" class="can-chart-axis-label">' + (val >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val)) + '</text>';
+      }
+      var barCount = labels.length;
+      var dsCount = datasets.length;
+      var groupW = chartW / barCount;
+      var barW = Math.min((groupW * 0.7) / dsCount, 40);
+      var gap = dsCount > 1 ? (groupW - barW * dsCount) / 2 : (groupW - barW) / 2;
+      for (var v = 0; v < barCount; v++) {
+        for (var ds = 0; ds < dsCount; ds++) {
+          var dset = datasets[ds];
+          var yVal = dset.data[v] || 0;
+          var x = padL + groupW * v + gap + barW * ds;
+          var barH = (yVal / maxVal) * chartH;
+          var y = padT + chartH - barH;
+          html += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + Math.max(barH, 1) + '" rx="2" fill="' + colors[ds % colors.length] + '" opacity="0.85" class="can-chart-bar"><title>' + escapeHtml(labels[v] || '') + ': ' + yVal + '</title></rect>';
+        }
+        var xLabel = padL + groupW * v + groupW / 2;
+        html += '<text x="' + xLabel + '" y="' + (svgH - 12) + '" text-anchor="middle" class="can-chart-axis-label">' + escapeHtml((labels[v] || '').slice(0, 12)) + '</text>';
+      }
+      html += '</svg>';
+      if (dsCount > 1) {
+        html += '<div class="can-chart-legend can-chart-legend-h">';
+        for (var ds = 0; ds < dsCount; ds++) {
+          html += '<div class="can-chart-legend-i"><span class="can-chart-legend-dot" style="background:' + colors[ds % colors.length] + '"></span>' + escapeHtml(datasets[ds].label || '') + '</div>';
+        }
+        html += '</div>';
+      }
+    }
+    html += '</div></div>';
+    return html;
+  }
+});
+
+// ── Chart Data Parser: extracts labels & values from content ──
+function __parseChartData(content) {
+  var result = { labels: [], values: [], datasets: [], type: 'bar' };
+  if (!content) return result;
+  var lines = content.split('\n');
+  if (/pie\s*chart|distribution|proportion|percentage|share|breakdown\b/i.test(content)) {
+    result.type = 'pie';
+  } else if (/line\s*chart|trend|over\s*time|growth|timeline|progress/i.test(content)) {
+    result.type = 'line';
+  }
+  var inTable = false, headers = [], rows = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].trim();
+    if (l.startsWith('|') && l.endsWith('|')) {
+      if (!inTable) { inTable = true; headers = []; rows = []; }
+      var cells = l.split('|').filter(function(c) { return c.trim(); });
+      if (cells.length && /^[-:. ]+$/.test(cells[0].trim())) continue;
+      if (headers.length === 0) {
+        headers = cells.map(function(c) { return c.trim(); });
+      } else {
+        rows.push(cells.map(function(c) { return c.trim(); }));
+      }
+    } else {
+      if (inTable) break;
+    }
+  }
+  if (headers.length >= 2 && rows.length >= 1) {
+    result.labels = [];
+    result.datasets = [];
+    var firstLabels = [];
+    for (var r = 0; r < rows.length; r++) {
+      firstLabels.push(rows[r][0] || '');
+    }
+    result.labels = firstLabels;
+    for (var c = 1; c < headers.length; c++) {
+      var vals = [];
+      for (var r = 0; r < rows.length; r++) {
+        var num = parseFloat(rows[r][c]?.replace(/[$,%\s]/g, '') || '0');
+        vals.push(isNaN(num) ? 0 : num);
+      }
+      if (vals.some(function(v) { return v !== 0; })) {
+        result.datasets.push({ label: headers[c], data: vals });
+      }
+    }
+    result.values = result.datasets[0] ? result.datasets[0].data : [];
+    return result;
+  }
+  var listLabels = [], listVals = [];
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(/^\s*[-*]\s+(.+?)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(?:%|items|users|count|total)?\s*$/);
+    if (m) {
+      listLabels.push(m[1].trim());
+      listVals.push(parseFloat(m[2]));
+    }
+  }
+  if (listLabels.length >= 2) {
+    result.labels = listLabels;
+    result.values = listVals;
+    result.datasets = [{ label: 'Values', data: listVals }];
+  }
+  return result;
+}
+
+// ── Chart click handler: switch chart types interactively ──
+CLICK_HANDLERS['switch-chart'] = function(el) {
+  var chartType = el.getAttribute('data-chart');
+  if (!chartType) return;
+  var wrapper = el.closest('.can-chart-w');
+  if (!wrapper) return;
+  var canvasEl = wrapper.closest('[data-raw]') || wrapper.closest('.response-content');
+  if (!canvasEl) return;
+  var raw = canvasEl.dataset?.raw || canvasEl.textContent || '';
+  if (!raw) return;
+  var data = __parseChartData(raw);
+  data.type = chartType;
+  var chartCanvas = null;
+  for (var i = 0; i < __canvasTypes.length; i++) {
+    if (__canvasTypes[i].name === 'chart') { chartCanvas = __canvasTypes[i]; break; }
+  }
+  if (chartCanvas) {
+    var result = chartCanvas.detect({ tableCount: raw.indexOf('|') !== -1 ? 1 : 0, wordCount: raw.split(' ').length, raw: raw }, raw);
+    if (result) {
+      wrapper.outerHTML = chartCanvas.render(result.data, raw);
+    }
+  }
+};
+
+
+// ── Mind Map Canvas: hierarchical tree diagrams ──
+__registerCanvas({
+  name: 'mindmap',
+  priority: 30,
+  detect: function(a) {
+    var raw = a.raw || '';
+    var hasDepth = /[\t ]{2,}[-*]|^[\t ]*[-*].*\n[\t ]+[-*]/.test(raw);
+    var hasTreeWords = /(mind.?map|tree|hierarch|branch|node|parent|child|sub.?topic|root|leaf|diagram|flow)/i.test(raw);
+    var hasNestedLists = (raw.match(/^[\t ]*[-*].*$/gm) || []).length >= 4;
+    var hasOutline = /^[\t ]*\d+\./.test(raw) && /^[\t ]+\d+\./.test(raw);
+    if (hasDepth || hasTreeWords || hasNestedLists || hasOutline) {
+      var score = 50 + (hasDepth ? 20 : 0) + (hasTreeWords ? 15 : 0) + (hasNestedLists ? 10 : 0);
+      score = Math.min(score, 95);
+      var data = __parseMindMap(a.raw || '');
+      return { score: score, data: data };
+    }
+    return null;
+  },
+  render: function(d, content) {
+    if (!d || !d.nodes || !d.nodes.length) return parseMarkdown(content);
+    var nodes = d.nodes;
+    var colors = ['#6366f1','#8b5cf6','#ec4899','#f43f5e','#f97316','#eab308','#22c55e','#14b8a6','#06b6d4','#3b82f6'];
+    var colorIdx = 0;
+    function renderBranch(node, depth) {
+      depth = depth || 0;
+      var padLeft = 20 + depth * 28;
+      var color = colors[(depth) % colors.length];
+      var dotSize = Math.max(8, 16 - depth * 1.5);
+      var label = escapeHtml(node.label || node.name || '');
+      var childrenHtml = '';
+      if (node.children && node.children.length) {
+        childrenHtml = '<div class="can-mm-children">' + node.children.map(function(c) { return renderBranch(c, depth + 1); }).join('') + '</div>';
+      }
+      return '<div class="can-mm-node" style="padding-left:' + padLeft + 'px">'
+        + '<div class="can-mm-row">'
+        + '<span class="can-mm-dot" style="background:' + color + ';width:' + dotSize + 'px;height:' + dotSize + 'px"></span>'
+        + '<span class="can-mm-label">' + label + '</span>'
+        + (node.desc ? '<span class="can-mm-desc">' + escapeHtml(node.desc) + '</span>' : '')
+        + (node.value ? '<span class="can-mm-value">' + escapeHtml(String(node.value)) + '</span>' : '')
+        + '</div>'
+        + childrenHtml + '</div>';
+    }
+    var rootNodes = nodes.filter(function(n) { return !n.parent; });
+    if (!rootNodes.length) rootNodes = [nodes[0]];
+    var html = '<div class="can-mm-w">';
+    for (var i = 0; i < rootNodes.length; i++) {
+      html += '<div class="can-mm-tree">' + renderBranch(rootNodes[i], 0) + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+});
+
+function __parseMindMap(raw) {
+  if (!raw) return { nodes: [] };
+  var lines = raw.split('\n');
+  var root = { label: 'Root', children: [] };
+  var stack = [{ node: root, indent: -1 }];
+  // Try to detect first heading as root label
+  var firstHeading = raw.match(/^#{1,3}\s+(.+)/m);
+  if (firstHeading) {
+    root.label = firstHeading[1].trim();
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var trimmed = line.trim();
+    if (!trimmed || /^[-]{3,}$/.test(trimmed) || /^[|]/.test(trimmed)) continue;
+    // Match list items: - item, * item, 1. item
+    var match = trimmed.match(/^[-*]\s+(.+)/) || trimmed.match(/^\d+\.\s+(.+)/);
+    if (!match) continue;
+    var text = match[1].trim();
+    // Compute indent level based on leading whitespace
+    var indent = line.length - line.replace(/^\s+/, '').length;
+    if (indent === 0 && (trimmed.startsWith('-') || trimmed.startsWith('*'))) {
+      indent = 2;
+    }
+    // Parse optional description with :: or — separator
+    var label = text;
+    var desc = '';
+    var sep = text.match(/\s*(::|—|:|―)\s*/);
+    if (sep) {
+      label = text.slice(0, sep.index).trim();
+      desc = text.slice(sep.index + sep[0].length).trim();
+    }
+    // Pop stack to correct level
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) {
+      stack.pop();
+    }
+    var parent = stack[stack.length - 1].node;
+    var child = { label: label, children: [], desc: desc };
+    if (!parent.children) parent.children = [];
+    parent.children.push(child);
+    stack.push({ node: child, indent: indent });
+  }
+  // Return nested tree: root's children are the top-level branches
+  return { nodes: root.children || [], rootLabel: root.label };
+}
+
+
 // ── Smart Fallback: enhances ALL content ──
 function __smartFallback(content, data) {
   var html = parseMarkdown(content);
@@ -3006,7 +3356,7 @@ function _tryCanvasRender() {
     badge.className = 'can-badge';
     var labels = { document: '📑 Document', table: '📊 Table', code: '💻 Code', travel: '✈️ Travel',
       comparison: '⚖️ Comparison', glossary: '📖 Glossary', timeline: '📅 Timeline',
-      tasks: '✅ Tasks', architecture: '🏗️ Architecture', faq: '❓ FAQ', changelog: '📋 Changelog', recipe: '👨‍🍳 Recipe' };
+      tasks: '✅ Tasks', architecture: '🏗️ Architecture', faq: '❓ FAQ', changelog: '📋 Changelog', recipe: '👨‍🍳 Recipe', chart: '📈 Chart', mindmap: '🧠 Mind Map' };
     badge.textContent = labels[canvas.name] || '🎨 Canvas';
     el.parentElement?.insertBefore(badge, el);
   }
@@ -3077,6 +3427,26 @@ _canCSS.textContent = ''
   + '.can-rec-h{color:var(--accent)}'
   + '.can-rec-ing{list-style:none;font-weight:500;color:var(--text-secondary)}'
   + '.can-rec-st{list-style:none;font-weight:500;color:var(--text-secondary)}'
+  // Chart
+  + '.can-chart-w{background:var(--bg-canvas);border-radius:10px;border:1px solid var(--border-main);padding:16px;margin:8px 0}'
+  + '.can-chart-ctrls{display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap}'
+  + '.can-chart-btn{padding:4px 14px;border-radius:999px;border:1px solid var(--border-main);background:transparent;color:var(--text-tertiary);font-size:11px;font-weight:500;cursor:pointer;transition:all .12s}'
+  + '.can-chart-btn:hover{background:var(--fill-hover);color:var(--text-primary)}'
+  + '.can-chart-btn.active{background:var(--accent-dim);color:var(--accent);border-color:var(--border-accent)}'
+  + '.can-chart-svg-wrap{overflow-x:auto}'
+  + '.can-chart-svg{width:100%;height:auto;min-height:280px;display:block}'
+  + '.can-chart-bar{cursor:pointer;transition:opacity .15s}'
+  + '.can-chart-bar:hover,.can-chart-seg:hover{opacity:1!important}'
+  + '.can-chart-point{cursor:pointer;transition:r .15s}'
+  + '.can-chart-point:hover{r:6}'
+  + '.can-chart-seg{cursor:pointer;transition:opacity .15s;stroke:#fff;stroke-width:1}'
+  + '.can-chart-axis-label{font-size:11px;fill:var(--text-muted);font-family:var(--font-sans)}'
+  + '.can-chart-legend{display:flex;flex-direction:column;gap:4px;margin-top:10px;padding:8px 12px;background:var(--bg-input);border-radius:8px;border:1px solid var(--border-light)}'
+  + '.can-chart-legend-h{flex-direction:row;flex-wrap:wrap;gap:8px}'
+  + '.can-chart-legend-i{font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:6px}'
+  + '.can-chart-legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block}'
+  + '.can-chart-legend-pct{color:var(--text-muted);font-size:11px}'
+
   // Fallback
   + '.can-fb-w{padding:2px 0}'
   + '.can-fb-h{cursor:pointer;color:var(--text-primary)}'

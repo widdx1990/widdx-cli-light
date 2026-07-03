@@ -219,7 +219,7 @@ class UnifiedIntelligenceLayer:
                         # Record disagreement for trust tracking
                         _record_engine_disagreement(classification, adapted)
             except Exception as e:
-                logger.debug("IntelligenceEngine unavailable: %s", e)
+                logger.warning("IntelligenceEngine unavailable: %s", e)
 
         # Step 1.5: Validate — check classification confidence
         # Correction boundary: if fallback + very low confidence → force CHAT
@@ -237,8 +237,10 @@ class UnifiedIntelligenceLayer:
                 from core.uil.contract import TaskType as _TT
                 classification.task_type = _TT.CHAT
                 classification.confidence = 0.3
-            except Exception:
-                pass
+            except ImportError:
+                logger.debug("Could not import TaskType for confidence correction")
+            except Exception as e:
+                logger.debug("TaskType assignment failed: %s", e)
 
         if classification.confidence < 0.4:
             logger.warning(
@@ -403,6 +405,7 @@ class UnifiedIntelligenceLayer:
                             )
                             lang = fence_match.group(1) if fence_match else "python"
                         except Exception:
+                            logger.debug("Fence language detection failed, defaulting to python")
                             lang = "python"
                         run_result = runner.run_python(code) if lang == "python" else runner.run_bash(code)
                         if not run_result.success:
@@ -577,8 +580,8 @@ class UnifiedIntelligenceLayer:
                 improver.record_error(
                     "verify_pass", "Verification passed all checks", "fixed"
                 )
-        except Exception:
-            pass
+        except Exception as se_e:
+            logger.warning("SelfImprove record failed: %s", se_e)
 
         # Step 5: Feedback — build ExecutionResult + populate telemetry
         steps_count = len(plan.steps) if plan and plan.steps else 0
@@ -686,8 +689,8 @@ class UnifiedIntelligenceLayer:
                     decision=f"Tools: {', '.join(str(t) for t in result.tools_used[:5])}",
                     consequences=getattr(raw, 'summary', '')[:200] if hasattr(raw, 'summary') else '',
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("ADR recording failed: %s", e)
 
         # KG → Memory
         try:
@@ -702,8 +705,8 @@ class UnifiedIntelligenceLayer:
                     metadata={"type": "reference", "source": "knowledge_graph"},
                     confidence=0.9,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("KG → Memory failed: %s", e)
 
         # DocSync
         try:
@@ -712,8 +715,8 @@ class UnifiedIntelligenceLayer:
             drifts = ds.detect_drift()
             if drifts:
                 ds.auto_update(drifts)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("DocSync failed: %s", e)
 
         # ── World Model: learn WHY, not just WHAT ──
         try:
@@ -727,8 +730,8 @@ class UnifiedIntelligenceLayer:
                 outcome="success" if success else "failure",
                 why=f"Tools used: {result.tools_used}. {summary[:200]}" if success else f"Failed: {summary[:200]}",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("World Model learn failed: %s", e)
 
         # ── Learning: extract patterns + promote ──
         try:
@@ -740,8 +743,8 @@ class UnifiedIntelligenceLayer:
                 success=getattr(result, "success", True),
             )
             pe.local_lib.promote_all_ready()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Pattern extraction failed: %s", e)
 
         # Step 6: Knowledge — record execution outcome
         self.knowledge.record(
@@ -834,5 +837,5 @@ def _record_engine_disagreement(old_classification, new_classification):
             engine_correct=False,
             old_correct=True,  # assume analyzer was correct (conservative)
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Trust tracker unavailable: %s", e)

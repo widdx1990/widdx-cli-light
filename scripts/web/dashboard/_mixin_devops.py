@@ -200,13 +200,100 @@ class DevOpsMixin:
             import subprocess
             status = subprocess.run(["git", "status", "--short"], capture_output=True, text=True, timeout=5)
             log = subprocess.run(["git", "log", "--oneline", "-5"], capture_output=True, text=True, timeout=5)
+            branch = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True, timeout=5)
+            ahead = subprocess.run(["git", "rev-list", "--count", "@{u}...HEAD"], capture_output=True, text=True, timeout=5)
             return {
                 "changes": status.stdout.strip(),
                 "recent_commits": log.stdout.strip(),
                 "dirty": bool(status.stdout.strip()),
+                "branch": branch.stdout.strip(),
+                "ahead": ahead.stdout.strip() or "0",
             }
         except Exception:
-            return {"changes": "", "recent_commits": "", "dirty": False}
+            return {"changes": "", "recent_commits": "", "dirty": False, "branch": "", "ahead": "0"}
+
+    def git_commit(self, message: str, files: list[str] | None = None) -> dict:
+        """Stage and commit changes."""
+        try:
+            import subprocess
+            # Stage all or specific files
+            if files:
+                for f in files:
+                    subprocess.run(["git", "add", f], capture_output=True, text=True, timeout=10)
+            else:
+                subprocess.run(["git", "add", "-A"], capture_output=True, text=True, timeout=10)
+            # Commit
+            result = subprocess.run(
+                ["git", "commit", "-m", message or "Auto-commit from WIDDX Nexus"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                # Extract hash from output
+                import re
+                m = re.search(r"\[([a-f0-9]{7,})\]", result.stdout)
+                return {"status": "committed", "hash": m.group(1) if m else "unknown", "message": result.stdout.strip()}
+            return {"error": result.stderr.strip() or "Nothing to commit"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def git_push(self) -> dict:
+        """Push commits to remote."""
+        try:
+            import subprocess
+            result = subprocess.run(["git", "push"], capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                return {"status": "pushed", "message": result.stdout.strip()}
+            return {"error": result.stderr.strip()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def git_pull(self) -> dict:
+        """Pull latest from remote."""
+        try:
+            import subprocess
+            result = subprocess.run(["git", "pull"], capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                return {"status": "pulled", "message": result.stdout.strip()}
+            return {"error": result.stderr.strip()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def git_branch_create(self, name: str, from_branch: str | None = None) -> dict:
+        """Create a new branch."""
+        try:
+            import subprocess
+            if from_branch and from_branch.strip():
+                subprocess.run(["git", "checkout", from_branch], capture_output=True, text=True, timeout=10)
+            result = subprocess.run(["git", "branch", name], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return {"status": "created", "name": name}
+            return {"error": result.stderr.strip()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def git_checkout(self, branch: str) -> dict:
+        """Switch to a branch."""
+        try:
+            import subprocess
+            result = subprocess.run(["git", "checkout", branch], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return {"status": "switched", "branch": branch}
+            return {"error": result.stderr.strip()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def git_diff(self, file_path: str) -> dict:
+        """Get diff for a file."""
+        try:
+            import subprocess
+            result = subprocess.run(["git", "diff", "--", file_path], capture_output=True, text=True, timeout=10)
+            staged = subprocess.run(["git", "diff", "--cached", "--", file_path], capture_output=True, text=True, timeout=10)
+            diff = result.stdout.strip()
+            if not diff:
+                diff = staged.stdout.strip()
+            return {"diff": diff}
+        except Exception as e:
+            return {"error": str(e)}
 
     # ════════════════════════════════════════════════════════
     # NEW: Token Budget

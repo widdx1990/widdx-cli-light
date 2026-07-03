@@ -68,14 +68,14 @@ class OpenAICompatibleProvider(Provider):
                         delta = choices[0].get("delta", {})
                         if not delta:
                             continue
-                            if delta.get("content"):
-                                clean = _clean_surrogates(delta["content"])
-                                content_chunks.append(clean)
-                                yield {"type": "content", "data": clean}
-                            if delta.get("reasoning_content"):
-                                clean = _clean_surrogates(delta["reasoning_content"])
-                                reasoning_chunks.append(clean)
-                                yield {"type": "reasoning", "data": clean}
+                        if delta.get("content"):
+                            clean = _clean_surrogates(delta["content"])
+                            content_chunks.append(clean)
+                            yield {"type": "content", "data": clean}
+                        if delta.get("reasoning_content"):
+                            clean = _clean_surrogates(delta["reasoning_content"])
+                            reasoning_chunks.append(clean)
+                            yield {"type": "reasoning", "data": clean}
                         tc = delta.get("tool_calls")
                         if tc:
                             for t in tc:

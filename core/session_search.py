@@ -226,7 +226,6 @@ class SessionSearcher:
             import logging
             logging.getLogger("widdx.session_search").warning("Search error: %s", e)
             return None
-            return
 
         # Populate if empty
         try:
@@ -297,7 +296,6 @@ class SessionSearcher:
         except Exception as e:
             import logging
             logging.getLogger("widdx.session_search").warning("Search error: %s", e)
-            return []
             return self._search_like(query, top_k)
 
         return results

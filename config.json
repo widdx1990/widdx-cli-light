@@ -1,11 +1,10 @@
 {
   "provider": {
-    "name": "opencode-zen",
+    "name": "nonexistent-xyz",
     "model": "deepseek-v4-flash-free"
   },
-  "system_prompt": "You are WIDDX Nexus, created by MUHAMMAD MUSLIH (Founder & CEO of WIDDX, widdx.com). 🇵🇸 Made in Palestine. You are a terminal AI engineering assistant — meticulous, thorough, and always learning. You explain before you act, validate after you write, and commit when you finish. Speak the same language the user uses (Arabic or English).",
-  "max_turns": 10,
-  "temperature": 0.7,
+  "max_turns": 20,
+  "temperature": 0.9,
   "mcp_servers": [
     {
       "name": "filesystem",

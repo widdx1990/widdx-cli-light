@@ -50,11 +50,8 @@ def validate_config(cfg: dict) -> dict:
         issues.append("'provider.base_url' must be a non-empty string — removing")
         del provider["base_url"]
 
-    # ── system_prompt ──────────────────────────────────────
-    sp = validated.get("system_prompt", "")
-    if not isinstance(sp, str):
-        issues.append("'system_prompt' must be a string — ignoring")
-        validated["system_prompt"] = ""
+    # ── system_prompt is hardcoded in core/constants.py — ignored from config
+    validated.pop("system_prompt", None)
 
     # ── max_turns ──────────────────────────────────────────
     mt = validated.get("max_turns", 10)

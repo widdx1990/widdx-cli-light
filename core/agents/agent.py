@@ -6,10 +6,13 @@ that create/modify known source files.
 """
 
 import json
+import logging
 import uuid
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from rich.panel import Panel
 from rich.text import Text
@@ -164,8 +167,8 @@ class AutonomousAgent:
         if self._on_event:
             try:
                 self._on_event(self._clean_event(event))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to emit streaming event: %s", e)
 
     def _call_provider_with_retry(self, messages, temperature, ts=None):
         """Call provider with full reliability: failover + retry + checkpoint.
@@ -206,10 +209,10 @@ class AutonomousAgent:
                             "priority": len(rp._pool._providers) + 1,
                             "name": fb_provider.name,
                         })
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as e:
+                    logger.warning("Failed to create fallback provider (inner): %s", e)
+        except Exception as e:
+            logger.warning("Failed to create fallback provider (outer): %s", e)
 
         last_error = None
         for attempt in range(rp._max_retries):
@@ -249,7 +252,8 @@ class AutonomousAgent:
                                 content, tool_calls = chunk
                                 break
                         content = "".join(content_parts)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Fallback stream failed, using chat(): %s", e)
                         content, tool_calls = prov.chat(messages, self.tool_defs, temperature)
                 else:
                     content, tool_calls = prov.chat(messages, self.tool_defs, temperature)
@@ -372,8 +376,8 @@ class AutonomousAgent:
                 # ESC: provider succeeded → signal recovery
                 try:
                     esc.signal_recovery()
-                except Exception:
-                    pass
+                except Exception as esc_e:
+                    logger.warning("ESC signal_recovery failed: %s", esc_e)
             except Exception as e:
                 print_system_msg(f"❌ Agent halted: {e}")
                 self._emit({"type": "error", "data": f"All providers exhausted: {e}"})
@@ -382,8 +386,8 @@ class AutonomousAgent:
                     esc.signal_error(str(e))
                     action = esc.get_action()
                     self._emit({"type": "text", "data": f"\n[🎛 ESC: {action['layer']} — {action['action']} (escalation #{action['escalation']})]\n"})
-                except Exception:
-                    pass
+                except Exception as esc_e:
+                    logger.warning("ESC error action failed: %s", esc_e)
                 # Save final state for resume
                 if ts:
                     ts.set_messages(messages)
@@ -402,8 +406,8 @@ class AutonomousAgent:
                     esc.signal_stuck(["Loop detected: repetitive responses"])
                     action = esc.get_action()
                     self._emit({"type": "text", "data": f"\n[🎛 ESC: {action['layer']} — {action['action']}]\n"})
-                except Exception:
-                    pass
+                except Exception as esc_stuck_e:
+                    logger.warning("ESC signal_stuck failed: %s", esc_stuck_e)
                 ts.set_messages(messages)
                 ts.set_agent_steps([s.to_dict() for s in self.steps])
                 break
@@ -428,8 +432,8 @@ class AutonomousAgent:
                             self._emit({"type": "text", "data": f"\n[⚠️ {check['warning']}]\n"})
                             if check["suggestion"]:
                                 self._emit({"type": "text", "data": f"\n[💡 {check['suggestion']}]\n"})
-                    except Exception:
-                        pass
+                    except Exception as ei_e:
+                        logger.warning("EI check_before_action failed: %s", ei_e)
 
                     # Emit tool start event for live Web UI
                     self._emit({"type": "tool", "data": {"name": tc.name, "args": tc.args}})
@@ -606,8 +610,8 @@ class AutonomousAgent:
                 self._emit({"type": "text", "data": f"\n[📊 {report.success_pattern[:120]}]\n"})
             if report.success_reason:
                 self._emit({"type": "text", "data": f"\n[💡 {report.success_reason[:200]}]\n"})
-        except Exception:
-            pass
+        except Exception as ei_e:
+            logger.warning("EI analyze_success failed: %s", ei_e)
         ts.clear()
         return self.steps, summary
 
@@ -712,8 +716,8 @@ class AutonomousAgent:
                 ei = get_execution_intelligence()
                 ei.evaluate_step(len(self.steps) + 1, result, tc.name,
                                  tc.args if hasattr(tc, 'args') else {})
-            except Exception:
-                pass
+            except Exception as ei_e:
+                logger.warning("EI evaluate_step failed: %s", ei_e)
 
             normalized = (result or "").strip()
             if not normalized.startswith(("\ud83d\udeab", "❌", "⛔", "Error", "Failed")):
@@ -794,8 +798,8 @@ class AutonomousAgent:
                     if r.returncode != 0:
                         err = (r.stderr or r.stdout or "")[:600]
                         errors.append(f"JS SyntaxError in {jsf.name}: {err}")
-                except Exception:
-                    pass
+                except Exception as js_e:
+                    logger.warning("JS syntax check failed for %s: %s", jsf, js_e)
 
         if not errors:
             return None

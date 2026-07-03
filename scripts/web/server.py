@@ -76,7 +76,7 @@ class SandboxPayload(BaseModel):
 
 class SettingsPayload(BaseModel):
     provider: dict = Field(default_factory=dict)
-    system_prompt: Opt[str] = Field(default=None, max_length=50000)
+    # system_prompt: hardcoded in core/constants.py — not user-editable
     temperature: Opt[float] = Field(default=None, ge=0, le=2)
     max_turns: Opt[int] = Field(default=None, ge=1, le=100)
     cli_theme: Opt[str] = Field(default=None, pattern=r'^(dark|light)$')
@@ -94,7 +94,7 @@ app = FastAPI(title="WIDDX Nexus", version="3.2.0")
 
 # ── CORS + Origin validation ───────────────────────────────
 # ISS-009: CSRF / Origin validation — only allow same-origin requests
-ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8080", "http://127.0.0.1:8080"]
+ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8099", "http://127.0.0.1:8099"]
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -386,6 +386,32 @@ async def sandbox_file_create(payload: FileCreatePayload):
         return {"error": str(e)}
 
 
+@app.post("/api/sandbox/file/delete")
+async def sandbox_file_delete_post(payload: FileCreatePayload):
+    """Alias: POST endpoint matching the frontend call.
+    Delegates to the existing DELETE /api/sandbox/file logic."""
+    try:
+        path = payload.path
+        if not path:
+            return {"error": "Path is required"}
+        file_path = Path(path).resolve()
+        project_root = Path.cwd().resolve()
+        fp_str = str(file_path)
+        pr_str = str(project_root)
+        if fp_str != pr_str and not fp_str.startswith(pr_str + "/"):
+            return {"error": "Access denied"}
+        if file_path.is_file():
+            file_path.unlink()
+            return {"status": "ok", "deleted": str(file_path)}
+        elif file_path.is_dir():
+            import shutil
+            shutil.rmtree(file_path)
+            return {"status": "ok", "deleted": str(file_path)}
+        return {"error": "Path not found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/api/sandbox/file/rename")
 async def sandbox_file_rename(payload: FileRenamePayload):
     """Rename a file or directory."""
@@ -517,6 +543,32 @@ async def api_cron_create(request: Request) -> dict:
 
 @app.delete("/api/dashboard/cron/{job_id}")
 async def api_cron_delete(job_id: str) -> dict:
+    return get_dashboard().cron_delete(job_id)
+
+
+@app.post("/api/dashboard/cron/{job_id}/toggle")
+async def api_cron_toggle(job_id: str) -> dict:
+    return get_dashboard().cron_toggle(job_id)
+
+
+# ── Frontend-facing Cron aliases (nexus.js calls /api/cron/*) ──
+
+@app.post("/api/cron")
+async def api_cron_create_frontend(request: Request):
+    data = await request.json()
+    return get_dashboard().cron_create(
+        schedule=str(data.get("interval", 60)),
+        prompt=data.get("command", ""),
+    )
+
+
+@app.post("/api/cron/{job_id}/toggle")
+async def api_cron_toggle_frontend(job_id: str) -> dict:
+    return get_dashboard().cron_toggle(job_id)
+
+
+@app.delete("/api/cron/{job_id}")
+async def api_cron_delete_frontend(job_id: str) -> dict:
     return get_dashboard().cron_delete(job_id)
 
 
@@ -801,6 +853,45 @@ async def api_git_branches():
 @app.post("/api/git/undo")
 async def api_git_undo():
     return get_dashboard().git_undo()
+
+
+@app.post("/api/git/commit")
+async def api_git_commit(request: Request):
+    data = await request.json()
+    return get_dashboard().git_commit(
+        message=data.get("message", "Auto-commit from WIDDX Nexus"),
+        files=data.get("files"),
+    )
+
+
+@app.post("/api/git/push")
+async def api_git_push():
+    return get_dashboard().git_push()
+
+
+@app.post("/api/git/pull")
+async def api_git_pull():
+    return get_dashboard().git_pull()
+
+
+@app.post("/api/git/branch")
+async def api_git_branch(request: Request):
+    data = await request.json()
+    return get_dashboard().git_branch_create(
+        name=data.get("name", ""),
+        from_branch=data.get("from"),
+    )
+
+
+@app.post("/api/git/checkout")
+async def api_git_checkout(request: Request):
+    data = await request.json()
+    return get_dashboard().git_checkout(branch=data.get("branch", ""))
+
+
+@app.get("/api/git/diff")
+async def api_git_diff(file: str = ""):
+    return get_dashboard().git_diff(file)
 
 
 # ── NEW: Token Budget ─────────────────────────────────────

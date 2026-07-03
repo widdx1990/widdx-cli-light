@@ -36,6 +36,24 @@ class SchedulerMixin:
         except Exception as e:
             return {"error": str(e)}
 
+
+    def cron_toggle(self, job_id: str) -> dict:
+        """Toggle a cron job on/off."""
+        try:
+            from core.cron.store import JobStore
+            from core.cron.job import JobStatus
+            store = JobStore()
+            jobs = store.list_jobs()  # type: ignore[attr-defined]
+            for j in jobs:
+                if j.get("id") == job_id:
+                    current = j.get("status", "active")
+                    new_status = JobStatus.PAUSED if current == "active" else JobStatus.ACTIVE
+                    store.update_status(job_id, new_status)
+                    return {"status": "toggled", "new_status": new_status.value}
+            return {"error": "Job not found"}
+        except Exception as e:
+            return {"error": str(e)}
+
     # ── Background Tasks ──
 
 

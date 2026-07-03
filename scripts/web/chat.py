@@ -404,12 +404,13 @@ class ChatHandler:
                 args = tc if isinstance(tc, dict) else {}
                 yield {"type": "tool", "data": {"name": name, "args": args}}
 
-            # Yield final cleaned text if no streaming text was emitted
-            if not had_text_events[0]:
-                content = getattr(result, "summary", "") or ""
-                clean = self._clean_content(content)
-                if clean:
-                    self._save_message("assistant", clean)
+            # Always save the assistant message, even if streaming text was emitted
+            content = getattr(result, "summary", "") or ""
+            clean = self._clean_content(content)
+            if clean:
+                self._save_message("assistant", clean)
+                # Only yield text if no streaming events occurred
+                if not had_text_events[0]:
                     yield {"type": "text", "data": clean}
         yield {"type": "done", "data": None}
 

@@ -38,9 +38,7 @@ async function showModelSetupView(area) {
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-thermometer-half"></i> Temperature: <span id="ms-temp-value" class="text-semibold" style="color:var(--accent)">' + (settings.temperature || 0.7) + '</span></div>'
     +   '<input type="range" min="0" max="2" step="0.1" value="' + (settings.temperature || 0.7) + '" class="w-full" style="accent-color:var(--accent)" oninput="document.getElementById(\'ms-temp-value\').textContent=this.value">'
     + '</div>'
-    + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-quote-left"></i> System Prompt</div>'
-    +   '<textarea id="ms-prompt" class="settings-input resize-v line-height-1_5 text-mono" style="min-height:80px;padding:10px">' + escapeHtml(settings.system_prompt || '') + '</textarea>'
-    + '</div>'
+    + ''
     + '<div class="settings-card"><div class="settings-card-label"><i class="fa-solid fa-arrow-right-arrow-left"></i> Max Turns <span class="text-muted" style="font-weight:400">(conversation limit)</span></div>'
     +   '<input id="ms-max-turns" type="number" min="1" max="100" class="settings-input" value="' + (settings.max_turns || 10) + '">'
     + '</div>'
@@ -407,7 +405,7 @@ window.saveGeneralSettings = function() {
   if (status) status.textContent = 'Saving...';
   var data = {
     provider: { name: document.getElementById('ms-provider')?.value || '' },
-    system_prompt: document.getElementById('ms-prompt')?.value || '',
+    // system_prompt: hardcoded in core/constants.py — not user-editable
     temperature: parseFloat(document.getElementById('ms-temp-value')?.textContent || '0.7'),
     max_turns: parseInt(document.getElementById('ms-max-turns')?.value || '10', 10),
     cli_theme: document.getElementById('ms-theme')?.value || 'dark',

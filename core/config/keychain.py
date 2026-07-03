@@ -70,6 +70,8 @@ def _save_persisted_keys(keys: dict[str, str]) -> None:
     obfuscated = {k: _xor_obfuscate(v) for k, v in keys.items() if v}
     with open(kf, "w", encoding="utf-8") as f:
         json.dump(obfuscated, f)
+    # Restrict file permissions — owner read/write only
+    kf.chmod(0o600)
 
 
 def _get_providers() -> dict[str, str]:

@@ -220,9 +220,9 @@ async def chat(req: ChatRequest, _auth=Depends(verify_api_key), _rl=Depends(rate
 
     msgs = list(state.messages)
     if not any(m.get("role") == "system" for m in msgs):
-        sp = state.cfg.get("system_prompt", "")
+        from core.constants import SYSTEM_PROMPT
         sn = ", ".join(s.name for s in skill_manager.list_all()) or "none"
-        msgs.insert(0, {"role": "system", "content": sp.replace("{skills_list}", sn)})
+        msgs.insert(0, {"role": "system", "content": SYSTEM_PROMPT.replace("{skills_list}", sn)})
 
     try:
         ctx = state.scanner.build_context_block()

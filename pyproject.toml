@@ -49,6 +49,7 @@ gguf = ["llama-cpp-python>=0.2.0"]
 all = ["widdx-nexus[dev,gguf,voice,gateway]"]
 voice = ["edge-tts"]
 gateway = ["python-telegram-bot", "discord.py"]
+vision = ["torch", "transformers"]
 
 [project.scripts]
 widdx = "core.cli:run"
