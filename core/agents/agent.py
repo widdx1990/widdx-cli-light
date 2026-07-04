@@ -444,7 +444,6 @@ class AutonomousAgent:
                 print_system_msg(f"🔄 ECP: switching model {current_model_name} → {target_model}: {decision.reason}")
                 self._emit({"type": "ecp", "data": {"action": "SWITCH_MODEL", "target": target_model, "reason": decision.reason}})
                 try:
-                    from core.config.settings import load as _load_cfg
                     from core.providers.factory import create_provider as _create_provider
                     new_cfg = dict(self.cfg)
                     new_cfg["provider"] = {"model": target_model}
@@ -615,7 +614,6 @@ class AutonomousAgent:
                         target = after_decision.model or "deepseek-v4-pro"
                         print_system_msg(f"🔄 ECP mid-step: switching model → {target}: {after_decision.reason}")
                         try:
-                            from core.config.settings import load as _load_cfg
                             from core.providers.factory import create_provider as _create_provider
                             new_cfg = dict(self.cfg)
                             new_cfg["provider"] = {"model": target}

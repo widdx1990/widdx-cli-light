@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from .goal_drift import GoalDriftDetector, DriftSnapshot, get_goal_drift_detector
-from .trajectory import TrajectoryDivergence, DivergenceReport, get_trajectory_divergence
+from .goal_drift import DriftSnapshot, get_goal_drift_detector
+from .trajectory import DivergenceReport, get_trajectory_divergence
 from .memory_contamination import (
-    MemoryContaminationTracker, ContaminationReport,
+    ContaminationReport,
     get_memory_contamination_tracker,
 )
 

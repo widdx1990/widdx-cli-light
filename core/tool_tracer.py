@@ -141,17 +141,17 @@ class ToolTracer:
         sep = "═" * 60
 
         print(f"\n  {sep}")
-        print(f"           TOOLS EXECUTED")
+        print("           TOOLS EXECUTED")
         print(f"  {sep}")
 
         if total == 0:
-            print(f"  No tools were executed.")
-            print(f"  The LLM did not call any tools during this session.")
-            print(f"  Possible causes:")
-            print(f"    - The provider does not support tool calling")
-            print(f"    - The task was classified as CHAT (confidence < threshold)")
-            print(f"    - The system prompt did not include tool definitions")
-            print(f"    - The LLM chose to respond in text instead of using tools")
+            print("  No tools were executed.")
+            print("  The LLM did not call any tools during this session.")
+            print("  Possible causes:")
+            print("    - The provider does not support tool calling")
+            print("    - The task was classified as CHAT (confidence < threshold)")
+            print("    - The system prompt did not include tool definitions")
+            print("    - The LLM chose to respond in text instead of using tools")
             print(f"  {sep}")
             return
 
@@ -171,12 +171,12 @@ class ToolTracer:
         for trace in self.traces:
             files.extend(trace.files_created)
         if files:
-            print(f"\n  Files created:")
+            print("\n  Files created:")
             for f in files:
                 print(f"    ✓ {f}")
 
         if any(t.stderr for t in self.traces if t.exit_code != 0):
-            print(f"\n  Errors:")
+            print("\n  Errors:")
             for t in self.traces:
                 if t.exit_code != 0 and t.stderr:
                     print(f"    ✗ {t.name}: {t.stderr[:150]}")

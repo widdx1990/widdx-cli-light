@@ -7,7 +7,6 @@ a stabilized decision. No evaluation logic, no signal parsing.
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

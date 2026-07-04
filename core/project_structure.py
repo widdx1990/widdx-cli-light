@@ -10,9 +10,8 @@ warnings.warn(
     stacklevel=2,
 )
 
-from pathlib import Path
 from typing import Optional
-from core.project.scanner import ProjectScanner, ProjectCard
+from core.project.scanner import ProjectScanner
 
 
 class FileNode:

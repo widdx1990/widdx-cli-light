@@ -7,7 +7,7 @@ tool argument inflation, and response template degradation.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger("widdx.semantic.memory")
 

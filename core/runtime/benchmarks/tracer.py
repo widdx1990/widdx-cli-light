@@ -11,12 +11,11 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..control.types import ControlAction, ControlActionType, ExecutionSignal
+    from ..control.types import ControlAction, ExecutionSignal
 
-from ..control.types import ControlActionType
 
 logger = logging.getLogger("widdx.benchmarks.tracer")
 

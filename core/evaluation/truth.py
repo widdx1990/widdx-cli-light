@@ -18,12 +18,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import random
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("widdx.truth")
 
@@ -354,7 +352,8 @@ class ExperimentalTruthLayer:
             return "unknown"
 
     def _get_environment_hash(self) -> str:
-        import platform, sys
+        import platform
+        import sys
         env_str = f"{sys.version}|{platform.system()}|{platform.release()}"
         return hashlib.sha256(env_str.encode()).hexdigest()[:12]
 

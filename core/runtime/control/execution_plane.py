@@ -20,7 +20,6 @@ from .types import (
 )
 from .evaluation import evaluate_signals
 from .policy import apply_stabilizers, MAX_TOTAL_CONTROL_ACTIONS, set_task_scope as _set_policy_scope
-from .adaptive_policy import get_adaptive_policy
 import sys
 
 logger = logging.getLogger("widdx.ecp")

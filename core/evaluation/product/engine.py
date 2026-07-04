@@ -12,14 +12,12 @@ Closes the gap between "system executed correctly" and "product works correctly.
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("widdx.product")
 
@@ -90,7 +88,7 @@ class GameVerifier:
                 result.defects.append(ProductDefect(
                     ProductSignalType.MISSING_FEATURE, "high",
                     str(p), f"Game should have {js_file}", f"Missing {js_file}",
-                    f"Missing game logic file",
+                    "Missing game logic file",
                     auto_fix_hint=f"Create {js_file} with game logic",
                 ))
                 result.passed = False

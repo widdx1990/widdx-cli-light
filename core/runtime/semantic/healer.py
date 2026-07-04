@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import logging
 
-from .monitor import SemanticStabilityMonitor, get_semantic_monitor
-from .state_snapshot import StateSnapshotManager, get_snapshot_manager
-from .rollback import SemanticRollback, get_semantic_rollback
-from .invariance import CognitiveInvariance, get_cognitive_invariance
+from .monitor import get_semantic_monitor
+from .state_snapshot import get_snapshot_manager
+from .rollback import get_semantic_rollback
+from .invariance import get_cognitive_invariance
 
 logger = logging.getLogger("widdx.semantic.healer")
 

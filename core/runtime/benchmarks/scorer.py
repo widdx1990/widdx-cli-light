@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .tracer import DecisionTracer, DecisionTrace
+    from .tracer import DecisionTrace
 
 from ..control.types import ControlActionType
 

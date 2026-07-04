@@ -4,10 +4,8 @@ Separated from execution logic. This module only calls register().
 Importing this module populates the global registry.
 """
 
-from pathlib import Path
-import platform
 
-from .registry import register, TOOL_DEFINITIONS
+from .registry import register
 from .handlers.file_ops import (
     _read, _write, _edit, _glob, _grep, _list_files,
 )
