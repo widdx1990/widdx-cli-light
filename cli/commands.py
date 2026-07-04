@@ -58,6 +58,16 @@ class CLICommands:
             "/apikey": self.apikey,
             "/theme": self.theme,
             "/vision": self.vision,
+            # New tool commands
+            "/dep-graph": self.dep_graph,
+            "/search-replace": self.search_replace,
+            "/semantic": self.semantic_search,
+            "/rename": self.rename_symbol,
+            "/docker": self.docker,
+            "/db": self.db_query,
+            "/api": self.api_request,
+            "/pkg": self.pkg_mgr,
+            "/terminal": self.terminal,
         }
 
         handler = handlers.get(cmd)
@@ -92,6 +102,8 @@ class CLICommands:
         self.app.show_system("  /manifest /reasoning /debug /doctor /undo")
         self.app.show_system("  /proxy /sandbox /mcp /gguf /branch /version")
         self.app.show_system("  /permissions /apikey /theme /vision /exit")
+        self.app.show_system("  /search-replace /semantic /rename /dep-graph")
+        self.app.show_system("  /docker /db /api /pkg /terminal")
         self.app.show_system("  !skill_name — activate a skill  |  !off — deactivate")
 
     def clear(self, arg, p, s, msgs):
@@ -126,6 +138,113 @@ class CLICommands:
             pass
         rows = [[t["name"][:30], (t.get("description") or "")[:60]] for t in all_tools]
         self.app.show_table("Available Tools", ["Tool", "Description"], rows[:40])
+
+    # ── New Tool Commands ───────────────────────────────────
+    def _exec_tool(self, name: str, args: dict):
+        from core.tools.dispatch import execute_with_skills
+        result = execute_with_skills(name, args)
+        for line in result.split("\n"):
+            self.app.show_system(line)
+
+    def search_replace(self, arg, p, s, msgs):
+        if not arg:
+            self.app.show_system("Usage: /search-replace <pattern> <replacement> [include]")
+            return
+        parts = arg.split(None, 2)
+        pattern = parts[0]
+        replacement = parts[1] if len(parts) > 1 else ""
+        include = parts[2] if len(parts) > 2 else None
+        self._exec_tool("search_replace", {"pattern": pattern, "replacement": replacement, "include": include, "preview": True})
+
+    def semantic_search(self, arg, p, s, msgs):
+        if not arg:
+            self.app.show_system("Usage: /semantic <query> [include]")
+            return
+        parts = arg.split(None, 1)
+        query = parts[0]
+        include = parts[1] if len(parts) > 1 else None
+        self._exec_tool("semantic_search", {"query": query, "include": include, "top_k": 10})
+
+    def rename_symbol(self, arg, p, s, msgs):
+        if not arg:
+            self.app.show_system("Usage: /rename <old_name> <new_name> [include]")
+            return
+        parts = arg.split(None, 2)
+        old_name = parts[0]
+        new_name = parts[1] if len(parts) > 1 else ""
+        include = parts[2] if len(parts) > 2 else None
+        self._exec_tool("rename_symbol", {"symbol": old_name, "new_name": new_name, "include": include, "preview": True})
+
+    def dep_graph(self, arg, p, s, msgs):
+        include = arg.strip() or None
+        self._exec_tool("dep_graph", {"include": include, "format": "text"})
+
+    def docker(self, arg, p, s, msgs):
+        if not arg:
+            self._exec_tool("docker", {"action": "list"})
+            return
+        parts = arg.split(None, 1)
+        action = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        if action in ("build", "run", "stop", "rm", "logs", "compose"):
+            self.app.show_system("Use the AI chat for detailed docker operations, or /docker <action>")
+            self._exec_tool("docker", {"action": action})
+        else:
+            self._exec_tool("docker", {"action": action, "what": rest or "containers"})
+
+    def db_query(self, arg, p, s, msgs):
+        if not arg:
+            self.app.show_system("Usage: /db <query> [db_path]")
+            self.app.show_system("  Or: /db tables <db_path>  |  /db describe <table> <db_path>")
+            return
+        parts = arg.split(None, 2)
+        cmd = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        rest2 = parts[2] if len(parts) > 2 else ""
+        if cmd == "tables":
+            self._exec_tool("db_query", {"action": "tables", "db_path": rest or "data.db"})
+        elif cmd == "describe":
+            self._exec_tool("db_query", {"action": "describe", "table": rest, "db_path": rest2 or "data.db"})
+        else:
+            self._exec_tool("db_query", {"query": cmd, "db_path": rest or "data.db"})
+
+    def api_request(self, arg, p, s, msgs):
+        if not arg:
+            self.app.show_system("Usage: /api <url> [method]")
+            return
+        parts = arg.split(None, 1)
+        url = parts[0]
+        method = parts[1].upper() if len(parts) > 1 else "GET"
+        self._exec_tool("api_request", {"url": url, "method": method})
+
+    def pkg_mgr(self, arg, p, s, msgs):
+        if not arg:
+            self._exec_tool("pkg_mgr", {"action": "detect"})
+            return
+        parts = arg.split(None, 1)
+        action = parts[0]
+        package = parts[1] if len(parts) > 1 else ""
+        self._exec_tool("pkg_mgr", {"action": action, "package": package})
+
+    def terminal(self, arg, p, s, msgs):
+        if not arg:
+            self._exec_tool("terminal", {"action": "list"})
+            return
+        parts = arg.split(None, 1)
+        action = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        if action in ("create", "run"):
+            self._exec_tool("terminal", {"action": action, "command": rest})
+        elif action in ("stop", "kill", "output", "read", "send"):
+            name_rest = rest.split(None, 1)
+            name = name_rest[0]
+            cmd = name_rest[1] if len(name_rest) > 1 else ""
+            if action in ("send",):
+                self._exec_tool("terminal", {"action": action, "name": name, "command": cmd})
+            else:
+                self._exec_tool("terminal", {"action": action, "name": name})
+        else:
+            self._exec_tool("terminal", {"action": action})
 
     def skills(self, arg, p, s, msgs):
         all_sk = skill_manager.list_all()
@@ -212,6 +331,31 @@ class CLICommands:
             checks.append(f"Node: {r.stdout.strip()[:10]}")
         except Exception:
             checks.append("Node: not found")
+        try:
+            r = subprocess.run(["docker", "--version"], capture_output=True, text=True, timeout=5)
+            checks.append(f"Docker: {r.stdout.strip()[:30]}")
+        except Exception:
+            checks.append("Docker: not found")
+        try:
+            r = subprocess.run(["npm", "--version"], capture_output=True, text=True, timeout=5)
+            checks.append(f"npm: {r.stdout.strip()[:10]}")
+        except Exception:
+            checks.append("npm: not found")
+        try:
+            r = subprocess.run(["pip", "--version"], capture_output=True, text=True, timeout=5)
+            checks.append(f"pip: {r.stdout.strip()[:30]}")
+        except Exception:
+            checks.append("pip: not found")
+        try:
+            r = subprocess.run(["cargo", "--version"], capture_output=True, text=True, timeout=5)
+            checks.append(f"Cargo: {r.stdout.strip()[:20]}")
+        except Exception:
+            checks.append("Cargo: not found")
+        try:
+            r = subprocess.run(["psql", "--version"], capture_output=True, text=True, timeout=5)
+            checks.append(f"psql: {r.stdout.strip()[:20]}")
+        except Exception:
+            checks.append("psql: not found")
         checks.append(f"Provider: {p.name}/{p.model}")
         checks.append(f"Memory: {MemoryStore().total()} facts")
         checks.append(f"MCP: {get_mcp_manager().server_count} servers")

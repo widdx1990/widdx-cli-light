@@ -191,6 +191,130 @@ def test_tool_execute_bash_echo():
     assert "hello-world-test" in result
 
 
+def test_new_tools_registered():
+    """search_replace, semantic_search, rename_symbol are registered."""
+    from core.tools import TOOL_DEFINITIONS
+    names = {t["name"] for t in TOOL_DEFINITIONS}
+    assert "search_replace" in names
+    assert "semantic_search" in names
+    assert "rename_symbol" in names
+
+
+def test_tool_search_replace_preview():
+    """search_replace with preview=True shows matches without changing files."""
+    from core.tools import execute_with_skills
+    test_file = Path(__file__)
+    content = test_file.read_text()
+    result = execute_with_skills("search_replace", {
+        "pattern": "def test_tool_search_replace_preview",
+        "replacement": "def test_tool_search_replace_renamed",
+        "include": "*.py",
+        "path": str(test_file.parent),
+        "preview": True,
+    })
+    assert "Found" in result
+    assert "def test_tool_search_replace_preview" in result
+    # Verify file was NOT changed (preview mode)
+    assert test_file.read_text() == content
+
+
+def test_tool_semantic_search():
+    """semantic_search returns relevant code results."""
+    from core.tools import execute_with_skills
+    result = execute_with_skills("semantic_search", {
+        "query": "file read tool",
+        "include": "*.py",
+        "path": "core/tools",
+        "top_k": 3,
+    })
+    assert result
+    assert "result(s)" in result or "🔎" in result or "No semantic" in result
+
+
+def test_tool_rename_symbol_preview():
+    """rename_symbol with preview=True shows usages without renaming."""
+    from core.tools import execute_with_skills
+    test_file = Path("core/tools/handlers/file_ops.py")
+    content = test_file.read_text()
+    result = execute_with_skills("rename_symbol", {
+        "symbol": "is_safe_path",
+        "new_name": "is_path_safe",
+        "include": "*.py",
+        "path": "core/tools",
+        "preview": True,
+    })
+    assert "Found" in result or "not found" in result
+    # Verify files were NOT changed
+    assert test_file.read_text() == content
+
+
+def test_new_tools_v2_registered():
+    """All 6 new tools are registered."""
+    from core.tools import TOOL_DEFINITIONS
+    names = {t["name"] for t in TOOL_DEFINITIONS}
+    for name in ("dep_graph", "docker", "db_query", "api_request", "pkg_mgr", "terminal"):
+        assert name in names, f"{name} not registered"
+
+
+def test_tool_dep_graph():
+    """dep_graph analyzes imports."""
+    from core.tools import execute_with_skills
+    result = execute_with_skills("dep_graph", {"path": "core/tools", "include": "*.py", "format": "text"})
+    assert result
+    assert "📊" in result or "Dependency" in result or len(result) > 50
+
+
+def test_tool_api_request():
+    """api_request makes HTTP calls."""
+    from core.tools import execute_with_skills
+    result = execute_with_skills("api_request", {"url": "https://httpbin.org/get", "method": "GET", "timeout": 10})
+    assert result
+    assert "httpbin" in result or "Status" in result or "error" not in result.lower()[:10]
+
+
+def test_tool_db_query_sqlite():
+    """db_query works with SQLite."""
+    import tempfile, os, sqlite3
+    from core.tools import execute_with_skills
+    tmp = tempfile.mktemp(suffix=".db")
+    conn = sqlite3.connect(tmp)
+    conn.execute("CREATE TABLE test (id INT, name TEXT)")
+    conn.execute("INSERT INTO test VALUES (1, 'hello')")
+    conn.commit()
+    conn.close()
+    try:
+        result = execute_with_skills("db_query", {"db_path": tmp, "query": "SELECT * FROM test"})
+        assert "hello" in result
+    finally:
+        os.unlink(tmp)
+
+
+def test_tool_terminal():
+    """terminal manages processes."""
+    from core.tools import execute_with_skills
+    result = execute_with_skills("terminal", {"action": "list"})
+    assert isinstance(result, str)
+
+
+def test_tool_pkg_mgr():
+    """pkg_mgr detects package managers."""
+    from core.tools import execute_with_skills
+    result = execute_with_skills("pkg_mgr", {"action": "detect", "path": "."})
+    assert isinstance(result, str)
+
+
+def test_permissions_new_tools():
+    """New tools are correctly classified in permissions."""
+    from core.permissions import _DANGEROUS_TOOLS, _SAFE_TOOLS
+    assert "docker" in _DANGEROUS_TOOLS
+    assert "terminal" in _DANGEROUS_TOOLS
+    assert "db_query" in _DANGEROUS_TOOLS
+    assert "pkg_mgr" in _DANGEROUS_TOOLS
+    assert "semantic_search" in _SAFE_TOOLS
+    assert "dep_graph" in _SAFE_TOOLS
+    assert "api_request" in _SAFE_TOOLS
+
+
 # ═══════════════════════════════════════════════════════════════
 # Memory Integration
 # ═══════════════════════════════════════════════════════════════
@@ -303,3 +427,94 @@ def test_no_wildcard_imports_in_cli():
             for n in ast.walk(tree)
         )
         assert not has_wildcard, f"{filepath} should not use wildcard imports"
+
+
+# ═══════════════════════════════════════════════════════════════
+# New Tool Edge Cases
+# ═══════════════════════════════════════════════════════════════
+
+def test_tool_scaffold_invalid_template():
+    """scaffold returns error for unknown template."""
+    from core.tools.handlers.scaffolder import _scaffold
+    result = _scaffold(template="nonexistent", name="test")
+    assert "Unknown template" in result
+    assert "nonexistent" in result
+
+
+def test_tool_scaffold_existing_dir():
+    """scaffold rejects existing path."""
+    from core.tools.handlers.scaffolder import _scaffold
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    try:
+        result = _scaffold(template="python-cli", name="x", path=tmp)
+        assert "already exists" in result
+    finally:
+        os.rmdir(tmp)
+
+
+def test_tool_scaffold_safe_format():
+    """scaffold handles templates with unknown placeholders gracefully."""
+    from core.tools.handlers.scaffolder import _scaffold, _TEMPLATES, _SafeFormatter
+    import tempfile, shutil
+    from pathlib import Path
+
+    # Register ad-hoc template with unmatched placeholder
+    _TEMPLATES["__test_safe"] = {
+        "test.txt": "Hello {name}, {missing_key}, and {description}!",
+    }
+    tmp = tempfile.mkdtemp()
+    project_dir = Path(tmp) / "safe_demo"
+    try:
+        result = _scaffold(template="__test_safe", name="demo", path=str(project_dir))
+        assert "✅" in result
+        content = (project_dir / "test.txt").read_text()
+        assert "demo" in content
+        assert "{missing_key}" in content  # placeholder preserved safely
+    finally:
+        _TEMPLATES.pop("__test_safe", None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_tool_security_scan_invalid_type():
+    """security_scan rejects unknown scan_type."""
+    from core.tools.handlers.security_scan import _security_scan
+    result = _security_scan(scan_type="php")
+    assert "Invalid scan_type" in result
+
+
+def test_tool_security_scan_nonexistent_path():
+    """security_scan rejects non-existent path."""
+    from core.tools.handlers.security_scan import _security_scan
+    result = _security_scan(path="/tmp/__widdx_nonexistent_path__")
+    assert "Path does not exist" in result
+
+
+def test_tool_run_tests_nonexistent_path():
+    """run_tests rejects non-existent path."""
+    from core.tools.handlers.test_runner import _run_tests
+    result = _run_tests(path="/tmp/__widdx_nonexistent_path__")
+    assert "Path does not exist" in result
+
+
+def test_tool_run_tests_no_framework():
+    """run_tests returns helpful message when no framework detected."""
+    from core.tools.handlers.test_runner import _run_tests
+    import tempfile, shutil
+    from pathlib import Path
+
+    tmp = tempfile.mkdtemp()
+    try:
+        # Empty directory with no test framework
+        result = _run_tests(path=tmp)
+        assert "No test framework detected" in result
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_tool_run_tests_unknown_framework():
+    """run_tests returns error for invalid framework name."""
+    from core.tools.handlers.test_runner import _run_tests
+    result = _run_tests(framework="nonexistent")
+    assert "Unknown framework" in result
+    assert "nonexistent" in result

@@ -353,6 +353,38 @@ async function sendViaWS(text) {
   S.ws.send(JSON.stringify({message: text, history: hist}));
 }
 
+window.sendAnswer = function(answer) {
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
+  S.ws.send(JSON.stringify({type: 'answer', data: answer}));
+  // Remove the question UI after answering
+  var qBox = document.getElementById('question-box');
+  if (qBox) qBox.remove();
+};
+
+function addQuestionUI(question) {
+  var area = document.getElementById('messagesArea');
+  if (!area) return;
+  var qBox = document.createElement('div');
+  qBox.id = 'question-box';
+  qBox.className = 'message-wrapper system';
+  qBox.innerHTML = '<div class="msg msg-system">'
+    + '<div class="msg-icon"><i class="fa-solid fa-question-circle"></i></div>'
+    + '<div class="msg-content"><div class="question-text" style="font-weight:600;margin-bottom:8px">❓ ' + escapeHtml(question) + '</div>'
+    + '<div class="flex-ac gap-8" style="flex-wrap:wrap">'
+    + '<input id="question-input" type="text" class="flex-1 h-38 bg-input border-main text-primary text-13" style="min-width:200px;border-radius:var(--radius-md);padding:0 12px" placeholder="Type your answer..." autofocus>'
+    + '<button class="send-btn w-auto px-20 rounded-6 h-38" onclick="sendAnswer(document.getElementById(\'question-input\').value)"><i class="fa-solid fa-reply"></i> Answer</button>'
+    + '</div></div></div>';
+  area.appendChild(qBox);
+  area.scrollTop = area.scrollHeight;
+  var inp = document.getElementById('question-input');
+  if (inp) {
+    inp.focus();
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') sendAnswer(inp.value);
+    });
+  }
+}
+
 function initWebSocket() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = protocol + '//' + location.host + '/ws/chat';
@@ -782,6 +814,13 @@ function handleWSMessage(msg) {
       setActivity('Ready', '—');
       resetSendUI();
       addMsg('system', '⚠ ' + (msg.data || 'Unknown error'));
+      break;
+
+    case 'question':
+      {
+        var q = msg.data || '...';
+        addQuestionUI(q);
+      }
       break;
 
     default:

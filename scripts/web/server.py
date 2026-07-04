@@ -220,6 +220,323 @@ async def api_tools() -> dict:
         return {"tools": [], "error": str(e)}
 
 
+# ── Tool execution endpoints ─────────────────────────────────
+class ToolExecPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    args: dict = Field(default_factory=dict)
+
+
+@app.post("/api/tools/execute")
+async def api_tool_execute(payload: ToolExecPayload) -> dict:
+    """Execute a registered tool directly (bypasses LLM)."""
+    try:
+        from core.tools import dispatch
+        result = dispatch.execute_with_skills(payload.name, payload.args)
+        return {"status": "ok", "name": payload.name, "result": result}
+    except Exception as e:
+        return {"status": "error", "name": payload.name, "error": str(e)}
+
+
+@app.post("/api/tools/search-replace")
+async def api_tool_search_replace(request: Request) -> dict:
+    """Direct endpoint for search_replace tool."""
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("search_replace", {
+            "pattern": data.get("pattern", ""),
+            "replacement": data.get("replacement", ""),
+            "include": data.get("include"),
+            "path": data.get("path"),
+            "preview": data.get("preview", True),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/semantic-search")
+async def api_tool_semantic_search(request: Request) -> dict:
+    """Direct endpoint for semantic_search tool."""
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("semantic_search", {
+            "query": data.get("query", ""),
+            "path": data.get("path"),
+            "include": data.get("include"),
+            "top_k": data.get("top_k", 10),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/rename")
+async def api_tool_rename(request: Request) -> dict:
+    """Direct endpoint for rename_symbol tool."""
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("rename_symbol", {
+            "symbol": data.get("symbol", ""),
+            "new_name": data.get("new_name", ""),
+            "path": data.get("path"),
+            "include": data.get("include"),
+            "preview": data.get("preview", True),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+# ── New tool endpoints ────────────────────────────────────
+
+@app.post("/api/tools/dep-graph")
+async def api_tool_dep_graph(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("dep_graph", {
+            "path": data.get("path"),
+            "include": data.get("include"),
+            "depth": data.get("depth", 2),
+            "format": data.get("format", "text"),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/docker")
+async def api_tool_docker(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("docker", dict(data))
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/db-query")
+async def api_tool_db_query(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("db_query", {
+            "db_path": data.get("db_path"),
+            "query": data.get("query", ""),
+            "type": data.get("type", "sqlite"),
+            "conn_str": data.get("conn_str"),
+            "action": data.get("action", "query"),
+            "table": data.get("table"),
+            "max_rows": data.get("max_rows", 50),
+            "format": data.get("format", "text"),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/api-request")
+async def api_tool_api_request(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("api_request", {
+            "method": data.get("method", "GET"),
+            "url": data.get("url", ""),
+            "headers": data.get("headers"),
+            "body": data.get("body"),
+            "params": data.get("params"),
+            "timeout": data.get("timeout", 30),
+            "follow_redirects": data.get("follow_redirects", True),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/pkg-mgr")
+async def api_tool_pkg_mgr(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("pkg_mgr", {
+            "action": data.get("action", "detect"),
+            "package": data.get("package", ""),
+            "pkg_manager": data.get("pkg_manager", "auto"),
+            "path": data.get("path"),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/terminal")
+async def api_tool_terminal(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("terminal", {
+            "action": data.get("action", "list"),
+            "name": data.get("name"),
+            "command": data.get("command"),
+            "cwd": data.get("cwd"),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/ask")
+async def api_tool_ask_user(request: Request) -> dict:
+    data = await request.json()
+    from core.tools.handlers.ask_user import _ask_user
+    try:
+        result = _ask_user(data.get("question", ""))
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+# ── New tool endpoints ────────────────────────────────────
+
+@app.post("/api/tools/embedding-search")
+async def api_tool_embedding_search(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("semantic_embedding", {
+            "query": data.get("query", ""),
+            "path": data.get("path"),
+            "include": data.get("include"),
+            "top_k": data.get("top_k", 10),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/file-tree")
+async def api_tool_file_tree(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("file_tree", {
+            "path": data.get("path"),
+            "depth": data.get("depth", 3),
+            "include": data.get("include"),
+            "format": data.get("format", "text"),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/scaffold")
+async def api_tool_scaffold(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("scaffold", {
+            "template": data.get("template", "python-cli"),
+            "name": data.get("name", "my-project"),
+            "path": data.get("path"),
+            "description": data.get("description", ""),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/run-tests")
+async def api_tool_run_tests(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("run_tests", {
+            "path": data.get("path"),
+            "test_path": data.get("test_path"),
+            "framework": data.get("framework"),
+            "timeout": data.get("timeout", 120),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/security-scan")
+async def api_tool_security_scan(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("security_scan", {
+            "path": data.get("path"),
+            "scan_type": data.get("scan_type", "all"),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/tools/undo")
+async def api_tool_undo(request: Request) -> dict:
+    data = await request.json()
+    from core.tools import dispatch
+    try:
+        result = dispatch.execute_with_skills("tool_undo", {
+            "action": data.get("action", "undo"),
+            "file_path": data.get("file_path"),
+        })
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+# ── File upload ───────────────────────────────────────────
+
+@app.post("/api/upload")
+async def api_file_upload(request: Request) -> dict:
+    """Upload a file to the current working directory."""
+    try:
+        body = await request.body()
+        content_type = request.headers.get("content-type", "")
+        if "multipart/form-data" in content_type:
+            import cgi
+            import io
+            from urllib.parse import parse_qs
+            _, headers = cgi.parse_header(content_type)
+            boundary = headers.get("boundary", "").encode()
+            data = body
+            parts = data.split(b"--" + boundary)
+            for part in parts:
+                if b"Content-Disposition" not in part:
+                    continue
+                header_part, _, file_data = part.partition(b"\r\n\r\n")
+                file_data = file_data.rstrip(b"\r\n--")
+                disp_line = header_part.decode("utf-8", errors="ignore")
+                if 'filename="' in disp_line:
+                    filename = disp_line.split('filename="')[1].split('"')[0]
+                    filepath = Path.cwd() / filename
+                    filepath.write_bytes(file_data)
+                    return {"status": "ok", "file": filename, "size": len(file_data)}
+            return {"status": "error", "error": "No file found in upload"}
+        else:
+            data = await request.json()
+            filename = data.get("filename", "uploaded_file")
+            content = data.get("content", "")
+            filepath = Path.cwd() / filename
+            if isinstance(content, str):
+                filepath.write_text(content, encoding="utf-8")
+            else:
+                filepath.write_bytes(content)
+            return {"status": "ok", "file": filename, "size": len(content)}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 @app.get("/api/project/session")
 async def api_project_session() -> dict:
     """Load current project session from SQLite database."""
@@ -1001,6 +1318,12 @@ async def websocket_chat(websocket: WebSocket):
             data = await websocket.receive_text()
             payload = json.loads(data)
 
+            # Handle answer to pending question
+            if payload.get("type") == "answer":
+                from core.tools.handlers.ask_user import provide_answer
+                provide_answer(payload.get("data", ""))
+                continue
+
             # Handle cancellation
             if payload.get("type") == "cancel":
                 cancel_flag = True
@@ -1026,12 +1349,22 @@ async def websocket_chat(websocket: WebSocket):
             chat = get_chat()
             event_queue: asyncio.Queue = asyncio.Queue()
 
+            # Enable Web mode for ask_user tool
+            import os
+            os.environ["WIDDX_WEB"] = "1"
+
             async def _stream_runner():
                 """Run chat.chat_stream() in executor, feeding events into the queue."""
                 def _sync_run():
                     for event in chat.chat_stream(message, history):
                         if cancel_flag:
                             break
+                        # Check for pending questions from ask_user tool (only once per question)
+                        from core.tools.handlers.ask_user import get_pending_question, is_question_consumed, mark_question_consumed
+                        q = get_pending_question()
+                        if q and not is_question_consumed():
+                            mark_question_consumed()
+                            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "question", "data": q})
                         loop.call_soon_threadsafe(event_queue.put_nowait, event)
                 await loop.run_in_executor(None, _sync_run)
 

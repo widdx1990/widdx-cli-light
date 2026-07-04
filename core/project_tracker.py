@@ -100,8 +100,155 @@ def _widdx_dir(project_dir: Path) -> Path:
 
 # ─── Initialisation ────────────────────────────────────────────────────────
 
+def _detect_project_info(project_dir: Path) -> dict:
+    """Auto-detect project name, type, dependencies from project files."""
+    info = {
+        "name": project_dir.name,
+        "type": "unknown",
+        "language": "unknown",
+        "dependencies": [],
+        "description": "",
+    }
+
+    pyproject = project_dir / "pyproject.toml"
+    package_json = project_dir / "package.json"
+    cargo = project_dir / "Cargo.toml"
+    go_mod = project_dir / "go.mod"
+    readme = project_dir / "README.md"
+
+    if pyproject.exists():
+        try:
+            import tomllib
+            data = tomllib.loads(pyproject.read_text("utf-8"))
+            proj = data.get("project", {})
+            info["name"] = proj.get("name", info["name"])
+            info["description"] = proj.get("description", "")
+            info["type"] = "python"
+            info["language"] = "Python"
+            info["dependencies"] = list(proj.get("dependencies", []))
+        except Exception:
+            pass
+
+    if package_json.exists():
+        try:
+            import json
+            data = json.loads(package_json.read_text("utf-8"))
+            info["name"] = data.get("name", info["name"])
+            info["description"] = data.get("description", info["description"])
+            info["type"] = "node"
+            info["language"] = "JavaScript/TypeScript"
+            deps = list(data.get("dependencies", {}).keys())
+            dev_deps = list(data.get("devDependencies", {}).keys())
+            info["dependencies"] = deps + dev_deps
+        except Exception:
+            pass
+
+    if cargo.exists():
+        try:
+            import tomllib
+            data = tomllib.loads(cargo.read_text("utf-8"))
+            pkg = data.get("package", {})
+            info["name"] = pkg.get("name", info["name"])
+            info["description"] = pkg.get("description", info["description"])
+            info["type"] = "rust"
+            info["language"] = "Rust"
+        except Exception:
+            pass
+
+    if go_mod.exists():
+        import re
+        for line in go_mod.read_text("utf-8").splitlines():
+            if line.startswith("module "):
+                info["name"] = line[7:].strip()
+                info["type"] = "go"
+                info["language"] = "Go"
+                break
+
+    if readme.exists():
+        try:
+            text = readme.read_text("utf-8", errors="ignore")[:500]
+            if not info["description"]:
+                info["description"] = text.split("\n")[0].strip("# \n\t\r")[:200]
+        except Exception:
+            pass
+
+    return info
+
+
+def _populate_docs(project_dir: Path, info: dict):
+    """Fill newly created docs with auto-detected project info."""
+    wd = _widdx_dir(project_dir)
+    name = info["name"]
+    desc = info["description"] or f"A {info['language']} project"
+
+    plan_path = wd / "PLAN.md"
+    if plan_path.exists() and "Current Goal" in plan_path.read_text("utf-8"):
+        plan_path.write_text(
+            f"# Project Plan — {name}\n\n"
+            f"> {desc}\n\n"
+            f"## Current Goal\n\n"
+            f"*Describe what you're working on right now.*\n\n"
+            f"## Project Type\n\n"
+            f"- Language: {info['language']}\n"
+            f"- Type: {info['type']}\n"
+            f"- Dependencies: {', '.join(info['dependencies'][:10]) or 'none detected yet'}\n\n"
+            f"## Implementation Steps\n\n"
+            f"1. *Step 1 — description*\n"
+            f"2. *Step 2 — description*\n"
+            f"3. *Step 3 — description*\n\n"
+            f"## Completed Milestones\n\n"
+            f"- *Milestone 1*\n",
+            encoding="utf-8",
+        )
+
+    design_path = wd / "DESIGN.md"
+    if design_path.exists() and "Key Decisions" in design_path.read_text("utf-8"):
+        design_path.write_text(
+            f"# Design Decisions — {name}\n\n"
+            f"> {desc}\n\n"
+            f"## Architecture\n\n"
+            f"*Overall architecture description.*\n\n"
+            f"## Key Decisions\n\n"
+            f"| Decision | Rationale | Date |\n"
+            f"|----------|-----------|------|\n"
+            f"| *Initial project setup* | *Auto-detected from project files* | {__import__('datetime').datetime.now().strftime('%Y-%m-%d')} |\n\n"
+            f"## Tech Stack\n\n"
+            f"- Language: {info['language']}\n"
+            f"- Dependencies: {', '.join(info['dependencies'][:15]) or 'none detected'}\n",
+            encoding="utf-8",
+        )
+
+    tasks_path = wd / "TASKS.md"
+    if tasks_path.exists() and "In Progress" in tasks_path.read_text("utf-8"):
+        tasks_path.write_text(
+            f"# Tasks — {name}\n\n"
+            f"## In Progress\n\n"
+            f"- [ ] *Task description*\n\n"
+            f"## Todo\n\n"
+            f"- [ ] *Task description*\n\n"
+            f"## Done\n\n"
+            f"- [x] *Initial project setup*\n",
+            encoding="utf-8",
+        )
+
+    roadmap_path = wd / "ROADMAP.md"
+    if roadmap_path.exists() and "Current Status" in roadmap_path.read_text("utf-8"):
+        roadmap_path.write_text(
+            f"# Roadmap — {name}\n\n"
+            f"## Current Status\n\n"
+            f"- **Phase:** Initial development\n"
+            f"- **Progress:** 0%\n\n"
+            f"## Milestones\n\n"
+            f"- [ ] *Milestone 1*\n"
+            f"- [ ] *Milestone 2*\n\n"
+            f"## Completed\n\n"
+            f"- *Project initialized*\n",
+            encoding="utf-8",
+        )
+
+
 def ensure_docs(project_dir: Path) -> list[str]:
-    """Create any missing doc files from templates.
+    """Create any missing doc files from templates and auto-populate them.
 
     Returns a list of doc names that were created (empty if all existed).
     """
@@ -116,6 +263,9 @@ def ensure_docs(project_dir: Path) -> list[str]:
             created.append(name)
     if created:
         logger.info("Created project docs: %s", ", ".join(created))
+        info = _detect_project_info(project_dir)
+        _populate_docs(project_dir, info)
+        logger.info("Auto-populated project docs from detected project info")
     return created
 
 

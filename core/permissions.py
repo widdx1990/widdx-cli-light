@@ -24,8 +24,8 @@ class PermissionLevel(Enum):
 
 
 # Tools that can modify the system
-_DANGEROUS_TOOLS = {"bash", "write", "edit", "validate", "create_agent", "run_parallel"}
-_SAFE_TOOLS = {"read", "glob", "grep", "list_files", "web_fetch"}
+_DANGEROUS_TOOLS = {"bash", "write", "edit", "validate", "create_agent", "run_parallel", "docker", "db_query", "terminal", "pkg_mgr"}
+_SAFE_TOOLS = {"read", "glob", "grep", "list_files", "web_fetch", "semantic_search", "dep_graph", "api_request"}
 
 
 class PermissionManager:

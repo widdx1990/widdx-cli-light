@@ -46,14 +46,18 @@ Your strength is the system: tools, sandbox, delegation, memory.
 AVAILABLE TOOLS:
 {tool_descriptions}
 
+PROJECT DOCS (check these first):
+{project_docs_block}
+
 WORKFLOW:
 1. Receive a task from the user
-2. Think step by step about what needs to be done
-3. Call ONE tool at a time, analyze the result, then decide next step
-4. If a tool fails, analyze the error and try a different approach
-5. If you need clarification, ask the user directly in your response
-6. Validate after every write/edit — quality first
-7. When complete, summarize clearly what was accomplished
+2. FIRST: check project docs (PLAN.md, DESIGN.md, TASKS.md, ROADMAP.md) to understand the project
+3. Think step by step about what needs to be done
+4. Call ONE tool at a time, analyze the result, then decide next step
+5. If a tool fails, analyze the error and try a different approach
+6. If you need clarification, use **ask_user** tool to ask the user
+7. Validate after every write/edit — quality first
+8. When complete, update TASKS.md and summarize what was accomplished
 
 RULES:
 - Call one tool at a time (you can call many in sequence)
@@ -64,6 +68,7 @@ RULES:
 - ALWAYS run validate after writing or editing code
 - NEVER say you're done until the files actually exist on disk
 - Your final response MUST be a summary of what was actually accomplished
+- Use **ask_user** when the task is ambiguous or you need a decision
 
 ANTI-DUPLICATION (MANDATORY):
 - Before creating ANY new variable/function/class: grep the file first.
@@ -1036,7 +1041,7 @@ class AutonomousAgent:
         return result
 
     def _build_prompt(self) -> str:
-        """Build the agent system prompt with all available tools.
+        """Build the agent system prompt with all available tools and project docs.
         If custom_prompt is set, use it instead of the default AGENT_PROMPT."""
         lines = []
         mcp_lines = []
@@ -1055,19 +1060,44 @@ class AutonomousAgent:
         if self.custom_prompt:
             return self.custom_prompt
 
+        # Build project docs block
+        project_docs_block = self._build_project_docs_block()
+
         # Escape curly braces in tool descriptions — they contain JSON schemas
         # that would break str.format()
         safe_tool = tool_text.replace("{", "{{").replace("}", "}}")
         safe_mcp = mcp_text.replace("{", "{{").replace("}", "}}")
         safe_skill = skill_text.replace("{", "{{").replace("}", "}}")
+        safe_docs = project_docs_block.replace("{", "{{").replace("}", "}}")
 
         return AGENT_PROMPT.format(
             tool_descriptions=(
                 f"Built-in tools:\n{safe_tool}\n\n"
                 f"MCP tools:\n{safe_mcp}\n\n"
                 f"Skills:\n{safe_skill}"
-            )
+            ),
+            project_docs_block=safe_docs,
         )
+
+    def _build_project_docs_block(self) -> str:
+        """Read and return project docs content."""
+        try:
+            from core.project_tracker import load_docs, _DOC_NAMES
+            docs = load_docs(Path.cwd().resolve())
+            if not docs:
+                return "(No project docs found — create them with update_project_doc)"
+            parts = []
+            for name in _DOC_NAMES:
+                content = docs.get(name, "").strip()
+                if content and len(content) > 20:
+                    parts.append(f"=== {name} ===")
+                    parts.append(content[:600])
+                    parts.append("")
+            if not parts:
+                return "(Project docs exist but are empty — populate them with update_project_doc)"
+            return "\n".join(parts)
+        except Exception as e:
+            return f"(Could not read project docs: {e})"
 
     def _show_final_result(self, content: Optional[str]):
         """Show the AI's final response panel if there's content."""

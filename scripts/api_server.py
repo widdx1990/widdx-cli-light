@@ -141,6 +141,87 @@ class DocUpdate(BaseModel):
     doc: str  # PLAN.md, DESIGN.md, TASKS.md, ROADMAP.md
     content: str
 
+class ToolExecRequest(BaseModel):
+    name: str = Field(..., max_length=100)
+    args: dict = Field(default_factory=dict)
+
+class SearchReplaceRequest(BaseModel):
+    pattern: str = Field(..., max_length=5000)
+    replacement: str = Field(..., max_length=50000)
+    include: Optional[str] = None
+    path: Optional[str] = None
+    preview: bool = True
+
+class SemanticSearchRequest(BaseModel):
+    query: str = Field(..., max_length=1000)
+    path: Optional[str] = None
+    include: Optional[str] = None
+    top_k: int = 10
+
+class RenameRequest(BaseModel):
+    symbol: str = Field(..., max_length=500)
+    new_name: str = Field(..., max_length=500)
+    path: Optional[str] = None
+    include: Optional[str] = None
+    preview: bool = True
+
+class DepGraphRequest(BaseModel):
+    path: Optional[str] = None
+    include: Optional[str] = None
+    depth: int = 2
+    format: str = "text"
+
+class DockerRequest(BaseModel):
+    action: str = Field(..., max_length=50)
+    what: Optional[str] = None
+    image: Optional[str] = None
+    tag: str = "latest"
+    name: Optional[str] = None
+    path: Optional[str] = None
+    dockerfile: Optional[str] = None
+    ports: Optional[str] = None
+    detach: bool = True
+    command: Optional[str] = None
+    container_id: Optional[str] = None
+    force: bool = False
+    tail: int = 50
+    compose_file: Optional[str] = None
+    compose_action: Optional[str] = None
+
+class DbQueryRequest(BaseModel):
+    db_path: Optional[str] = None
+    query: str = ""
+    type: str = "sqlite"
+    conn_str: Optional[str] = None
+    action: str = "query"
+    table: Optional[str] = None
+    max_rows: int = 50
+    format: str = "text"
+
+class ApiRequest(BaseModel):
+    method: str = "GET"
+    url: str = ""
+    headers: Optional[dict] = None
+    body: Optional[str] = None
+    params: Optional[dict] = None
+    timeout: int = 30
+    follow_redirects: bool = True
+
+class PkgMgrRequest(BaseModel):
+    action: str = "detect"
+    package: str = ""
+    pkg_manager: str = "auto"
+    path: Optional[str] = None
+
+class TerminalRequest(BaseModel):
+    action: str = "list"
+    name: Optional[str] = None
+    command: Optional[str] = None
+    cwd: Optional[str] = None
+
+class AskUserRequest(BaseModel):
+    question: str
+
 # ── FastAPI App ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -354,6 +435,105 @@ async def list_tools(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
     except Exception:
         mcp_tools = []
     return {"base": base, "mcp": mcp_tools, "total": len(base) + len(mcp_tools)}
+
+@app.post("/api/tools/execute")
+async def tool_execute(req: ToolExecRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills(req.name, req.args)
+        return {"status": "ok", "name": req.name, "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"Tool execution failed: {e}")
+
+@app.post("/api/tools/search-replace")
+async def tool_search_replace(req: SearchReplaceRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("search_replace", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"search_replace failed: {e}")
+
+@app.post("/api/tools/semantic-search")
+async def tool_semantic_search(req: SemanticSearchRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("semantic_search", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"semantic_search failed: {e}")
+
+@app.post("/api/tools/rename")
+async def tool_rename(req: RenameRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("rename_symbol", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"rename_symbol failed: {e}")
+
+@app.post("/api/tools/dep-graph")
+async def tool_dep_graph(req: DepGraphRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("dep_graph", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"dep_graph failed: {e}")
+
+@app.post("/api/tools/docker")
+async def tool_docker(req: DockerRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("docker", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"docker failed: {e}")
+
+@app.post("/api/tools/db-query")
+async def tool_db_query(req: DbQueryRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("db_query", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"db_query failed: {e}")
+
+@app.post("/api/tools/api-request")
+async def tool_api_request(req: ApiRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("api_request", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"api_request failed: {e}")
+
+@app.post("/api/tools/pkg-mgr")
+async def tool_pkg_mgr(req: PkgMgrRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("pkg_mgr", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"pkg_mgr failed: {e}")
+
+@app.post("/api/tools/terminal")
+async def tool_terminal(req: TerminalRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.dispatch import execute_with_skills
+    try:
+        result = execute_with_skills("terminal", req.model_dump())
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"terminal failed: {e}")
+
+@app.post("/api/tools/ask")
+async def tool_ask_user(req: AskUserRequest, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    from core.tools.handlers.ask_user import _ask_user
+    try:
+        result = _ask_user(req.question)
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(400, f"ask_user failed: {e}")
 
 @app.get("/api/project/docs")
 async def get_docs(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):

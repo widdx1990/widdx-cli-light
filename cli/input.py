@@ -70,6 +70,8 @@ def _build_completer() -> WordCompleter:
         "/remember", "/memories", "/permissions", "/theme",
         "/version", "/gguf", "/branch", "/mcp", "/exit", "/quit",
         "/vision", "/reasoning", "/manifest",
+        "/search-replace", "/semantic", "/rename", "/dep-graph",
+        "/docker", "/db", "/api", "/pkg", "/terminal",
         # sub-commands
         "/vision mode", "/vision model",
         "/mcp discover", "/mcp add", "/mcp remove",

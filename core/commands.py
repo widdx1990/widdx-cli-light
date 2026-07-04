@@ -390,6 +390,46 @@ def handle_doctor():
     except Exception:
         checks.append(("uvx", "❌", "not found (pip install uv)"))
 
+    # Docker
+    try:
+        r = subprocess.run(["docker", "--version"], capture_output=True, text=True, timeout=5)
+        docker_ver = r.stdout.strip()[:40] if r.returncode == 0 else "not found"
+        checks.append(("Docker", "✅" if r.returncode == 0 else "❌", docker_ver))
+    except Exception:
+        checks.append(("Docker", "❌", "not found"))
+
+    # npm
+    try:
+        r = subprocess.run(["npm", "--version"], capture_output=True, text=True, timeout=5)
+        npm_ver = r.stdout.strip()[:20] if r.returncode == 0 else "not found"
+        checks.append(("npm", "✅" if r.returncode == 0 else "❌", npm_ver))
+    except Exception:
+        checks.append(("npm", "❌", "not found"))
+
+    # pip
+    try:
+        r = subprocess.run(["pip", "--version"], capture_output=True, text=True, timeout=5)
+        pip_ver = r.stdout.strip()[:30] if r.returncode == 0 else "not found"
+        checks.append(("pip", "✅" if r.returncode == 0 else "❌", pip_ver))
+    except Exception:
+        checks.append(("pip", "❌", "not found"))
+
+    # Cargo
+    try:
+        r = subprocess.run(["cargo", "--version"], capture_output=True, text=True, timeout=5)
+        cargo_ver = r.stdout.strip()[:20] if r.returncode == 0 else "not found"
+        checks.append(("Cargo", "✅" if r.returncode == 0 else "❌", cargo_ver))
+    except Exception:
+        checks.append(("Cargo", "❌", "not found"))
+
+    # psql
+    try:
+        r = subprocess.run(["psql", "--version"], capture_output=True, text=True, timeout=5)
+        psql_ver = r.stdout.strip()[:30] if r.returncode == 0 else "not found"
+        checks.append(("psql", "✅" if r.returncode == 0 else "❌", psql_ver))
+    except Exception:
+        checks.append(("psql", "❌", "not found"))
+
     # MCP servers
     mgr = get_mcp_manager()
     checks.append(("MCP registered", "ℹ️", f"{mgr.server_count} server(s)"))

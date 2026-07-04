@@ -93,13 +93,24 @@ def _edit(file_path: str, old_string: str, new_string: str,
         replaced_count = count if replace_all else 1
         old_lines = text.splitlines(True)
         new_lines = new_text.splitlines(True)
-        diff_lines = _generate_diff(old_lines, new_lines)
+        diff_lines = _generate_unified_diff(file_path, old_lines, new_lines)
         if preview:
             return f"📝 PREVIEW — would replace {replaced_count} occurrence(s) in {file_path}:\n\n{diff_lines}"
         p.write_text(new_text, encoding="utf-8")
         return f"✅ Edited {file_path} ({replaced_count} replacement(s))\n{diff_lines}"
     except Exception as e:
         return f"Error editing {file_path}: {e}"
+
+
+def _generate_unified_diff(filename: str, old_lines: list[str], new_lines: list[str], context: int = 3) -> str:
+    diff = list(difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=filename, tofile=filename,
+        n=context
+    ))
+    if not diff:
+        return "  (no changes)"
+    return "".join(diff[:100]) + ("... (truncated)" if len(diff) > 100 else "")
 
 
 def _generate_diff(old_lines, new_lines):
@@ -167,6 +178,61 @@ def _list_files(path: str = ".") -> str:
             size = entry.stat().st_size if entry.is_file() else ""
             lines.append(f"{prefix}{name}  ({size} bytes)")
     return f"Contents of {path}:\n" + "\n".join(lines)
+
+
+def _search_replace(pattern: str, replacement: str, include: str | None = None,
+                     path: str | None = None, preview: bool = True) -> str:
+    """Search and replace text across multiple files."""
+    tool_tracer.handler("search_replace")
+    root = Path(path) if path else Path(".")
+    if not is_safe_path(root):
+        return f"Sandbox: search in {path} denied — not inside {get_safe_dir()}"
+    matched_files = []
+    files_iter = root.rglob(include) if include else root.rglob("*")
+    for f in files_iter:
+        if not f.is_file() or f.stat().st_size > 512000:
+            continue
+        try:
+            text = f.read_text("utf-8", errors="ignore")
+            if pattern not in text:
+                continue
+            count = text.count(pattern)
+            matched_files.append((f, text, count))
+        except Exception:
+            continue
+
+    if not matched_files:
+        return f"No matches for '{pattern}'"
+
+    total_replaced = 0
+    buf = [f"🔍 Found '{pattern}' in {len(matched_files)} file(s):", ""]
+    for f, text, count in matched_files:
+        rel = f.relative_to(root)
+        new_text = text.replace(pattern, replacement)
+        lines = text.splitlines()
+        preview_lines = []
+        for i, line in enumerate(lines):
+            if pattern in line:
+                ctx_start = max(0, i - 1)
+                ctx_end = min(len(lines), i + 2)
+                snippet = "\n".join(f"  {j + 1}:{lines[j]}" for j in range(ctx_start, ctx_end))
+                preview_lines.append(snippet)
+        buf.append(f"  📄 {rel} ({count} occurrence(s))")
+        for p in preview_lines[:3]:
+            buf.append(p)
+        if len(preview_lines) > 3:
+            buf.append(f"     ... and {len(preview_lines) - 3} more lines")
+
+    if preview:
+        return "\n".join(buf)
+
+    for f, text, count in matched_files:
+        new_text = text.replace(pattern, replacement)
+        f.write_text(new_text, encoding="utf-8")
+        total_replaced += count
+
+    buf.append(f"\n✅ Replaced {total_replaced} occurrence(s) across {len(matched_files)} file(s)")
+    return "\n".join(buf)
 
 
 def get_tool_helpers() -> dict:
