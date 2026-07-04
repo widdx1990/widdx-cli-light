@@ -117,9 +117,20 @@ app.add_middleware(
 @app.middleware("http")
 async def _add_security_headers(request: Request, call_next):
     response = await call_next(request)
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws:; img-src 'self' data:; font-src 'self'"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "connect-src 'self' ws: wss:; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "frame-src *; "          # allow iframe to load any URL in Browser tab
+        "worker-src blob:; "
+        "media-src 'self' blob:;"
+    )
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
+    # X-Frame-Options only protects THIS page from being embedded elsewhere — not its iframes
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
     return response
 
 # ── Mount static files ──────────────────────────────────────
@@ -575,7 +586,25 @@ async def api_project_doc(doc_name: str):
 
 @app.get("/api/branches")
 async def api_branches():
-    """List session branches for the current project."""
+    """List session branches — prefers real git branches, falls back to project state."""
+    import subprocess
+    try:
+        # Try real git branches first
+        result = subprocess.run(
+            ["git", "branch", "--format=%(refname:short)"],
+            capture_output=True, text=True, timeout=5, cwd=str(Path.cwd())
+        )
+        head_result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=str(Path.cwd())
+        )
+        if result.returncode == 0:
+            branches = [b.strip() for b in result.stdout.strip().splitlines() if b.strip()]
+            current = head_result.stdout.strip() if head_result.returncode == 0 else (branches[0] if branches else "main")
+            return {"current": current, "branches": branches or ["main"]}
+    except Exception:
+        pass
+    # Fallback to project state branches
     try:
         from core.project.state import list_branches, get_current_branch
         return {"current": get_current_branch(), "branches": list_branches()}
@@ -1311,12 +1340,13 @@ async def websocket_chat(websocket: WebSocket):
 
     try:
         while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+
             if not _check_rate_limit(client):
                 await websocket.send_json({"type": "error", "data": "Rate limited — 30 req/min max"})
                 await websocket.send_json({"type": "done", "data": ""})
                 continue
-            data = await websocket.receive_text()
-            payload = json.loads(data)
 
             # Handle answer to pending question
             if payload.get("type") == "answer":

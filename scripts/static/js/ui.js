@@ -43,9 +43,24 @@ function closeMobileSidebar() {
 
 function toggleComputer() {
   const panel = document.getElementById('computerPanel');
-  panel.classList.toggle('collapsed');
-  const btn = document.querySelector('.activity-btn.active');
-  if (btn) btn.classList.toggle('active', !panel.classList.contains('collapsed'));
+  const isCollapsed = panel.classList.toggle('collapsed');
+  // Sync the desktop button in the activity bar
+  const btn = document.querySelector('[data-click="toggle-computer"]');
+  if (btn) btn.classList.toggle('active', !isCollapsed);
+  // Stop process auto-refresh when panel is closed
+  if (isCollapsed && typeof _stopProcessAutoRefresh === 'function') {
+    _stopProcessAutoRefresh();
+  }
+  // When opening: always (re)render the active tab content
+  if (!isCollapsed && typeof showTerminal === 'function') {
+    var activeTab = document.querySelector('.right-panel-tab.active');
+    var view = activeTab ? activeTab.getAttribute('data-tab') : 'terminal';
+    if (view === 'terminal') showTerminal();
+    else if (view === 'browser' && typeof showBrowser === 'function') showBrowser();
+    else if (view === 'processes' && typeof showProcessManager === 'function') showProcessManager();
+    else if (view === 'screenshot' && typeof showScreenshot === 'function') showScreenshot();
+    else showTerminal();
+  }
 }
 
 // ═══════════════ STEP CARDS ═══════════════════

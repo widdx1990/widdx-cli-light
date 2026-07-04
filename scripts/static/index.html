@@ -12,7 +12,7 @@
 <script src="/static/vendor/dompurify/purify.min.js"></script>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="/static/manifest.json">
-<link rel="stylesheet" href="/static/css/style.css?v=1781965833">
+<link rel="stylesheet" href="/static/css/style.css?v=1781966100">
 <link rel="stylesheet" href="/static/vendor/codemirror/codemirror.min.css">
 <link rel="stylesheet" href="/static/vendor/codemirror/monokai.min.css">
 <script src="/static/vendor/codemirror/codemirror.min.js"></script>
@@ -30,32 +30,32 @@
 // Each stub is replaced by the real implementation when its script loads.
 (function(){var w=window;var S='showView toggleSidebar toggleModelDropdown toggleTheme scrollBottom toggleComputer cancelAgent sendMessage switchTab closeCommandPalette openCommandPalette sendOnboardingMsg execPaletteAction showToast runTermCmd handleInputKey'.split(' ');for(var i=0;i<S.length;i++){if(!w[S[i]])w[S[i]]=function(){}}})();
 </script>
-<script src="/static/js/lang.js?v=1781966000"></script>
-<script src="/static/js/ui.js?v=1781966000"></script>
-<script src="/static/js/nexus.js?v=1781966000"></script>
-<script src="/static/js/views/cron.js?v=1781966000"></script>
-<script src="/static/js/views/settings.js?v=1781966000"></script>
-<script src="/static/js/views/mcp.js?v=1781966000"></script>
-<script src="/static/js/views/dashboard.js?v=1781966000"></script>
-<script src="/static/js/views/delegation.js?v=1781966000"></script>
-<script src="/static/js/views/memory.js?v=1781966000"></script>
-<script src="/static/js/views/gateway.js?v=1781966000"></script>
-<script src="/static/js/views/skills.js?v=1781966000"></script>
-<script src="/static/js/views/activity.js?v=1781966000"></script>
-<script src="/static/js/views/sessions.js?v=1781966000"></script>
-<script src="/static/js/views/checkpoints.js?v=1781966000"></script>
-<script src="/static/js/views/git.js?v=1781966000"></script>
-<script src="/static/js/views/doctor.js?v=1781966000"></script>
-<script src="/static/js/views/debug.js?v=1781966000"></script>
-<script src="/static/js/views/permissions.js?v=1781966000"></script>
-<script src="/static/js/views/plugins.js?v=1781966000"></script>
-<script src="/static/js/views/workflows.js?v=1781966000"></script>
-<script src="/static/js/views/proxy.js?v=1781966000"></script>
-<script src="/static/js/views/gguf.js?v=1781966000"></script>
-<script src="/static/js/views/manifest.js?v=1781966000"></script>
-<script src="/static/js/views/tokenbudget.js?v=1781966000"></script>
-<script src="/static/js/views/autocommit.js?v=1781966000"></script>
-<script src="/static/js/views/apikeys.js?v=1781966000"></script>
+<script src="/static/js/lang.js?v=1781966100"></script>
+<script src="/static/js/ui.js?v=1781966100"></script>
+<script src="/static/js/nexus.js?v=1781966200"></script>
+<script src="/static/js/views/cron.js?v=1781966100"></script>
+<script src="/static/js/views/settings.js?v=1781966100"></script>
+<script src="/static/js/views/mcp.js?v=1781966100"></script>
+<script src="/static/js/views/dashboard.js?v=1781966100"></script>
+<script src="/static/js/views/delegation.js?v=1781966100"></script>
+<script src="/static/js/views/memory.js?v=1781966100"></script>
+<script src="/static/js/views/gateway.js?v=1781966100"></script>
+<script src="/static/js/views/skills.js?v=1781966100"></script>
+<script src="/static/js/views/activity.js?v=1781966100"></script>
+<script src="/static/js/views/sessions.js?v=1781966100"></script>
+<script src="/static/js/views/checkpoints.js?v=1781966100"></script>
+<script src="/static/js/views/git.js?v=1781966100"></script>
+<script src="/static/js/views/doctor.js?v=1781966100"></script>
+<script src="/static/js/views/debug.js?v=1781966100"></script>
+<script src="/static/js/views/permissions.js?v=1781966100"></script>
+<script src="/static/js/views/plugins.js?v=1781966100"></script>
+<script src="/static/js/views/workflows.js?v=1781966100"></script>
+<script src="/static/js/views/proxy.js?v=1781966100"></script>
+<script src="/static/js/views/gguf.js?v=1781966100"></script>
+<script src="/static/js/views/manifest.js?v=1781966100"></script>
+<script src="/static/js/views/tokenbudget.js?v=1781966100"></script>
+<script src="/static/js/views/autocommit.js?v=1781966100"></script>
+<script src="/static/js/views/apikeys.js?v=1781966100"></script>
 </head>
 <body>
 <!-- ═══════════════ BOOT SCREEN ═══════════════ -->
@@ -100,12 +100,12 @@
 
     <!-- 📁 Workspace -->
     <div class="nav-category">
-      <div class="nav-category-header" data-category="workspace">
+      <div class="nav-category-header open" data-category="workspace">
         <i class="fa-solid fa-folder-open"></i>
         <span>Workspace</span>
         <i class="nav-category-chevron fa-solid fa-chevron-down"></i>
       </div>
-      <div class="nav-category-body" id="cat-workspace">
+      <div class="nav-category-body open" id="cat-workspace">
         <div class="nav-item" data-view="files"><i class="fa-regular fa-file"></i><span>Files</span></div>
         <div class="nav-item" data-view="git"><i class="fa-solid fa-code-branch"></i><span>Git</span><span class="nav-badge" id="git-badge"></span></div>
         <div class="nav-item" data-view="sessions"><i class="fa-solid fa-clock-rotate-left"></i><span>Sessions</span></div>
@@ -336,8 +336,8 @@
       </div>
     </div>
 
-    <!-- RIGHT PANEL — Hidden by default -->
-    <aside class="right-panel" id="computerPanel">
+    <!-- RIGHT PANEL — Collapsed by default, opened via Ctrl+J -->
+    <aside class="right-panel collapsed" id="computerPanel">
       <div class="right-panel-header">
         <span class="status-dot running"></span>
         <span class="right-panel-title">TOOLS</span>

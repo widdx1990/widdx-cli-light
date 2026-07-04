@@ -1,6 +1,6 @@
 {
   "provider": {
-    "name": "nonexistent-xyz",
+    "name": "opencode-zen",
     "model": "deepseek-v4-flash-free"
   },
   "max_turns": 20,

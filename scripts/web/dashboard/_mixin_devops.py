@@ -486,18 +486,36 @@ class DevOpsMixin:
 
 
     def autocommit_status(self) -> dict:
-        """Get auto-commit status."""
+        """Get auto-commit status — returns fields the frontend expects."""
         try:
             from core.auto_commit import AutoCommitManager
             ac = AutoCommitManager()
-            # AutoCommitManager.commit_if_needed() handles auto-commits
-            # Status is reflected by presence of the manager
+            # Check last commit time from git log
+            import subprocess
+            last = ""
+            try:
+                result = subprocess.run(
+                    ["git", "log", "-1", "--format=%cr", "--author-date-is-committer-date"],
+                    capture_output=True, text=True, timeout=5
+                )
+                last = result.stdout.strip() or "Never"
+            except Exception:
+                last = "Never"
             return {
+                "enabled": True,
                 "available": True,
+                "interval": getattr(ac, '_interval', 300),
+                "last_commit": last,
                 "repo": str(getattr(ac, '_repo', Path('.'))),
             }
         except Exception:
-            return {"available": False, "repo": ""}
+            return {
+                "enabled": False,
+                "available": False,
+                "interval": 0,
+                "last_commit": "Never",
+                "repo": "",
+            }
 
     def autocommit_toggle(self) -> dict:
         """Placeholder: auto-commit is always enabled."""

@@ -49,8 +49,9 @@ def test_security_headers(client):
     resp = client.get("/api/health")
     csp = resp.headers.get("content-security-policy", "")
     assert "default-src 'self'" in csp
+    assert "frame-src" in csp          # must explicitly allow iframes
     assert resp.headers.get("x-content-type-options") == "nosniff"
-    assert resp.headers.get("x-frame-options") == "DENY"
+    assert resp.headers.get("x-frame-options") in ("DENY", "SAMEORIGIN")
 
 
 def test_cors_headers_present(client):
@@ -135,6 +136,7 @@ def test_ws_chat_rate_limiting(client):
         mock_rl.return_value = False
 
         with client.websocket_connect("/ws/chat") as ws:
+            ws.send_text(json.dumps({"message": "hello"}))
             msg_raw = ws.receive_text()
             msg = json.loads(msg_raw)
             assert msg["type"] == "error"

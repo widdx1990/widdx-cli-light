@@ -1080,7 +1080,8 @@ function resetSendUI() {
   var stopBtn = document.getElementById('cancelBtn');
   var sendBtn = document.getElementById('sendBtn');
   var input = document.getElementById('messageInput');
-  if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.classList.remove('visible'); }
+  // Use only the CSS class — never set inline style.display which overrides it
+  if (stopBtn) stopBtn.classList.remove('visible');
   if (sendBtn) sendBtn.style.display = '';
   if (input) input.disabled = false;
 }
@@ -1405,9 +1406,9 @@ function showView(view) {
   const area = document.getElementById('messagesArea');
   if (!area) return;
 
-  // Hide Stop button in non-Chat views (P1 #5)
+  // Hide Stop button in non-Chat views
   var stopBtn = document.getElementById('cancelBtn');
-  if (stopBtn && view !== 'chat') stopBtn.style.display = 'none';
+  if (stopBtn && view !== 'chat') stopBtn.classList.remove('visible');
 
   // Update active nav item
   document.querySelectorAll('.nav-item').forEach(function(i) {
@@ -1458,6 +1459,10 @@ async function loadView(url, renderFn, area, opts) {
 // ═══════════════ COMPUTER PANEL ═══════════════════
 
 window.switchTab = function(el, view) {
+  // Stop process auto-refresh when leaving the processes tab
+  if (view !== 'processes' && typeof _stopProcessAutoRefresh === 'function') {
+    _stopProcessAutoRefresh();
+  }
   el.parentElement.querySelectorAll('.right-panel-tab').forEach(function(t) { t.classList.remove('active'); });
   el.classList.add('active');
   if (view === 'terminal') showTerminal();
@@ -1508,39 +1513,49 @@ window.runTermCmd = function(cmd) {
 function execTermCmd(cmd, o) {
   _termHistory.push(cmd);
   _termIdx = _termHistory.length;
-  o.innerHTML += '<span class="text-warning fw-600">$ ' + escapeHtml(cmd) + '</span>\n';
+  // Show prompt + command
+  o.innerHTML += '<span style="color:#4ade80;font-weight:600">$ </span><span style="color:#fff">' + escapeHtml(cmd) + '</span>\n';
+  o.scrollTop = o.scrollHeight;
   setActivity('Running', cmd);
-  fetch('/api/computer/info').then(function(r){return r.json()}).then(function(d){o.innerHTML='<span class="text-muted text-xs">📂 '+(d.system&&d.system.working_directory||'?')+'</span>\n'+o.innerHTML;});
   fetch('/api/computer/exec', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command:cmd})})
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      if (d.stdout) o.innerHTML += d.stdout + '\n';
-      if (d.stderr) o.innerHTML += '<span class="text-error">' + escapeHtml(d.stderr) + '</span>\n';
-      o.innerHTML += '<span class="text-muted text-xs">→ exit ' + (d.exit_code || 0) + ' [' + (d.mode || 'auto') + ']</span>\n';
-      o.scrollTop = o.scrollHeight; setActivity('Ready', '—');
+      if (d.stdout) o.innerHTML += '<span style="color:#e2e8f0">' + escapeHtml(d.stdout) + '</span>';
+      if (d.stderr) o.innerHTML += '<span style="color:#f87171">' + escapeHtml(d.stderr) + '</span>\n';
+      if (!d.stdout && !d.stderr) o.innerHTML += '\n';
+      o.innerHTML += '<span style="color:rgba(255,255,255,0.2);font-size:10px">↳ exit ' + (d.exit_code || 0) + ' [' + (d.mode || 'auto') + ']</span>\n\n';
+      o.scrollTop = o.scrollHeight;
+      setActivity('Ready', '—');
     })
-    .catch(function(e) { o.innerHTML += '<span class="text-error">' + escapeHtml(e.message) + '</span>\n'; setActivity('Ready', '—'); });
+    .catch(function(e) {
+      o.innerHTML += '<span style="color:#f87171">' + escapeHtml(e.message) + '</span>\n\n';
+      o.scrollTop = o.scrollHeight;
+      setActivity('Ready', '—');
+    });
 }
 
 function showTerminal() {
   const body = document.getElementById('panelBody');
   body.innerHTML = '<div id="tc" class="terminal-container">'
-    + '<div id="to" class="terminal-output"></div>'
+    + '<div id="to" class="terminal-output">'
+    + '<span class="text-muted text-xs" style="color:rgba(74,222,128,0.5)">WIDDX Terminal — cgroups sandbox active</span>\n'
+    + '<span class="text-muted text-xs" style="color:rgba(255,255,255,0.2)">Type a command and press Enter, or click a quick button below.</span>\n\n'
+    + '</div>'
     + '<div class="terminal-input-bar">'
     + '<span class="terminal-prompt">$</span>'
-    + '<input id="ti" class="terminal-input" placeholder="Run command (e.g. python app.py, npm start)..."></div>'
+    + '<input id="ti" class="terminal-input" placeholder="e.g. python app.py, ls, npm start..."></div>'
     + '<div class="terminal-footer">'
-    + '<span class="text-xs text-muted" style="padding:2px 0">Quick:</span>'
+    + '<span class="text-xs" style="color:rgba(255,255,255,0.25);padding:0 2px">Quick run:</span>'
     + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="python --version">python</button>'
     + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="node --version">node</button>'
-    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="npm start">npm start</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="ls -la">ls</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="pwd">pwd</button>'
     + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="python -m http.server 8080">serve :8080</button>'
-    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="dir">dir</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="npm start">npm start</button>'
+    + '<button class="quick-port-btn" data-click="run-term-cmd" data-cmd="pip list">pip list</button>'
     + '</div></div>';
-  // Set focus
   var ti = document.getElementById('ti');
   if (ti) ti.focus();
-  // Keyboard: Enter to execute, Arrow keys for history
   document.getElementById('ti').onkeydown = function(e) {
     if (e.key === 'Enter') {
       var cmd = e.target.value.trim();
@@ -1560,15 +1575,17 @@ function showTerminal() {
 }
 
 function showBrowser() {
+  // Determine a sensible default URL: same host on port 8000
+  var defaultUrl = location.protocol + '//' + location.hostname + ':8000';
   const body = document.getElementById('panelBody');
   body.innerHTML = '<div class="browser-container">'
     + '<div class="browser-urlbar">'
-    + '<input id="bu" class="browser-url-input" placeholder="https://" value="http://localhost:8000">'
+    + '<input id="bu" class="browser-url-input" placeholder="https://" value="' + escapeHtml(defaultUrl) + '">'
     + '<button class="browser-go-btn" data-click="browser-go">Go</button>'
     + '<button class="browser-go-btn" data-click="browser-refresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>'
     + '<button class="browser-go-btn" data-click="browser-toggle-live" id="browser-live-btn" title="Auto-refresh">●</button>'
     + '</div>'
-    + '<iframe id="bf" class="browser-iframe"></iframe></div>';
+    + '<iframe id="bf" class="browser-iframe" src="' + escapeHtml(defaultUrl) + '" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe></div>';
 }
 
 var _browserRefreshTimer = null;
