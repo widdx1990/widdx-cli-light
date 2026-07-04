@@ -150,7 +150,7 @@ class ExecutionControlPlane:
 
     def _decide(self, signals: list[ExecutionSignal], step: int) -> ControlAction:
         """Internal decision pipeline: cooldown → cap → evaluate → stabilize → trace."""
-        t0 = time.time()
+        time.time()
 
         # Cooldown
         cooldown_active = self._action_cooldown > 0

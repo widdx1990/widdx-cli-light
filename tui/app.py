@@ -21,27 +21,29 @@ except ImportError:
 
 ROOT = ensure_project_root()
 
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.widgets import RichLog, Input, Static, Button, Select
-from textual.containers import Horizontal, ScrollableContainer, Vertical
-from textual.screen import Screen
-from textual import work
+from textual.app import App, ComposeResult  # noqa: E402
+from textual.binding import Binding  # noqa: E402
+from textual.widgets import RichLog, Input, Static, Button, Select  # noqa: E402
+from textual.containers import Horizontal, ScrollableContainer, Vertical  # noqa: E402
+from textual.screen import Screen  # noqa: E402
+from textual import work  # noqa: E402
 
-from typing import Any
-from core.ui_visual import (render_user_message, render_assistant_message, render_system_message, render_tool_message, render_reasoning, render_error, render_divider)
-from core.mcp.client import get_mcp_manager
-from core.skills import skill_manager
-from core.memory import MemoryStore
+from typing import Any  # noqa: E402
+from core.ui_visual import (  # noqa: E402
+    render_user_message, render_assistant_message, render_system_message, render_tool_message, render_reasoning, render_error, render_divider
+)
+from core.mcp.client import get_mcp_manager  # noqa: E402
+from core.skills import skill_manager  # noqa: E402
+from core.memory import MemoryStore  # noqa: E402
 
-from .state import TUIState
-from .chat_engine import ChatEngine, ResultMsg, ErrorMsg, StreamEndMsg, ThinkingMsg, ToolStepMsg
-from .commands import CommandHandler
-from .widgets import HeaderWidget
-from .screens.ubuntu_grid import UbuntuGrid
-from .theme_util import apply_app_theme
+from .state import TUIState  # noqa: E402
+from .chat_engine import ChatEngine, ResultMsg, ErrorMsg, StreamEndMsg, ThinkingMsg, ToolStepMsg  # noqa: E402
+from .commands import CommandHandler  # noqa: E402
+from .widgets import HeaderWidget  # noqa: E402
+from .screens.ubuntu_grid import UbuntuGrid  # noqa: E402
+from .theme_util import apply_app_theme  # noqa: E402
 
-from core.log_setup import setup_logging, add_file_handler
+from core.log_setup import setup_logging, add_file_handler  # noqa: E402
 setup_logging("widdx.tui", level=logging.DEBUG)
 logger = logging.getLogger("widdx.tui")
 if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):

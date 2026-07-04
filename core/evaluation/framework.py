@@ -184,12 +184,18 @@ class EvaluationRunner:
         # Determine winner
         wins_a = 0
         wins_b = 0
-        if b_sr > a_sr: wins_b += 1
-        else: wins_a += 1
-        if b_cost < a_cost: wins_b += 1
-        else: wins_a += 1
-        if b_steps < a_steps: wins_b += 1
-        else: wins_a += 1
+        if b_sr > a_sr:
+            wins_b += 1
+        else:
+            wins_a += 1
+        if b_cost < a_cost:
+            wins_b += 1
+        else:
+            wins_a += 1
+        if b_steps < a_steps:
+            wins_b += 1
+        else:
+            wins_a += 1
 
         winner = "B" if wins_b >= 2 else "A" if wins_a >= 2 else "tie"
         improvement_sr = (b_sr - a_sr) * 100

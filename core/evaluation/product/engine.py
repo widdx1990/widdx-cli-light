@@ -106,7 +106,6 @@ class GameVerifier:
                     if "this.player.jump()" in line:
                         # Look BACK 5 lines for grounded check, and FORWARD for key consumption
                         before = "\n".join(lines[max(0, i-5):i])
-                        has_grounded_before = "grounded" in before
                         for j in range(i, min(i + 8, len(lines))):
                             low_line = lines[j].lower()
                             if "keys['space']" in low_line or 'keys[\"space\"]' in low_line:
@@ -225,11 +224,16 @@ class WebVerifier:
 def _compute_grade(result: VerificationResult) -> str:
     criticals = sum(1 for d in result.defects if d.severity == "critical")
     highs = sum(1 for d in result.defects if d.severity == "high")
-    if criticals > 0: return "F"
-    if highs >= 2: return "D"
-    if highs >= 1: return "C"
-    if result.defects: return "B"
-    if result.tests_passed == result.tests_run and result.tests_run > 0: return "A"
+    if criticals > 0:
+        return "F"
+    if highs >= 2:
+        return "D"
+    if highs >= 1:
+        return "C"
+    if result.defects:
+        return "B"
+    if result.tests_passed == result.tests_run and result.tests_run > 0:
+        return "A"
     return "B"
 
 

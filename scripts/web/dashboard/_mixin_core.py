@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger("widdx.web.dashboard")
 
-from pathlib import Path
+from pathlib import Path  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 

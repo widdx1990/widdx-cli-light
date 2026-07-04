@@ -7,16 +7,16 @@ from datetime import datetime
 
 logger = logging.getLogger("widdx.tui.sessions")
 
-from textual.screen import ModalScreen, Screen
-from textual.widgets import Static, Input, Button, Label, RichLog
-from textual.containers import Vertical, Horizontal, ScrollableContainer
-from textual.binding import Binding
-from rich.text import Text
-from rich.panel import Panel
-from core.ui_visual import ROLE_META_ASCII, BLUE, DIM, RED
+from textual.screen import ModalScreen, Screen  # noqa: E402
+from textual.widgets import Static, Input, Button, Label, RichLog  # noqa: E402
+from textual.containers import Vertical, Horizontal, ScrollableContainer  # noqa: E402
+from textual.binding import Binding  # noqa: E402
+from rich.text import Text  # noqa: E402
+from rich.panel import Panel  # noqa: E402
+from core.ui_visual import ROLE_META_ASCII, BLUE, DIM, RED  # noqa: E402
 
 # Import Session V2
-from core.session_v2 import SessionV2, create_new_session
+from core.session_v2 import SessionV2, create_new_session  # noqa: E402
 
 
 SESSION_DIR = Path.cwd().resolve()

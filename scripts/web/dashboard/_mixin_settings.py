@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger("widdx.web.dashboard")
 
-import threading
+import threading  # noqa: E402
 
 
 def _has_keychain_key(provider_name: str) -> bool:

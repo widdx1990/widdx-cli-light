@@ -19,15 +19,15 @@ import logging
 
 logger = logging.getLogger("widdx.web.dashboard")
 
-from core._path import ensure_project_root
+from core._path import ensure_project_root  # noqa: E402
 ensure_project_root()
 
-from scripts.web.dashboard._mixin_core import CoreDashboardMixin
-from scripts.web.dashboard._mixin_scheduler import SchedulerMixin
-from scripts.web.dashboard._mixin_storage import StorageMixin
-from scripts.web.dashboard._mixin_gateway import GatewayMixin
-from scripts.web.dashboard._mixin_settings import SettingsMixin
-from scripts.web.dashboard._mixin_devops import DevOpsMixin
+from scripts.web.dashboard._mixin_core import CoreDashboardMixin  # noqa: E402
+from scripts.web.dashboard._mixin_scheduler import SchedulerMixin  # noqa: E402
+from scripts.web.dashboard._mixin_storage import StorageMixin  # noqa: E402
+from scripts.web.dashboard._mixin_gateway import GatewayMixin  # noqa: E402
+from scripts.web.dashboard._mixin_settings import SettingsMixin  # noqa: E402
+from scripts.web.dashboard._mixin_devops import DevOpsMixin  # noqa: E402
 
 
 class Dashboard(

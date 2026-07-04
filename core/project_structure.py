@@ -10,8 +10,8 @@ warnings.warn(
     stacklevel=2,
 )
 
-from typing import Optional
-from core.project.scanner import ProjectScanner
+from typing import Optional  # noqa: E402
+from core.project.scanner import ProjectScanner  # noqa: E402
 
 
 class FileNode:

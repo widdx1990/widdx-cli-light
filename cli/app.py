@@ -66,33 +66,33 @@ def _project_changed(project_dir: Path, extra_ignore: list | None = None) -> boo
     _last_index_hash = current_hash
     return True
 
-from core import tools
-from core.config.settings import load as load_config
-from core.providers.providers import create_provider
-from core.mcp.client import get_mcp_manager
-from core.project import state as project_state
-from core.project.scanner import ProjectScanner
-from core.project import git as git_utils
-from core.project_tracker import ensure_docs, build_context_block
-from core.auto_setup import setup_project
-from core.memory import MemoryStore
-from core.memory_learner import MemoryLearner
-from core.skills import skill_manager
-from core.uil import UnifiedIntelligenceLayer, ExecutionMode
-from core.agents.executor_adapter import EXECUTOR_MAP
-from core.workflow import WorkflowEngine
-from core.config.keychain import prompt_key, has_key
+from core import tools  # noqa: E402
+from core.config.settings import load as load_config  # noqa: E402
+from core.providers.providers import create_provider  # noqa: E402
+from core.mcp.client import get_mcp_manager  # noqa: E402
+from core.project import state as project_state  # noqa: E402
+from core.project.scanner import ProjectScanner  # noqa: E402
+from core.project import git as git_utils  # noqa: E402
+from core.project_tracker import ensure_docs, build_context_block  # noqa: E402
+from core.auto_setup import setup_project  # noqa: E402
+from core.memory import MemoryStore  # noqa: E402
+from core.memory_learner import MemoryLearner  # noqa: E402
+from core.skills import skill_manager  # noqa: E402
+from core.uil import UnifiedIntelligenceLayer, ExecutionMode  # noqa: E402
+from core.agents.executor_adapter import EXECUTOR_MAP  # noqa: E402
+from core.workflow import WorkflowEngine  # noqa: E402
+from core.config.keychain import prompt_key, has_key  # noqa: E402
 
-from .display import (
+from .display import (  # noqa: E402
     console,
     show_header, show_user_msg, show_system_msg, show_ai_msg,
     show_divider, show_table, show_panel, show_error, show_success,
 )
-from .input import CLIInput
-from .commands import CLICommands
+from .input import CLIInput  # noqa: E402
+from .commands import CLICommands  # noqa: E402
 
-from core.constants import SYSTEM_PROMPT
-from core.log_setup import setup_logging
+from core.constants import SYSTEM_PROMPT  # noqa: E402
+from core.log_setup import setup_logging  # noqa: E402
 logger = setup_logging("widdx.cli")
 
 

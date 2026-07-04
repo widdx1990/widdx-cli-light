@@ -216,7 +216,7 @@ class ConstraintTransparencyIndex:
             return {"status": "insufficient_data"}
 
         blocked = sum(1 for p in self._proposals if not p["accepted"])
-        accepted = total - blocked
+        total - blocked
         blocked_with_merit = sum(
             1 for p in self._proposals
             if not p["accepted"] and p["confidence"] > 0.6

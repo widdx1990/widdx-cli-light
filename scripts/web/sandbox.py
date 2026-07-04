@@ -16,7 +16,7 @@ from typing import Any
 
 logger = logging.getLogger("widdx.web.sandbox")
 
-from core._path import ensure_project_root
+from core._path import ensure_project_root  # noqa: E402
 ensure_project_root()
 
 

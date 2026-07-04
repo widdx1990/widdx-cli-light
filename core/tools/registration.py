@@ -164,7 +164,7 @@ register(
 )
 
 # ── Project Tracker tool ──
-from core.project_tracker import TOOL_DEFINITION as _PT_TOOL, handle_update_project_doc
+from core.project_tracker import TOOL_DEFINITION as _PT_TOOL, handle_update_project_doc  # noqa: E402
 
 register(
     _PT_TOOL["name"],

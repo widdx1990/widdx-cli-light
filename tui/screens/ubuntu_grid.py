@@ -3,11 +3,11 @@
 import logging
 logger = logging.getLogger("widdx.tui")
 
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.screen import Screen
-from textual.widgets import Button, Select, Static
-from textual.containers import Horizontal
+from textual.app import ComposeResult  # noqa: E402
+from textual.binding import Binding  # noqa: E402
+from textual.screen import Screen  # noqa: E402
+from textual.widgets import Button, Select, Static  # noqa: E402
+from textual.containers import Horizontal  # noqa: E402
 
 
 class UbuntuGrid(Screen):

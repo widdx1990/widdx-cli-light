@@ -28,10 +28,10 @@ import threading
 import time
 from typing import Any
 
-from core._path import ensure_project_root
+from core._path import ensure_project_root  # noqa: E402
 ensure_project_root()
 
-from pathlib import Path
+from pathlib import Path  # noqa: E402
 
 # ── Static paths ────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,8 +55,8 @@ except ImportError as e:
 logger = logging.getLogger("widdx.web")
 
 # ── Pydantic models for input validation ────────────────────
-from pydantic import BaseModel, Field
-from typing import Optional as Opt
+from pydantic import BaseModel, Field  # noqa: E402
+from typing import Optional as Opt  # noqa: E402
 
 class ChatPayload(BaseModel):
     message: str = Field(..., min_length=1, max_length=100000)
@@ -86,9 +86,9 @@ app = FastAPI(title="WIDDX Nexus", version="3.2.0")
 
 # ── CORS + Origin validation ───────────────────────────────
 # ISS-009: CSRF / Origin validation — only allow same-origin requests
-ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8099", "http://127.0.0.1:8099"]
+ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8001", "http://127.0.0.1:8001", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8099", "http://127.0.0.1:8099"]
 
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 @app.middleware("http")
 async def _validate_origin(request: Request, call_next):

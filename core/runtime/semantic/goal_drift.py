@@ -99,7 +99,7 @@ class GoalDriftDetector:
         if len(self._response_lengths) >= 3:
             mean_len = sum(self._response_lengths) / len(self._response_lengths)
             if mean_len > 0:
-                variance = sum((l - mean_len) ** 2 for l in self._response_lengths) / len(self._response_lengths)
+                variance = sum((rl - mean_len) ** 2 for rl in self._response_lengths) / len(self._response_lengths)
                 response_entropy = min(1.0, (variance ** 0.5) / mean_len)
             else:
                 response_entropy = 0.0

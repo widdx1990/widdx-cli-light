@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger("widdx.web.dashboard")
 
-import datetime
+import datetime  # noqa: E402
 
 
 class StorageMixin:

@@ -65,8 +65,8 @@ def evaluate_signals(
     failure_threshold = adaptive.get("failure_rate_threshold", DEFAULT_FAILURE_RATE_THRESHOLD)
     complexity_threshold = adaptive.get("complexity_threshold", DEFAULT_COMPLEXITY_THRESHOLD)
     stuck_iters = int(adaptive.get("stuck_iterations", DEFAULT_STUCK_ITERATIONS))
-    action_cap = int(adaptive.get("action_cap", 8))
-    cooldown_steps = int(adaptive.get("cooldown_steps", 2))
+    int(adaptive.get("action_cap", 8))
+    int(adaptive.get("cooldown_steps", 2))
 
     signal_types: set[SignalType] = {s.signal_type for s in signals}
 

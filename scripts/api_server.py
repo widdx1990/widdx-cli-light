@@ -9,12 +9,12 @@ from pathlib import Path
 _root = str(Path(__file__).resolve().parent.parent)
 if _root not in sys.path:
     sys.path.insert(0, _root)
-import time
-import logging
-import asyncio
-import os
-from typing import Optional
-from contextlib import asynccontextmanager
+import time  # noqa: E402
+import logging  # noqa: E402
+import asyncio  # noqa: E402
+import os  # noqa: E402
+from typing import Optional  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
 
 try:
     from fastapi import FastAPI, HTTPException, Depends
@@ -88,20 +88,20 @@ def rate_limit(credentials: Optional[HTTPAuthorizationCredentials] = Depends(sec
     client_id = credentials.credentials if credentials else "anonymous"
     if not _rate_limiter.check(client_id):
         raise HTTPException(status_code=429, detail="Rate limit exceeded.")
-from core import tools
-from core.config.settings import load as load_config, save as save_config
-from core.providers.providers import (
+from core import tools  # noqa: E402
+from core.config.settings import load as load_config, save as save_config  # noqa: E402
+from core.providers.providers import (  # noqa: E402
     create_provider, get_available_models,
 )
-from core.memory import MemoryStore
-from core.memory_learner import MemoryLearner
-from core.project import state as project_state
-from core.project.scanner import ProjectScanner
-from core.project_tracker import ensure_docs, load_docs, update_doc, build_context_block
-from core.auto_setup import detect_project_deps
-from core.skills import skill_manager
-from core.mcp.client import get_mcp_manager
-from core.chat import run_stream_turn
+from core.memory import MemoryStore  # noqa: E402
+from core.memory_learner import MemoryLearner  # noqa: E402
+from core.project import state as project_state  # noqa: E402
+from core.project.scanner import ProjectScanner  # noqa: E402
+from core.project_tracker import ensure_docs, load_docs, update_doc, build_context_block  # noqa: E402
+from core.auto_setup import detect_project_deps  # noqa: E402
+from core.skills import skill_manager  # noqa: E402
+from core.mcp.client import get_mcp_manager  # noqa: E402
+from core.chat import run_stream_turn  # noqa: E402
 
 # ── App State ────────────────────────────────────────────────
 class AppState:
@@ -184,8 +184,8 @@ app.add_middleware(
 # ── Request size limit (ISS-004) ──────────────────────────────
 _MAX_BODY_BYTES = int(os.environ.get("WIDDX_MAX_BODY_BYTES", 1_048_576))  # 1 MB default
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
 
 class _BodySizeMiddleware(BaseHTTPMiddleware):
     """Reject requests whose body exceeds _MAX_BODY_BYTES."""

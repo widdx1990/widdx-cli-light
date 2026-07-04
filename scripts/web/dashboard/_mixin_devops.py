@@ -4,8 +4,8 @@ import logging
 
 logger = logging.getLogger("widdx.web.dashboard")
 
-import sys as _sys
-from pathlib import Path
+import sys as _sys  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 
 class DevOpsMixin:

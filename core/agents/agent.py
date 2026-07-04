@@ -317,6 +317,17 @@ class AutonomousAgent:
                     AgentStep(s["step"], s["tool"], s["args"], s["result"])
                     for s in saved_steps
                 ]
+                # Trace restored steps in ToolTracer
+                for s in saved_steps:
+                    args = s.get("args", {})
+                    tool_tracer.tool_call(s["tool"], args)
+                    tool_tracer.after_sandbox(
+                        exit_code=0,
+                        duration=0.0,
+                        stdout=s.get("result", ""),
+                        stderr=""
+                    )
+                    tool_tracer.result(s.get("result", ""))
                 resume = True
                 assistant_turns = sum(1 for m in messages if m.get("role") == "assistant")
                 start_iteration = min(assistant_turns, max_iter - 1)

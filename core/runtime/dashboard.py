@@ -23,8 +23,10 @@ logger = logging.getLogger("widdx.dashboard")
 
 
 def _health_color(value: float, warning: float = 0.6, critical: float = 0.3) -> str:
-    if value >= warning: return "GREEN"
-    if value >= critical: return "YELLOW"
+    if value >= warning:
+        return "GREEN"
+    if value >= critical:
+        return "YELLOW"
     return "RED"
 
 
@@ -229,9 +231,15 @@ class ContinuousDashboard:
             kpi = report.kpi
             ml_score = 100
             issues = 0
-            if kpi.is_stale: ml_score -= 25; issues += 1
-            if kpi.is_overconfident: ml_score -= 25; issues += 1
-            if kpi.is_underconfident: ml_score -= 25; issues += 1
+            if kpi.is_stale:
+                ml_score -= 25
+                issues += 1
+            if kpi.is_overconfident:
+                ml_score -= 25
+                issues += 1
+            if kpi.is_underconfident:
+                ml_score -= 25
+                issues += 1
             layers["metalearning"] = {
                 "status": "GREEN" if ml_score >= 80 else "YELLOW" if ml_score >= 60 else "RED",
                 "score": max(0, ml_score),
@@ -257,8 +265,8 @@ class ContinuousDashboard:
 
     def _compute_health(self, layers: dict) -> dict:
         health = {}
-        for name, l in layers.items():
-            health[name] = l.get("status", "GREEN")
+        for name, layer in layers.items():
+            health[name] = layer.get("status", "GREEN")
         statuses = list(health.values())
         reds = statuses.count("RED")
         yellows = statuses.count("YELLOW")
@@ -274,9 +282,9 @@ class ContinuousDashboard:
         }
         total = 0.0
         contributors = {}
-        for name, l in layers.items():
+        for name, layer_data in layers.items():
             w = weights.get(name, 0.10)
-            score = l.get("score", 100)
+            score = layer_data.get("score", 100)
             total += score * w
             contributors[name] = round(score, 1)
 
@@ -379,8 +387,12 @@ class ContinuousDashboard:
         avg_first = sum(first_half) / len(first_half)
         avg_second = sum(second_half) / len(second_half)
 
-        trend = "improving" if avg_second > avg_first + 1 else \
-                "degrading" if avg_second < avg_first - 1 else "stable"
+        if avg_second > avg_first + 1:
+            trend = "improving"
+        elif avg_second < avg_first - 1:
+            trend = "degrading"
+        else:
+            trend = "stable"
 
         return {
             "available": True,

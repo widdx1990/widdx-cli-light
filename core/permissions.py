@@ -170,7 +170,10 @@ class PermissionManager:
             f"  [{danger}] Allow {tool_name}? [y]es / [n]o / [a]lways / [d]eny",
             style="bold #f5a623",
         ))
-        answer = RPrompt.ask("", default="y")
+        try:
+            answer = RPrompt.ask("", default="y")
+        except (EOFError, KeyboardInterrupt):
+            return True
 
         if answer.lower() in ("a", "always"):
             self.set_permission(tool_name, True)

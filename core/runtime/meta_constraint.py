@@ -125,7 +125,7 @@ class MetaConstraintLayer:
         constraints: dict[str, ConstraintHealth] = {}
 
         # Drift: rigidity = % of proposals clamped/rejected by drift
-        drift_actions = len(self._constraint_actions["drift"])
+        len(self._constraint_actions["drift"])
         drift_blocked = sum(1 for p in self._proposal_history if p["blocked_by"] == "drift")
         drift_rigidity = drift_blocked / max(total, 1)
         drift_suppression = drift_blocked / max(blocked, 1) if blocked > 0 else 0
@@ -198,7 +198,7 @@ class MetaConstraintLayer:
 
         # Overall health
         n_constrained = sum(1 for v in constraints.values() if v.status in ("RIGID", "SUPPRESSIVE"))
-        n_free = sum(1 for v in constraints.values() if v.status == "HEALTHY")
+        sum(1 for v in constraints.values() if v.status == "HEALTHY")
         overall = (
             "STAGNANT" if n_constrained >= 3
             else "CONSTRAINED" if n_constrained >= 2

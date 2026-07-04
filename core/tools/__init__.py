@@ -17,20 +17,20 @@ Architecture:
 
 # ── Re-export registry API ──
 from .registry import (
-    TOOL_DEFINITIONS,
+    TOOL_DEFINITIONS,  # noqa: F401 — public re-export
     register,
     register_dynamic,
     clear_dynamic,
 )
 
 # ── Re-export dispatch API ──
-from .dispatch import execute, execute_with_skills
+from .dispatch import execute, execute_with_skills  # noqa: F401 — public re-export
 
 # ── Re-export safety API ──
-from .safety import configure, is_safe_path, get_safe_dir
+from .safety import configure, is_safe_path, get_safe_dir  # noqa: F401 — public re-export
 
 # ── Re-export security scanner ──
-from .security import scan_dangerous
+from .security import scan_dangerous  # noqa: F401 — public re-export
 
 # ── Re-export helpers ──
 from .handlers.file_ops import get_tool_helpers as _get_file_helpers
