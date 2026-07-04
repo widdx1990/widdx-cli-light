@@ -29,6 +29,9 @@ from .dispatch import execute, execute_with_skills
 # ── Re-export safety API ──
 from .safety import configure, is_safe_path, get_safe_dir
 
+# ── Re-export security scanner ──
+from .security import scan_dangerous
+
 # ── Re-export helpers ──
 from .handlers.file_ops import get_tool_helpers as _get_file_helpers
 _helpers = _get_file_helpers()
