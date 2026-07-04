@@ -4,6 +4,7 @@ import logging
 import platform
 
 from core.tools.security import scan_dangerous as _scan_dangerous
+from core.tool_tracer import t as tool_tracer
 
 logger = logging.getLogger("widdx.tools.bash")
 
@@ -27,10 +28,15 @@ def _bash(command: str, description: str | None = None) -> str:
     if warnings_list:
         prefix = "⚠️ WARNING — Suspicious patterns:\n" + "\n".join(f"  • {r}" for r in warnings_list) + "\n\n"
     try:
+        tool_tracer.handler("bash")
         from core.sandbox import SandboxExecutor
         sandbox_mode = "subprocess" if platform.system() == "Windows" else "auto"
         sb = SandboxExecutor(mode=sandbox_mode)
+        tool_tracer.before_sandbox(command)
         result = sb.execute(command, timeout=BASH_TIMEOUT)
+        tool_tracer.after_sandbox(result.exit_code, result.elapsed_ms / 1000 if hasattr(result, 'elapsed_ms') else 0.0, result.stdout, result.stderr)
+        for f in (result.files_created or []):
+            tool_tracer.file_created(str(f))
         out = result.stdout[:MAX_STDOUT_CHARS]
         err = result.stderr[:MAX_STDERR_CHARS]
         ret = prefix + f"💲 {desc}\n"

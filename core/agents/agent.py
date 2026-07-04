@@ -24,6 +24,7 @@ from ..chat import (
     print_reasoning, print_ai_stream, print_agent_done,
 )
 from ..providers.providers import estimate_turn_cost
+from ..tool_tracer import t as tool_tracer
 
 
 def _vid(tc_id) -> str:
@@ -528,6 +529,8 @@ class AutonomousAgent:
 
             # ── Process tool calls if AI decided to use tools ──
             if tool_calls:
+                for tc in tool_calls:
+                    tool_tracer.tool_call(tc.name, tc.args if hasattr(tc, 'args') else {})
                 tc_list = [
                     {"id": _vid(tc.id), "type": "function",
                      "function": {"name": tc.name,
@@ -904,6 +907,7 @@ class AutonomousAgent:
         if tc.name != "use_skill" and tc.name not in self.state["tools_used"]:
             self.state["tools_used"].append(tc.name)
 
+        tool_tracer.dispatch(tc.name)
         print_tool_call(tc.name, json.dumps(tc.args, ensure_ascii=False))
         self._emit({"type": "tool", "data": {"name": tc.name, "args": tc.args}})
 
@@ -951,6 +955,7 @@ class AutonomousAgent:
 
         # Default execution path
         result = core_tools.execute_with_skills(tc.name, tc.args)
+        tool_tracer.result(result)
         print_tool_msg(tc.name, result[:1000])
         self._emit({"type": "tool_result", "data": {"name": tc.name, "result": result[:500]}})
         # Cache successful read-only tool results

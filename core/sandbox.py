@@ -647,6 +647,20 @@ class SandboxExecutor:
         if needs_shell:
             logger.debug("shell=True required for: %.100s", command)
 
+        # Snapshot files before execution for change tracking
+        from pathlib import Path as _Path
+        _before = set()
+        try:
+            _root = _Path(self._cwd).resolve()
+            if _root.is_dir():
+                _before = set(
+                    str(f.relative_to(_root))
+                    for f in _root.rglob("*")
+                    if f.is_file()
+                )
+        except Exception:
+            _before = set()
+
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -678,6 +692,8 @@ class SandboxExecutor:
                 was_timeout=was_timeout,
                 was_killed=was_killed,
                 mode="subprocess",
+                files_created=self._detect_new_files(_before),
+                files_modified=self._detect_modified_files(_before),
             )
         except FileNotFoundError:
             # CRIT-001 FIX: Never retry with shell=True — use explicit shell wrapper
@@ -698,6 +714,32 @@ class SandboxExecutor:
         return self._execute_subprocess(command, timeout, env)
 
     # -- Helpers --------------------------------------------------------
+
+    @staticmethod
+    def _detect_new_files(before: set) -> list[str]:
+        try:
+            root = Path(".").resolve()
+            after = set(
+                str(f.relative_to(root))
+                for f in root.rglob("*")
+                if f.is_file()
+            )
+            return sorted(after - before)[:50]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _detect_modified_files(before: set) -> list[str]:
+        try:
+            root = Path(".").resolve()
+            after = set(
+                str(f.relative_to(root))
+                for f in root.rglob("*")
+                if f.is_file()
+            )
+            return sorted(after & before)[:30]
+        except Exception:
+            return []
 
     # Windows built-in shell commands — require shell=True
     _WINDOWS_BUILTINS = {

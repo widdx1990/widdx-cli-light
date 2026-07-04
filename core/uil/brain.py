@@ -20,6 +20,8 @@ from typing import Any, Callable
 
 logger = logging.getLogger("widdx.uil.brain")
 
+from core.tool_tracer import t as tool_tracer
+
 from .analyzer import TaskAnalyzer  # noqa: E402
 from .router import DecisionRouter  # noqa: E402
 from .planner import TaskPlanner  # noqa: E402
@@ -162,6 +164,7 @@ class UnifiedIntelligenceLayer:
             ExecutionResult carries plan-vs-execution delta for Phase 2.
         """
         # Step 1: Analyze — classify the user input
+        tool_tracer.start_session()
         ctx_analyzer: dict = {}
         if messages:
             ctx_analyzer["messages"] = messages
@@ -782,6 +785,8 @@ class UnifiedIntelligenceLayer:
             result=result,
             decision=decision,
         )
+
+        tool_tracer.print_summary()
 
         return result, decision
 

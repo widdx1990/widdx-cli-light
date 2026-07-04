@@ -7,11 +7,13 @@ from pathlib import Path
 
 from ..safety import is_safe_path, get_safe_dir
 from ..registry import TOOL_DEFINITIONS
+from core.tool_tracer import t as tool_tracer
 
 logger = logging.getLogger("widdx.tools.file_ops")
 
 
 def _read(file_path: str, offset: int = 0, limit: int = 0) -> str:
+    tool_tracer.handler("read")
     p = Path(file_path)
     if not is_safe_path(p):
         return f"Sandbox: read of {file_path} denied — not inside {get_safe_dir()}"
@@ -44,6 +46,7 @@ def _read(file_path: str, offset: int = 0, limit: int = 0) -> str:
 
 
 def _write(file_path: str, content: str):
+    tool_tracer.handler("write")
     p = Path(file_path)
     if not is_safe_path(p):
         return f"Sandbox: write to {file_path} denied — not inside {get_safe_dir()}"
@@ -57,11 +60,13 @@ def _write(file_path: str, content: str):
             tx.write(content)
         if not guard.after_write(p, len(content.encode('utf-8'))):
             return f"❌ Write verification failed for {file_path}"
+        tool_tracer.file_created(file_path)
         return f"Written {len(content.encode('utf-8'))} bytes to {file_path}"
     except ImportError:
         p.parent.mkdir(parents=True, exist_ok=True)
         try:
             p.write_text(content, encoding="utf-8")
+            tool_tracer.file_created(file_path)
             return f"Written {len(content.encode('utf-8'))} bytes to {file_path}"
         except Exception as e:
             return f"Error writing {file_path}: {e}"
@@ -69,6 +74,7 @@ def _write(file_path: str, content: str):
 
 def _edit(file_path: str, old_string: str, new_string: str,
           replace_all: bool = False, preview: bool = False):
+    tool_tracer.handler("edit")
     p = Path(file_path)
     if not is_safe_path(p):
         return f"Sandbox: edit of {file_path} denied — not inside {get_safe_dir()}"

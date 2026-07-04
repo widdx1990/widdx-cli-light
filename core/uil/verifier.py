@@ -69,10 +69,13 @@ class Verifier:
 
         # Check: we have output
         if not result.summary and not result.error:
+            tools_info = ""
+            if result.tools_used:
+                tools_info = f" ({len(result.tools_used)} tools executed: {', '.join(str(t) for t in result.tools_used[:5])})"
             report.add(
                 check_name="empty_output",
                 severity=VerificationSeverity.WARNING,
-                message="Execution produced no output summary",
+                message=f"Execution produced no output summary{tools_info}",
                 location="result.summary",
                 suggestion="Ensure the executor returns a summary string",
                 passed=False,

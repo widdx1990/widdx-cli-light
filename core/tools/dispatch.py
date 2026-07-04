@@ -5,6 +5,7 @@ from typing import Any
 
 from .registry import get_tool_map
 from . import safety as _safety
+from core.tool_tracer import t as tool_tracer
 
 logger = logging.getLogger("widdx.tools.dispatch")
 
