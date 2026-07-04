@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  web:
+    build: .
+    container_name: widdx-web
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.widdx:/workspace/.widdx
+      - ./config.json:/workspace/config.json:ro
+    environment:
+      - WIDDX_HOME=/workspace
+    entrypoint: ["widdx-web"]
+
+  api:
+    build: .
+    container_name: widdx-api
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./.widdx:/workspace/.widdx
+      - ./config.json:/workspace/config.json:ro
+    environment:
+      - WIDDX_HOME=/workspace
+    entrypoint: ["widdx-api"]

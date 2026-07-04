@@ -41,13 +41,11 @@ from .widgets import HeaderWidget
 from .screens.ubuntu_grid import UbuntuGrid
 from .theme_util import apply_app_theme
 
-from core.log_setup import setup_logging, _FORMAT
+from core.log_setup import setup_logging, add_file_handler
 setup_logging("widdx.tui", level=logging.DEBUG)
 logger = logging.getLogger("widdx.tui")
 if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
-    fh = logging.FileHandler(Path(ROOT) / "widdx-tui.log", encoding="utf-8")
-    fh.setFormatter(logging.Formatter(_FORMAT))
-    logger.addHandler(fh)
+    add_file_handler(str(Path(ROOT) / "widdx-tui.log"))
 
 _THINK_TAGS = ("[thinking]", "[/thinking]")
 

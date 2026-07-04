@@ -129,9 +129,9 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # ── Favicon ─────────────────────────────────────────────────
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> Response:
-    p = STATIC_DIR / "favicon.ico"
-    if p.exists():
-        return FileResponse(p)
+    svg = STATIC_DIR / "favicon.svg"
+    if svg.exists():
+        return FileResponse(svg, media_type="image/svg+xml")
     return Response(status_code=204)
 
 # ── Lazy handlers ───────────────────────────────────────────
@@ -1103,7 +1103,7 @@ async def websocket_events(websocket: WebSocket):
 
 # ── Main ────────────────────────────────────────────────────
 
-def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False) -> None:
+def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None:
     """Run the Web UI server."""
     import uvicorn
     logger.info("WIDDX Nexus Web UI: http://%s:%d", host, port)

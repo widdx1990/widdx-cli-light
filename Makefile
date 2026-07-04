@@ -42,10 +42,10 @@ test-cov:
 	python -m pytest tests/ --cov=core --cov-report=term --cov-report=html --ignore=tests/test_api_server.py -k "not test_next_run_daily"
 
 lint:
-	ruff check core/
+	ruff check core/ cli/ tui/ scripts/
 
 lint-fix:
-	ruff check core/ --fix
+	ruff check core/ cli/ tui/ scripts/ --fix
 
 typecheck:
 	mypy core/ --ignore-missing-imports

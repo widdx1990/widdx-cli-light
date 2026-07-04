@@ -8,17 +8,17 @@
   "mcp_servers": [
     {
       "name": "filesystem",
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/home/widdx/widdx-cli-light/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
-        "/home/widdx/widdx-cli-light"
+        "@modelcontextprotocol/server-filesystem",
+        "."
       ]
     },
     {
       "name": "memory",
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/home/widdx/widdx-cli-light/node_modules/@modelcontextprotocol/server-memory/dist/index.js"
+        "@modelcontextprotocol/server-memory"
       ]
     },
     {
@@ -31,16 +31,16 @@
     },
     {
       "name": "sequential-thinking",
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/home/widdx/widdx-cli-light/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"
+        "@modelcontextprotocol/server-sequential-thinking"
       ]
     },
     {
       "name": "playwright",
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/home/widdx/widdx-cli-light/node_modules/@playwright/mcp/cli.js"
+        "@playwright/mcp"
       ]
     },
     {
@@ -49,7 +49,7 @@
       "args": [
         "mcp-server-sqlite",
         "--db-path",
-        "/home/widdx/widdx-cli-light/.widdx/data/mcp_data.db"
+        ".widdx/data/mcp_data.db"
       ]
     }
   ]

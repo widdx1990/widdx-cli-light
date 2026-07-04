@@ -20,6 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Terminals :: Terminal Emulators/X Terminals",
 ]
@@ -46,7 +47,7 @@ api = [
     "uvicorn[standard]>=0.27",
 ]
 gguf = ["llama-cpp-python>=0.2.0"]
-all = ["widdx-nexus[dev,gguf,voice,gateway]"]
+all = ["widdx-nexus[dev,api,gguf,voice,gateway,vision]"]
 voice = ["edge-tts"]
 gateway = ["python-telegram-bot", "discord.py"]
 vision = ["torch", "transformers"]

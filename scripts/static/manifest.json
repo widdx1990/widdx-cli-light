@@ -1,0 +1,16 @@
+{
+  "name": "WIDDX Nexus",
+  "short_name": "WIDDX",
+  "description": "Autonomous AI Software Engineering Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ]
+}
