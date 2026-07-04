@@ -108,17 +108,14 @@ def _run_with_stream_events(provider, tool_defs, temperature, msgs, on_event):
     for event in provider.stream(msgs, tool_defs, temperature):
         if event["type"] == "content":
             if saw_reasoning:
-                # Provider separates reasoning → content is clean, forward as text
                 content_chunks.append(event["data"])
                 if on_event:
                     on_event({"type": "text", "data": event["data"]})
             else:
-                # Might have reasoning embedded — buffer, don't forward yet
                 content_chunks.append(event["data"])
         elif event["type"] == "reasoning":
             if not saw_reasoning:
                 saw_reasoning = True
-                # Flush buffered content as reasoning (it was reasoning tokens)
                 for chunk in content_chunks:
                     reasoning_chunks.append(chunk)
                     if on_event:
@@ -136,7 +133,16 @@ def _run_with_stream_events(provider, tool_defs, temperature, msgs, on_event):
             _, tc_list = event["data"]
             tool_calls = tc_list or tool_calls
 
-    return "".join(content_chunks), tool_calls
+    content = "".join(content_chunks)
+    if content and not saw_reasoning and on_event:
+        had_text = False
+        for chunk in content_chunks:
+            if chunk.strip():
+                on_event({"type": "text", "data": chunk})
+                had_text = True
+        if not had_text:
+            on_event({"type": "text", "data": content})
+    return content, tool_calls
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +338,7 @@ def direct_tool_executor(
     ctx: ExecutionContext,
     user_input: str,
     messages: list[dict] | None = None,
+    on_event: Callable | None = None,
 ) -> ExecutionResult:
     """Execute a single tool directly (no agent loop).
 
@@ -342,6 +349,7 @@ def direct_tool_executor(
         ctx: Execution context carrying tool_defs.
         user_input: Raw user message (used to derive tool arguments).
         messages: Ignored for direct-tool mode.
+        on_event: Optional callback for live streaming events.
 
     Returns:
         ExecutionResult with the tool's output as summary.
@@ -350,6 +358,9 @@ def direct_tool_executor(
 
     try:
         from ..uil.executors import run_direct_tool
+
+        if on_event and tool_defs:
+            on_event({"type": "tool", "data": {"name": tool_defs[0]["name"], "args": {}}})
 
         summary = run_direct_tool(ctx, user_input)
         return ExecutionResult(
