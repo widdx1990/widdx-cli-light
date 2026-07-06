@@ -529,3 +529,14 @@ def get_reliable_provider() -> ReliableProvider:
     if _reliable is None:
         _reliable = ReliableProvider()
     return _reliable
+
+
+def reset_reliable_provider() -> None:
+    """Reset the cached ReliableProvider singleton.
+
+    Call this after config changes (e.g. model/provider switch)
+    so the next get_reliable_provider() call creates a fresh provider
+    with the updated configuration.
+    """
+    global _reliable
+    _reliable = None

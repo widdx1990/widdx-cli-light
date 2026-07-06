@@ -162,6 +162,8 @@ def refresh_chat() -> Any:
     """Force recreation of the chat handler (e.g. after settings change)."""
     global _chat_handler
     _chat_handler = None
+    from core.provider_reliability import reset_reliable_provider
+    reset_reliable_provider()
     return get_chat()
 
 

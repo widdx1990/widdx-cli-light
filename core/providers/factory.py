@@ -96,16 +96,13 @@ def resolve_model(provider_name: str, preferred: str | None = None,
                   base_url: str | None = None) -> str:
     """Return a valid model name for *provider_name*.
 
-    1. If *preferred* is given and exists in the dynamic list → return it.
+    1. If *preferred* is given → return it (user explicitly selected it).
     2. Otherwise fetch the dynamic list and return the first entry.
     3. Fall back to a hardcoded safe default if everything fails.
-
-    This is used by ``create_provider`` and ``handle_provider`` so the user
-    never gets a model that doesn't exist.
     """
-    available = get_available_models(provider_name, base_url, force_refresh=False)
-    if preferred and preferred in available:
+    if preferred:
         return preferred
+    available = get_available_models(provider_name, base_url, force_refresh=False)
     if available:
         return available[0]
 
