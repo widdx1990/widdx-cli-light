@@ -362,15 +362,41 @@ class ChatHandler:
         result_container: list[ExecutionResult] = []
         had_text_events = [False]
 
+        # Reasoning debounce: accumulate chunks and flush at intervals
+        _reasoning_buf: list[str] = []
+        _reasoning_timer: list[threading.Timer | None] = [None]
+        _reasoning_lock = threading.Lock()
+        _REASONING_FLUSH_INTERVAL = 0.15  # seconds
+
+        def _flush_reasoning():
+            with _reasoning_lock:
+                if _reasoning_buf:
+                    text = "".join(_reasoning_buf)
+                    _reasoning_buf.clear()
+                    event_queue.put({"type": "reasoning", "data": text})
+                _reasoning_timer[0] = None
+
+        def _on_event(event):
+            if event["type"] == "reasoning":
+                with _reasoning_lock:
+                    _reasoning_buf.append(event["data"])
+                    if _reasoning_timer[0] is None:
+                        _reasoning_timer[0] = threading.Timer(
+                            _REASONING_FLUSH_INTERVAL, _flush_reasoning
+                        )
+                        _reasoning_timer[0].daemon = True
+                        _reasoning_timer[0].start()
+                return
+            # Flush any pending reasoning before other events
+            _flush_reasoning()
+            if event["type"] == "text":
+                had_text_events[0] = True
+            event_queue.put(event)
+
         def _run():
             try:
                 # Reuse _build_context for consistent context injection
                 uil_history, _ = self._build_context(message, history or [])
-
-                def _on_event(event):
-                    if event["type"] == "text":
-                        had_text_events[0] = True
-                    event_queue.put(event)
 
                 result, _routing = self._uil.process(
                     user_input=message,

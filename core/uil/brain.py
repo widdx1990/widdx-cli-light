@@ -153,6 +153,13 @@ class UnifiedIntelligenceLayer:
             (execution_result, routing_decision_with_full_trace)
             ExecutionResult carries plan-vs-execution delta for Phase 2.
         """
+        # Step 0: Status event — analyzing
+        if on_event:
+            try:
+                on_event({"type": "status", "data": {"phase": "analyzing", "label": "Analyzing request...", "detail": user_input[:60]}})
+            except Exception:
+                pass
+
         # Step 1: Analyze — classify the user input
         tool_tracer.start_session()
         ctx_analyzer: dict = {}
@@ -312,6 +319,26 @@ class UnifiedIntelligenceLayer:
             cfg=cfg or {},
             state=state or {},
         )
+
+        # Step 3.5: Status event — execution phase
+        if on_event:
+            try:
+                mode_label = decision.plan.mode.value if decision.plan and decision.plan.mode else "chat"
+                plan_steps = len(decision.plan.steps) if decision.plan and decision.plan.steps else 0
+                n_tools = len(decision.tool_defs) if decision.tool_defs else 0
+                if mode_label == "autonomous":
+                    status_label = f"Running in autonomous mode ({n_tools} tools)"
+                elif mode_label == "expert_team":
+                    status_label = f"Assembling expert team ({n_tools} tools)"
+                elif plan_steps > 1:
+                    status_label = f"Executing {plan_steps}-step plan"
+                elif n_tools > 0:
+                    status_label = f"Ready with {n_tools} tools"
+                else:
+                    status_label = "Thinking..."
+                on_event({"type": "status", "data": {"phase": mode_label, "label": status_label, "detail": f"{classification.task_type.value} | {n_tools} tools"}})
+            except Exception:
+                pass
 
         # Step 4: Execute — delegate via ExecutionContext, measure time
         executor = self._resolve_executor(decision, executors)

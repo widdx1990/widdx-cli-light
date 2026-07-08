@@ -30,6 +30,14 @@ class StorageMixin:
     # ── Activity Feed ──
 
 
+    def sessions_search(self, query: str) -> list[dict]:
+        try:
+            from core.session_search import SessionSearcher
+            searcher = SessionSearcher()
+            return searcher.search(query)
+        except Exception:
+            return []
+
     def activity_feed(self, limit: int = 50) -> list[dict]:
         """Return recent activity events from the central ActivityStore."""
         try:

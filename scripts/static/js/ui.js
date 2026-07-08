@@ -292,8 +292,16 @@ function _renderCollapsibleSections(h) {
 
 function parseMarkdown(text) {
   if (!text) return '';
+  // Decode common HTML entities so markdown patterns can match.
+  // Order matters: &amp; first so &amp;lt; becomes &lt; then <
+  var html = String(text)
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
   // Strip raw dangerous HTML before anything else
-  var html = _sanitizeHtml(text);
+  html = _sanitizeHtml(html);
 
   // Strip thinking tags (both bracketed and XML literal/escaped forms)
   html = html.replace(/\[?\/?thinking\]?/gi, '');

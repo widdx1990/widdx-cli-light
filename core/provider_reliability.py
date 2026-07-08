@@ -299,11 +299,15 @@ class ReliableProvider(Provider):
     """Production-grade provider with pool, retry, backoff, and checkpointing."""
 
     def __init__(self, name: str = "", model: str = "", base_url: str = "", api_key: str = ""):
-        # Use primary provider's identity, not "reliability-pool"
-        from core.config.settings import load as _load_cfg
-        cfg = _load_cfg()
-        p_cfg = cfg.get("provider", {})
-        p_name = name or p_cfg.get("name", "opencode-zen")
+        # Use caller-provided values first; only fall back to config file
+        if not name and not model and not base_url and not api_key:
+            from core.config.settings import load as _load_cfg
+            cfg = _load_cfg()
+            p_cfg = cfg.get("provider", {})
+            name = p_cfg.get("name", "opencode-zen")
+            model = p_cfg.get("model", "deepseek-v4-flash-free")
+            base_url = p_cfg.get("base_url", "")
+            api_key = p_cfg.get("api_key", "")
         _default_urls = {
             "opencode-zen": "https://opencode.ai/zen/v1",
             "opencode": "https://opencode.ai/zen/v1",
@@ -312,10 +316,10 @@ class ReliableProvider(Provider):
             "openai": "https://api.openai.com/v1",
         }
         super().__init__(
-            name=p_name,
-            model=model or p_cfg.get("model", "deepseek-v4-flash-free"),
-            base_url=base_url or p_cfg.get("base_url") or _default_urls.get(p_name, "https://opencode.ai/zen/v1"),
-            api_key=api_key or p_cfg.get("api_key", ""),
+            name=name,
+            model=model or "deepseek-v4-flash-free",
+            base_url=base_url or _default_urls.get(name, "https://opencode.ai/zen/v1"),
+            api_key=api_key or "",
         )
         self._active_name = self.name
         self._active_model = self.model

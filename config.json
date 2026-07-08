@@ -1,7 +1,8 @@
 {
   "provider": {
-    "name": "ollama",
-    "model": "mistral:latest"
+    "name": "opencode-zen",
+    "model": "deepseek-v4-flash-free",
+    "base_url": "https://opencode.ai/zen/v1"
   },
   "max_turns": 20,
   "temperature": 0.9,

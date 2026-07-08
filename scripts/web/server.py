@@ -884,7 +884,9 @@ async def api_memories() -> list[dict]:
 
 
 @app.get("/api/dashboard/sessions")
-async def api_sessions() -> list[dict]:
+async def api_sessions(q: str = "") -> list[dict]:
+    if q:
+        return get_dashboard().sessions_search(q)
     sessions = get_dashboard().sessions()
     if not isinstance(sessions, list):
         return []

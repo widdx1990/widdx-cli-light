@@ -558,6 +558,7 @@ function addThinkingBlock(reasoningText) {
   strip.innerHTML =
     '<button class="think-toggle" data-click="think-toggle" data-target="' + tid + '">'
     + '<span class="think-chevron">&#9654;</span>'
+    + '<span class="think-icon"><i class="fa-solid fa-brain"></i></span>'
     + '<span class="think-label">Show reasoning</span>'
     + '</button>'
     + '<div class="think-body" id="' + tid + '"><div class="think-content">'
@@ -750,6 +751,33 @@ function handleWSMessage(msg) {
       updateToolCard(msg.data?.success !== false, msg.data?.result || msg.data);
       break;
 
+    case 'agent':
+      {
+        // Sub-agent event — show inline in chat
+        var goal = msg.data?.goal || msg.data?.id || 'Sub-agent';
+        var status = msg.data?.status || 'running';
+        var agentId = msg.data?.id || '';
+        if (!S._activeAIWrapper) {
+          createAssistantWrapper('');
+          document.getElementById('messagesArea').appendChild(S._activeAIWrapper);
+        }
+        var body = S._activeAIBody;
+        var existing = body ? body.querySelector('[data-agent="' + agentId + '"]') : null;
+        if (existing) {
+          var s = existing.querySelector('.agent-pill-status');
+          if (s) s.textContent = status;
+          existing.className = 'agent-pill ' + status;
+        } else {
+          var pill = document.createElement('div');
+          pill.className = 'agent-pill ' + status;
+          pill.setAttribute('data-agent', agentId);
+          pill.innerHTML = '<i class="fa-solid fa-robot status-icon"></i><span class="agent-pill-goal">' + escapeHtml(goal.slice(0, 60)) + '</span><span class="agent-pill-status">' + status + '</span>';
+          if (body) body.appendChild(pill);
+        }
+        scrollBottom();
+      }
+      break;
+
     case 'ecp':
       // ECP Control Plane decision — styled system event
       addECPEvent(msg.data?.action || 'DECISION', msg.data?.reason || '', msg.data?.target || '');
@@ -814,6 +842,21 @@ function handleWSMessage(msg) {
       setActivity('Ready', '—');
       resetSendUI();
       addMsg('system', '⚠ ' + (msg.data || 'Unknown error'));
+      break;
+
+    case 'status':
+      {
+        var phase = msg.data?.phase || '';
+        var label = msg.data?.label || '';
+        var detail = msg.data?.detail || '';
+        setActivity(phase.charAt(0).toUpperCase() + phase.slice(1), label.slice(0, 50));
+        // Show a small inline status pill before the response
+        if (!S._activeAIWrapper && !S._streamingDone && !S._processing) {
+          S._streamingDone = false;
+          S._processing = true;
+          showTyping(true);
+        }
+      }
       break;
 
     case 'question':
