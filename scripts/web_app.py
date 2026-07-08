@@ -47,7 +47,7 @@ def main():
         ensure_project_root()
 
     # ── Defaults ──
-    host = "127.0.0.1"  # localhost only — more secure than 0.0.0.0
+    host = "0.0.0.0"  # all interfaces — accessible from other devices
     port = 8000
 
     # ── 1. Check .widdx/config.json ──

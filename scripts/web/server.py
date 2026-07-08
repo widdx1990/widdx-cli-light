@@ -845,7 +845,7 @@ async def api_cron_create_frontend(request: Request):
         schedule = f"{interval_minutes}m"
     return get_dashboard().cron_create(
         schedule=schedule,
-        prompt=data.get("command", ""),
+        prompt=data.get("command", "") or data.get("name", ""),
     )
 
 
@@ -1459,9 +1459,6 @@ async def websocket_events(websocket: WebSocket):
     finally:
         unsubscribe()
         logger.info("Events WS disconnected")
-
-
-# ── Main ────────────────────────────────────
 
 
 # ── Main ────────────────────────────────────────────────────
