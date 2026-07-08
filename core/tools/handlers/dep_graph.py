@@ -4,9 +4,8 @@ import ast
 import re
 import json
 from pathlib import Path
-from collections import defaultdict
 
-from ..safety import is_safe_path, get_safe_dir
+from ..safety import is_safe_path
 
 _PY_IMPORT_RE = re.compile(r'^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))')
 _TS_IMPORT_RE = re.compile(r'(?:import|from)\s+["\']([^"\']+)["\']')

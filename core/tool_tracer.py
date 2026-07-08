@@ -128,7 +128,7 @@ class ToolTracer:
         print(f"  [{ts}]   📄 created: {path}")
 
     def file_modified(self, path: str):
-        ts = time.strftime("%H:%M:%S")
+        time.strftime("%H:%M:%S")
         if self._current and path not in self._current.files_modified:
             self._current.files_modified.append(path)
 

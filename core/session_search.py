@@ -257,7 +257,7 @@ class SessionSearcher:
                     except Exception as e:
                         import logging
                         logging.getLogger("widdx.session_search").warning("Search error: %s", e)
-            conn.commit()
+                conn.commit()
             return 0
         except Exception as e:
             import logging

@@ -1,13 +1,10 @@
 """Semantic search with embeddings — uses LLM provider API for real vector search."""
 
-import json
 import logging
-import re
 import math
 from pathlib import Path
-from collections import Counter
 
-from ..safety import is_safe_path, get_safe_dir
+from ..safety import is_safe_path
 
 logger = logging.getLogger("widdx.tools.embeddings")
 
@@ -54,7 +51,7 @@ def _chunk_text(text: str, max_chars: int = 500) -> list[str]:
 
 def _tfidf_search(query: str, root: Path, include: str | None, top_k: int) -> list[tuple[str, float, str]]:
     """Fallback TF-IDF search when embeddings are unavailable."""
-    from .semantic_search import _tokenize, _build_index, _score
+    from .semantic_search import _build_index, _score
     index = _build_index(root, include)
     results = _score(query, index, root)
     out = []

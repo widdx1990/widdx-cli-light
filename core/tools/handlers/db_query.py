@@ -1,14 +1,10 @@
 """Database query tool — SQLite and external databases."""
 
-import csv
-import io
 import json
 import logging
-import re
 import sqlite3
 import subprocess
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("widdx.tools.db_query")
 
@@ -49,7 +45,7 @@ def _query_sqlite(db_path: str, query: str, max_rows: int = 50, format: str = "t
                 vals = [str(row[c])[:20] for c in columns]
                 buf.append(" | ".join(f"{v:<20}" for v in vals))
             if has_more:
-                buf.append(f"... and more (use limit to control)")
+                buf.append("... and more (use limit to control)")
             conn.close()
             return "\n".join(buf)
         else:

@@ -125,7 +125,8 @@ class OllamaEmbeddingEngine:
         try:
             url = "http://localhost:11434/api/tags"
             req = urllib.request.Request(url, method="GET")
-            urllib.request.urlopen(req, timeout=3)
+            with urllib.request.urlopen(req, timeout=3):
+                pass
             self._available = True
         except Exception:
             self._available = False
@@ -343,8 +344,9 @@ class VectorMemoryStore:
                 json.dump(slim, f, ensure_ascii=False, indent=2)
             import os
             os.replace(tmp, str(self._file))
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.vector_memory").warning("_save failed: %s", e)
 
     def _load(self):
         """Load from disk. Embeddings are re-computed on first search."""
@@ -362,5 +364,6 @@ class VectorMemoryStore:
             # Rebuild TF-IDF index
             for mem in self._memories:
                 self._tfidf.index([mem.get("content", "")])
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("widdx.vector_memory").warning("_load failed: %s", e)

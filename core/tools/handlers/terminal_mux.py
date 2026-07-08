@@ -4,10 +4,8 @@ import logging
 import os
 import signal
 import subprocess
-import tempfile
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("widdx.tools.terminal_mux")

@@ -518,8 +518,6 @@ async def api_file_upload(request: Request) -> dict:
         content_type = request.headers.get("content-type", "")
         if "multipart/form-data" in content_type:
             import cgi
-            import io
-            from urllib.parse import parse_qs
             _, headers = cgi.parse_header(content_type)
             boundary = headers.get("boundary", "").encode()
             data = body

@@ -2,9 +2,7 @@
 
 import logging
 import subprocess
-import re
 from pathlib import Path
-from typing import Literal
 
 logger = logging.getLogger("widdx.tools.pkg_mgr")
 

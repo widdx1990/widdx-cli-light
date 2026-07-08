@@ -1,8 +1,6 @@
 """Tool undo — keep history of file changes and allow undo."""
 
-import json
 import logging
-import shutil
 import tempfile
 import time
 from pathlib import Path

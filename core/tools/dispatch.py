@@ -53,8 +53,8 @@ def execute_with_skills(name: str, args: dict) -> str:
     if name.startswith("mcp__"):
         from core.mcp.client import get_mcp_manager
         mcp = get_mcp_manager()
-        if name in mcp.get_tools():
-            return mcp.execute(name, args)
+        if mcp.has_tool(name):
+            return mcp.call_tool(name, args)
         return f"MCP tool not available: {name}"
 
     return execute(name, args)

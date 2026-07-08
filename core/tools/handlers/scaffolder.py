@@ -1,7 +1,6 @@
 """Project scaffolder — create new projects from templates."""
 
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger("widdx.tools.scaffolder")

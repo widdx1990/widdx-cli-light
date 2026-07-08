@@ -112,7 +112,7 @@ def _score(query: str, index: dict, root: Path) -> list[tuple[str, float]]:
         return []
 
     doc_tokens = index["doc_tokens"]
-    doc_total = index["doc_total"]
+    index["doc_total"]
     term_freq = index["term_freq"]
     doc_freq = index["doc_freq"]
     num_docs = index["num_docs"]

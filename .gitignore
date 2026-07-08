@@ -76,3 +76,10 @@ _debug_brain.py
 # Database files
 *.db
 *.sqlite
+
+# VSCode extension build output
+vscode-extension/out/
+vscode-extension/*.vsix
+
+# Package lock (tracked incidentally)
+package-lock.json

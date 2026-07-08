@@ -2,7 +2,6 @@
 
 import logging
 import os
-import sys
 
 logger = logging.getLogger("widdx.tools.ask_user")
 

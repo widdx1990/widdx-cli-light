@@ -1,5 +1,5 @@
 # WIDDX Nexus — Docker Image
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="WIDDX Nexus"
 LABEL org.opencontainers.image.description="Terminal AI Workspace with UIL Cognitive Architecture"

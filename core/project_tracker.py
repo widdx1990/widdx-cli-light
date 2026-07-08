@@ -156,7 +156,6 @@ def _detect_project_info(project_dir: Path) -> dict:
             pass
 
     if go_mod.exists():
-        import re
         for line in go_mod.read_text("utf-8").splitlines():
             if line.startswith("module "):
                 info["name"] = line[7:].strip()

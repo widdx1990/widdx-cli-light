@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from ..safety import is_safe_path, get_safe_dir
+from ..safety import is_safe_path
 
 
 def _file_tree(path: str | None = None, depth: int = 3,

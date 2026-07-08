@@ -13,7 +13,7 @@ logger = logging.getLogger("widdx.tools.security_scan")
 def _scan_python(root: Path) -> str:
     """Scan Python dependencies for vulnerabilities."""
     results = []
-    req_files = list(root.rglob("requirements.txt")) + list(root.rglob("pyproject.toml"))
+    list(root.rglob("requirements.txt")) + list(root.rglob("pyproject.toml"))
 
     try:
         r = subprocess.run(
