@@ -36,6 +36,13 @@ class ClassificationResult:
     detected_languages: list[str] = field(default_factory=list)
     method: str = "embedding"  # "embedding" | "keyword" | "llm"
 
+    # ── v4.1 Reasoning enhancements ──
+    is_confused: bool = False         # top-2 candidates too close → uncertain
+    confusion_margin: float = 0.0     # score gap between best and second-best
+    runner_up: str = ""               # second-best task type
+    sub_intents: list[dict] = field(default_factory=list)  # multi-part query parts
+    query_type: str = "command"       # "command" | "question" | "statement" | "multi"
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LABELED TRAINING EXAMPLES
@@ -411,6 +418,8 @@ class LocalClassifier:
     def classify(self, user_input: str) -> ClassificationResult:
         """Classify user input. Returns ClassificationResult with confidence.
 
+        v4.1: Detects multi-part queries, confusion, and query type.
+
         Args:
             user_input: The raw user input text.
 
@@ -422,26 +431,41 @@ class LocalClassifier:
             return ClassificationResult(
                 task_type="chat", confidence=0.8,
                 domain="general", is_fallback=False, method="empty",
+                query_type="statement",
             )
 
         self._ensure_indexed()
+
+        # ── Step 0: Detect query type ──
+        query_type = self._detect_query_type(user_input)
+        sub_intents = []
+        if query_type == "multi":
+            sub_intents = self._split_intents(user_input)
 
         # ── Method 1: Embedding similarity ──
         result = self._classify_by_embedding(user_input)
         if result and result.confidence >= 0.3:
             result.detected_features = self._detect_features(user_input)
             result.detected_languages = self._detect_languages(user_input)
+            result.sub_intents = sub_intents
+            result.query_type = query_type
             return result
 
         # ── Method 2: Keyword fallback ──
-        return self._classify_by_keywords(user_input)
+        result = self._classify_by_keywords(user_input)
+        result.sub_intents = sub_intents
+        result.query_type = query_type
+        return result
 
     def _classify_by_embedding(self, text: str) -> ClassificationResult | None:
-        """Try to classify by embedding similarity against labeled examples."""
+        """Try to classify by embedding similarity against labeled examples.
+
+        v4.1: Tracks runner-up + confusion margin for uncertainty-aware routing.
+        """
         try:
             if self._embedder is None:
                 return None
-            results = self._embedder.search(text, top_k=3, min_score=0.05)
+            results = self._embedder.search(text, top_k=5, min_score=0.05)
         except Exception:
             return None
 
@@ -451,7 +475,6 @@ class LocalClassifier:
         # Collect votes from top matches, weighted by similarity score
         votes: dict[str, float] = {}
         for score, matched_text in results:
-            # Find the label for this matched text
             for example_text, task_type, _, _ in _LABELED_EXAMPLES:
                 if example_text == matched_text:
                     votes[task_type] = votes.get(task_type, 0) + score
@@ -460,15 +483,49 @@ class LocalClassifier:
         if not votes:
             return None
 
-        # Best task type by weighted vote
-        best_type = max(votes, key=lambda k: votes[k])
-        best_score = votes[best_type] / sum(votes.values()) if sum(votes.values()) > 0 else 0
-        confidence = min(0.9, best_score * 2.0)  # scale up but cap at 0.9
+        # Sort by vote score descending
+        sorted_types = sorted(votes.items(), key=lambda kv: kv[1], reverse=True)
+        total_score = sum(votes.values())
+
+        best_type = sorted_types[0][0]
+        best_score = sorted_types[0][1]
+
+        # ── Confidence calibration using relative margin ──
+        if total_score > 0:
+            normalized_best = best_score / total_score
+            raw_confidence = min(0.9, normalized_best * 2.0)
+        else:
+            normalized_best = 0
+            raw_confidence = 0.0
+
+        # Detect confusion: if runner-up is too close
+        runner_up_type = ""
+        confusion_margin = 0.0
+        is_confused = False
+        if len(sorted_types) >= 2:
+            runner_up_type = sorted_types[1][0]
+            runner_up_score = sorted_types[1][1]
+            margin = best_score - runner_up_score
+            # Normalize margin relative to total
+            if total_score > 0:
+                confusion_margin = round(margin / total_score, 3)
+            else:
+                confusion_margin = 0.0
+            # Confused if margin < 0.15 or scores are very close
+            is_confused = confusion_margin < 0.15 and len(sorted_types) >= 2
+
+        # Reduce confidence when confused
+        adjusted_confidence = raw_confidence
+        if is_confused and raw_confidence > 0.3:
+            adjusted_confidence = max(0.3, raw_confidence * 0.7)
 
         return ClassificationResult(
             task_type=best_type,
-            confidence=round(confidence, 2),
+            confidence=round(adjusted_confidence, 2),
             method="embedding",
+            is_confused=is_confused,
+            confusion_margin=confusion_margin,
+            runner_up=runner_up_type,
         )
 
     def _classify_by_keywords(self, text: str) -> ClassificationResult:
@@ -493,6 +550,77 @@ class LocalClassifier:
             detected_languages=self._detect_languages(text),
             method="keyword",
         )
+
+    def _detect_query_type(self, text: str) -> str:
+        """Detect whether input is a question, command, statement, or multi-intent."""
+        lower = text.strip().lower()
+
+        question_words = {"what", "how", "why", "when", "where", "who",
+                          "which", "is", "are", "does", "can", "could",
+                          "would", "should", "do", "did", "has", "have"}
+        first_word = lower.split()[0] if lower.split() else ""
+
+        if first_word in question_words or lower.endswith("?"):
+            return "question"
+
+        multi_markers = 0
+        # "and" between two different task descriptions
+        if " and " in lower:
+            parts = lower.split(" and ")
+            # Only multi if both sides have meaningful task language
+            if 2 <= len(parts) <= 4:
+                meaningful = [p for p in parts if len(p.split()) >= 2 and not p.startswith("and")]
+                if len(meaningful) >= 2:
+                    multi_markers += 1
+
+        # Comma-separated tasks
+        comma_parts = [p.strip() for p in lower.split(",")]
+        meaningful_commands = [p for p in comma_parts
+                               if len(p.split()) >= 2 and not any(
+                                   w in p for w in {"hello", "hi", "thanks", "please"})]
+        if len(meaningful_commands) >= 3:
+            multi_markers += 1
+
+        if multi_markers >= 1:
+            return "multi"
+
+        command_indicators = {"create", "write", "build", "make", "fix",
+                              "show", "read", "list", "find", "run",
+                              "delete", "move", "copy", "open", "search",
+                              "design", "implement", "generate", "update"}
+        if first_word in command_indicators:
+            return "command"
+
+        return "command"
+
+    def _split_intents(self, text: str) -> list[dict]:
+        """Split multi-intent query into sub-intents with per-part classification.
+
+        Returns list of {"text": str, "task_type": str, "confidence": float}
+        """
+        lower = text.strip().lower()
+        parts = []
+
+        # Split by " and "
+        if " and " in lower:
+            raw_parts = lower.split(" and ")
+        elif "," in lower:
+            raw_parts = [p.strip() for p in lower.split(",")]
+        else:
+            return []
+
+        for part in raw_parts:
+            part = part.strip()
+            if len(part.split()) < 2:
+                continue
+            sub = self.classify(part)
+            parts.append({
+                "text": part,
+                "task_type": sub.task_type,
+                "confidence": sub.confidence,
+            })
+
+        return parts
 
     def _detect_features(self, text: str) -> list[str]:
         """Detect project features from text keywords."""

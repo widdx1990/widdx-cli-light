@@ -15,10 +15,14 @@ Usage:
         # Full decomposition with dependency graph
 """
 
+import logging
+
 from .contract import (
     TaskType, TaskStep, Plan, DecisionStep,
     ClassificationResult,
 )
+
+logger = logging.getLogger("widdx.uil.planner")
 
 
 # -------------------------------------------------------------------
@@ -411,8 +415,8 @@ class TaskPlanner:
                         score=scorer.score(best).get("total", 0.5),
                         detail=f"Architecture: {best.components}, {best.communication}, {best.storage}",
                     ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("ArchitectureLayer unavailable: %s", e)
 
         # ── PreDecisionForce: actively constrain planning ──
         try:
@@ -437,8 +441,8 @@ class TaskPlanner:
                     score=pref['confidence'],
                     detail=f"PreDecisionForce prefers: {pref['solution'][:100]}",
                 ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("PreDecisionForce unavailable: %s", e)
 
         # ── Learning: query proven planning patterns ──
         try:
@@ -454,8 +458,8 @@ class TaskPlanner:
                     score=pattern.confidence,
                     detail=f"Pattern: {pattern.solution[:120]}",
                 ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("PatternLibrary unavailable: %s", e)
 
         if use_tdd and task_type in _TDD_DECOMPOSERS:
             decomposer = _TDD_DECOMPOSERS[task_type]
@@ -533,8 +537,8 @@ class TaskPlanner:
                         score=0.3,
                         detail=creative_prompt[:200],
                     ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("PreFailureSim unavailable: %s", e)
 
         return Plan(
             steps=steps,

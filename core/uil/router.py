@@ -6,6 +6,7 @@ Pure mapping: TaskType → ExecutionMode + filtered tool list.
 Dependencies: contract.py only.
 """
 
+import logging
 from typing import Any
 
 from .contract import (
@@ -14,6 +15,7 @@ from .contract import (
     RoutingDecision, DecisionStep,
 )
 
+logger = logging.getLogger("widdx.router")
 
 # -------------------------------------------------------------------
 # Execution Mode Map (deterministic, no conditions)
@@ -133,8 +135,8 @@ class DecisionRouter:
                 score=0.8,
                 detail="Router weights modified by learning history",
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("PreDecisionForce unavailable: %s", e)
 
         # --- Step 0.5: Learning — query patterns for routing hints ---
         try:
@@ -154,8 +156,8 @@ class DecisionRouter:
                     score=best.confidence,
                     detail=f"Routed with learned pattern: {best.solution[:100]}",
                 ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("PatternLibrary unavailable: %s", e)
 
         # --- Step 1: Select ExecutionMode ---
         mode = _MODE_MAP.get(

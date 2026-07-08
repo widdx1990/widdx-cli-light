@@ -46,8 +46,8 @@ class VerifyLoop:
             patterns = store.search(query=error_msg, category="debugging", min_confidence=0.4, limit=1)
             if patterns:
                 return {"name": patterns[0].name, "solution": patterns[0].solution, "confidence": patterns[0].confidence}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Pattern library search failed: %s", e)
         return None
 
     def run(

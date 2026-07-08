@@ -115,8 +115,8 @@ class SelfCorrection:
                     learned_fix = patterns[0].solution[:200]
                     strategy["action"] = f"learned_{patterns[0].name}"
                     strategy["prompt"] = learned_fix
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Pattern library query failed: %s", e)
 
             strategies_applied.append({
                 "error_type": error_type,
@@ -142,8 +142,8 @@ class SelfCorrection:
                     s["finding"],
                     "fixed" if len(strategies_applied) > 0 else "unresolved",
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("SelfImprove record failed: %s", e)
 
         return {
             "fixed": len(strategies_applied) > 0,
@@ -164,7 +164,8 @@ class SelfCorrection:
                 lines.append(f"- [{error_type}] {err.get('description', '')[:100]}")
             lines.append("</correction_rules>")
             return "\n".join(lines)
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to build correction context: %s", e)
             return ""
 
 

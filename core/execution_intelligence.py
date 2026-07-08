@@ -295,8 +295,8 @@ class ExecutionIntelligence:
             if patterns and patterns[0].status == "deprecated":
                 result["warning"] = f"Pattern '{patterns[0].name}' was deprecated: {patterns[0].superseded_by}"
                 result["safe"] = False
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Preventive check failed: %s", e)
 
         if result["warning"]:
             self._telemetry.interventions_prevented += 1

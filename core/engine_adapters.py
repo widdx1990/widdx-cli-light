@@ -203,6 +203,89 @@ def adapt_container_result(container_result, elapsed_ms: float = 0.0) -> "Sandbo
 # Feature Flag Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def unified_classify(user_input: str, analyzer=None) -> object | None:
+    """Unified classification: TF-IDF first, LLM fallback.
+    
+    v4.1: Uses confusion signals from intelligence classifier.
+    - If TF-IDF is confident (>= 0.7) AND not confused → use directly
+    - If TF-IDF is confused (is_confused) → always consult LLM
+    - If TF-IDF confidence < 0.5 → LLM fallback
+    - If LLM unavailable → use TF-IDF result (even with low confidence)
+    
+    Returns UIL ClassificationResult or None if both fail.
+    """
+    from core.uil.contract import ClassificationResult as UilCR
+    
+    tfidf_is_confused = False
+    
+    # Step 1: TF-IDF first (always works, zero cost)
+    try:
+        from core.intelligence.classifier import classify_input
+        tfidf_result = classify_input(user_input)
+        adapted = adapt_classification(tfidf_result)
+        tfidf_is_confused = getattr(tfidf_result, 'is_confused', False)
+        
+        # High confidence + not confused → use directly
+        if adapted.confidence >= 0.7 and not tfidf_is_confused:
+            logger.info(
+                "Unified classify: TF-IDF sufficient (%.2f) → %s",
+                adapted.confidence, adapted.task_type.value,
+            )
+            return adapted
+        
+        # Moderately confident but not confused → still use it
+        if adapted.confidence >= 0.5 and not tfidf_is_confused:
+            logger.info(
+                "Unified classify: TF-IDF moderate (%.2f) → %s",
+                adapted.confidence, adapted.task_type.value,
+            )
+            return adapted
+        
+        if tfidf_is_confused:
+            logger.info(
+                "Unified classify: TF-IDF confused (margin=%.3f, runners: %s/%s) → consulting LLM",
+                getattr(tfidf_result, 'confusion_margin', 0),
+                tfidf_result.task_type,
+                getattr(tfidf_result, 'runner_up', ''),
+            )
+    except Exception as e:
+        logger.debug("TF-IDF classifier failed: %s", e)
+        adapted = None
+    
+    # Step 2: LLM fallback (confused OR low confidence)
+    if analyzer is not None:
+        try:
+            llm_result = analyzer.analyze(user_input)
+            if llm_result:
+                if adapted is None or llm_result.confidence > adapted.confidence:
+                    logger.info(
+                        "Unified classify: LLM improved (%.2f) → %s",
+                        llm_result.confidence, llm_result.task_type.value,
+                    )
+                    return llm_result
+                # LLM agrees with TF-IDF → boost confidence
+                if llm_result.task_type == adapted.task_type:
+                    boosted = min(0.95, adapted.confidence + 0.15)
+                    logger.info(
+                        "Unified classify: LLM agrees (boosted to %.2f) → %s",
+                        boosted, adapted.task_type.value,
+                    )
+                    adapted.confidence = boosted
+                    return adapted
+        except Exception as e:
+            logger.debug("LLM classifier failed: %s", e)
+    
+    # Step 3: Return TF-IDF result even if low confidence/confused
+    if adapted is not None:
+        logger.info(
+            "Unified classify: using TF-IDF fallback (%.2f) → %s",
+            adapted.confidence, adapted.task_type.value,
+        )
+        return adapted
+    
+    return None
+
+
 def engine_enabled(cfg: dict, engine_name: str) -> bool:
     """Check if a specific engine is enabled in config.
 

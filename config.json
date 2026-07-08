@@ -1,6 +1,6 @@
 {
   "provider": {
-    "name": "ollama",
+    "name": "nonexistent-xyz",
     "model": "mistral:latest"
   },
   "max_turns": 20,

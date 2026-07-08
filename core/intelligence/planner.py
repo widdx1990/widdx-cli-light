@@ -22,7 +22,10 @@ logger = logging.getLogger("widdx.intelligence.planner")
 
 @dataclass
 class PlanStep:
-    """A single step in an execution plan."""
+    """A single step in an execution plan.
+
+    v4.1: Added risk assessment + verification hints + alternative approaches.
+    """
     step_id: int
     description: str
     tools: list[str] = field(default_factory=list)
@@ -31,6 +34,12 @@ class PlanStep:
     depends_on: list[int] = field(default_factory=list)
     expected_output: str = ""
     tool_hints: list[str] = field(default_factory=list)
+
+    # ── v4.1 Reasoning enhancements ──
+    risk_score: float = 0.3        # 0.0 (safe) to 1.0 (risky) — likelihood of failure
+    verification_hint: str = ""    # what to check after executing this step
+    alternatives: list[str] = field(default_factory=list)  # alternative approaches
+    reasoning: str = ""            # why this step exists in the plan
 
 
 @dataclass
@@ -70,6 +79,8 @@ class PatternAwarePlanner:
              user_input: str = "") -> Plan:
         """Create an execution plan from task classification.
 
+        v4.1: Adds reasoning, risk assessment, and verification hints.
+
         Args:
             classification: ClassificationResult from classifier.py
             user_input: Original user input (for context)
@@ -80,36 +91,106 @@ class PatternAwarePlanner:
         task_type = classification.task_type
         features = classification.detected_features
         languages = classification.detected_languages
+
+        # ── v4.1 Smart complexity estimation ──
         complexity = 1
-        if len(features) >= 3:
+        if len(features) >= 3 or classification.is_confused:
             complexity = 3
         elif len(features) >= 2:
             complexity = 2
+
+        # Apply confusion-aware planning: confused → fall through to LLM
+        if classification.is_confused:
+            logger.info(
+                "Confused classification (%s vs %s, margin=%.3f) — "
+                "using minimal safe plan",
+                classification.task_type,
+                classification.runner_up,
+                classification.confusion_margin,
+            )
 
         # ── 1. Try pattern-based planning ──
         matching = _patterns_lib.find_patterns(
             task_type=task_type,
             features=features,
             languages=languages,
-            complexity=None,  # don't filter by complexity — try all matches
+            complexity=None,
         )
 
         if matching:
-            pattern = matching[0]  # best match
+            pattern = matching[0]
             logger.debug("Pattern match: %s (score=best)", pattern.name)
-            return self._plan_from_pattern(pattern)
+            plan = self._plan_from_pattern(pattern)
+            # v4.1: Add reasoning metadata
+            plan = self._enrich_plan(plan, classification, user_input)
+            return plan
 
         # ── 2. Try any pattern for this task type ──
         if task_type in self._pattern_index:
             pattern_names = self._pattern_index[task_type]
             for name in pattern_names:
-                pattern = _patterns_lib.get_pattern(name)  # type: ignore[assignment]
+                pattern = _patterns_lib.get_pattern(name)
                 if pattern and pattern.complexity <= complexity:
                     logger.debug("Fallback pattern: %s", name)
-                    return self._plan_from_pattern(pattern)
+                    plan = self._plan_from_pattern(pattern)
+                    plan = self._enrich_plan(plan, classification, user_input)
+                    return plan
 
         # ── 3. Keyword-based decomposition (still useful) ──
-        return self._plan_from_keywords(classification, user_input)
+        plan = self._plan_from_keywords(classification, user_input)
+        return self._enrich_plan(plan, classification, user_input)
+
+    def _enrich_plan(self, plan: Plan, classification: ClassificationResult,
+                     user_input: str) -> Plan:
+        """v4.1: Add reasoning, risk scores, verification hints to each step."""
+        risk_by_task = {
+            "code_write": 0.4, "code_modify": 0.5, "complex": 0.7,
+            "database": 0.3, "browser": 0.3, "system": 0.5,
+            "research": 0.2, "code_read": 0.1, "code_review": 0.2,
+            "file_ops": 0.3, "chat": 0.05, "reasoning": 0.15,
+        }
+        base_risk = risk_by_task.get(classification.task_type, 0.3)
+
+        for i, step in enumerate(plan.steps):
+            # Risk: base + complexity factors
+            risk = base_risk
+            if step.files_to_modify:
+                risk += 0.1  # modifying existing code is riskier
+            if step.files_to_create and not step.files_to_modify:
+                risk -= 0.05  # creating new files is safer
+            if "bash" in step.tools:
+                risk += 0.05  # shell commands can fail
+            if i == 0:
+                risk -= 0.05  # first step is usually safe
+            step.risk_score = round(min(1.0, max(0.05, risk)), 2)
+
+            # Verification hints
+            if "write" in step.tools or step.files_to_create:
+                step.verification_hint = "Check file was created with correct content"
+            elif "edit" in step.tools:
+                step.verification_hint = "Verify edit was applied correctly"
+            elif "bash" in step.tools:
+                step.verification_hint = "Check exit code and output for errors"
+            elif "read" in step.tools:
+                step.verification_hint = "Confirm expected content was found"
+
+            # Reasoning
+            if i == 0:
+                step.reasoning = f"First step: establish foundation for {classification.task_type}"
+            elif i == len(plan.steps) - 1:
+                step.reasoning = "Final step: verify and deliver results"
+            else:
+                step.reasoning = "Intermediate step building toward completion"
+
+            # Alternatives for high-risk steps
+            if step.risk_score >= 0.6:
+                safe_tools = [t for t in step.tools if t != "bash"]
+                if safe_tools and safe_tools != step.tools:
+                    step.alternatives = [
+                        f"Use {'/'.join(safe_tools)} instead of bash to reduce risk"
+                    ]
+
+        return plan
 
     def _plan_from_pattern(self, pattern: _patterns_lib.SoftwarePattern) -> Plan:
         """Convert a software pattern into an execution plan."""

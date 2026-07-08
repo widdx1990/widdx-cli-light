@@ -132,8 +132,8 @@ class UserPreferenceLearner:
                     prefs["frontend"] = "vue"
                 if "next" in deps:
                     prefs["framework"] = "nextjs"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to parse package.json: %s", e)
         if (p / "pyproject.toml").exists():
             try:
                 import tomllib as _t
@@ -146,8 +146,8 @@ class UserPreferenceLearner:
                     prefs["framework"] = "flask"
                 if "django" in deps_str:
                     prefs["framework"] = "django"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to parse pyproject.toml: %s", e)
 
         # Store as patterns
         for key, value in prefs.items():

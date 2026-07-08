@@ -35,22 +35,12 @@ from .verifier import get_verifier  # noqa: E402
 # ── v4.0 Engine adapters (feature-flagged, safe by default) ──
 try:
     from core.engine_adapters import (
-        engine_enabled,
+        engine_enabled, unified_classify,
         adapt_classification, adapt_validation,
     )
     _ENGINES_AVAILABLE = True
 except ImportError:
     _ENGINES_AVAILABLE = False
-
-# ── v4.0 Engine Arbiter + Trust (wired post-execution) ──
-_ARBITER_AVAILABLE = False
-try:
-    from core.engine_arbiter import get_arbiter
-    from core.engine_trust import get_trust_tracker
-    _ARBITER_AVAILABLE = True
-except ImportError:
-    pass
-
 
 # -------------------------------------------------------------------
 # Execution Mode Executor Map — imported lazily to avoid circular
@@ -175,52 +165,37 @@ class UnifiedIntelligenceLayer:
             context=ctx_analyzer or None,
         )
 
-        # ── v4.0: Intelligence Engine parallel classification ──
+        # ── v4.0: Unified classification (TF-IDF first, LLM fallback) ──
         if _ENGINES_AVAILABLE and engine_enabled(cfg or {}, "intelligence"):
-            try:
-                from core.intelligence.classifier import classify_input
-                new_cr = classify_input(user_input)
-                adapted = adapt_classification(new_cr)
+            unified = unified_classify(user_input, analyzer=self.analyzer)
+            if unified is not None:
                 logger.info(
-                    "IntelligenceEngine: %s (%.2f) vs Analyzer: %s (%.2f)",
-                    adapted.task_type.value, adapted.confidence,
-                    classification.task_type.value, classification.confidence,
+                    "Unified classification: %s (%.2f)%s",
+                    unified.task_type.value, unified.confidence,
+                    " [CONFUSED]" if getattr(unified, 'confusion_margin', 0) > 0 else "",
                 )
-                if adapted.task_type != classification.task_type:
-                    # ── v4.0 Arbiter: resolve disagreement with quality-based arbitration ──
-                    trusted = None
-                    if _ARBITER_AVAILABLE:
-                        trusted = _resolve_engine_disagreement(
-                            classification, adapted, user_input, messages, cfg,
-                        )
-                    if trusted is not None:
-                        classification = trusted
-                        logger.info("Arbiter selected: %s", classification.task_type.value)
-                    elif adapted.confidence >= 0.6:
-                        logger.info(
-                            "IntelligenceEngine wins (confidence=%.2f): %s → %s",
-                            adapted.confidence,
-                            classification.task_type.value,
-                            adapted.task_type.value,
-                        )
-                        classification = adapted
-                    elif adapted.confidence >= 0.4 and classification.confidence < 0.3:
-                        logger.info(
-                            "IntelligenceEngine overrides low-confidence analyzer: %s (%.2f) → %s (%.2f)",
-                            classification.task_type.value, classification.confidence,
-                            adapted.task_type.value, adapted.confidence,
-                        )
-                        classification = adapted
-                    else:
-                        logger.warning(
-                            "Engine DISAGREE: intelligence=%s(%.2f) analyzer=%s(%.2f) → using analyzer",
-                            adapted.task_type.value, adapted.confidence,
-                            classification.task_type.value, classification.confidence,
-                        )
-                        # Record disagreement for trust tracking
-                        _record_engine_disagreement(classification, adapted)
-            except Exception as e:
-                logger.warning("IntelligenceEngine unavailable: %s", e)
+                classification = unified
+
+        # ── v4.1: Log confusion signals if available ──
+        confusion_margin = getattr(classification, 'confusion_margin', 0.0)
+        if confusion_margin > 0:
+            logger.info(
+                "Classification quality: task=%s confidence=%.2f "
+                "confusion_margin=%.3f query_type=%s",
+                classification.task_type.value,
+                classification.confidence,
+                confusion_margin,
+                getattr(classification, 'query_type', 'command'),
+            )
+
+        # ── v4.1: Multi-part query logging ──
+        sub_intents = getattr(classification, 'sub_intents', [])
+        if sub_intents:
+            logger.info(
+                "Multi-part query detected: %d intents — %s",
+                len(sub_intents),
+                ", ".join(f"{s['task_type']}({s['confidence']:.2f})" for s in sub_intents),
+            )
 
         # Step 1.5: Validate — check classification confidence
         # Correction boundary: if fallback + very low confidence → force CHAT
@@ -261,15 +236,32 @@ class UnifiedIntelligenceLayer:
         decision = self.router.route(classification, self._tool_defs,
                                         knowledge=self.knowledge)
 
+        # ── v4.1: Override routing with intelligence signals ──
+        _is_confused = getattr(classification, 'is_confused', False)
+        if _is_confused and decision.plan.mode != ExecutionMode.SIMPLE_CHAT:
+            logger.info(
+                "Confused classification — downgrading %s → SIMPLE_CHAT",
+                decision.plan.mode.value,
+            )
+            decision.plan.mode = ExecutionMode.SIMPLE_CHAT
+            decision.tool_defs = self._tool_defs
+            decision.decision_path.append(DecisionStep(
+                component="Brain",
+                input_summary="is_confused=True",
+                output="SIMPLE_CHAT (safety)",
+                score=0.5,
+                detail="Classifier uncertainty triggered conservative routing",
+            ))
+
         # Correction boundary: low-confidence → never run AUTONOMOUS or EXPERT_TEAM
-        if classification.confidence < 0.5:
+        if classification.confidence < 0.5 and not _is_confused:
             if decision.plan.mode in (ExecutionMode.AUTONOMOUS, ExecutionMode.EXPERT_TEAM):
                 logger.warning(
                     "Low confidence (%.2f) — downgrading %s → SIMPLE_CHAT with full tools",
                     classification.confidence, decision.plan.mode.value,
                 )
                 decision.plan.mode = ExecutionMode.SIMPLE_CHAT
-                decision.tool_defs = self._tool_defs  # give all tools so LLM can still help
+                decision.tool_defs = self._tool_defs
 
         # Step 2.5: Plan — ALWAYS runs (Phase 2.1: dead-code removal)
         # Enable TDD-first mode for code tasks with medium+ complexity
@@ -280,6 +272,13 @@ class UnifiedIntelligenceLayer:
         )
         plan = self.planner.plan(classification, user_input, use_tdd=use_tdd)
         decision.plan.decomposed = plan
+
+        # ── v4.1: Enrich plan decisions with risk info ──
+        high_risk_steps = [s for s in plan.steps if getattr(s, 'risk_score', 0) >= 0.6]
+        plan_risk_detail = f"Risk: {len(high_risk_steps)}/{len(plan.steps)} high-risk steps"
+        if _is_confused:
+            plan_risk_detail += " (confused → conservative plan)"
+
         decision.decision_path.append(DecisionStep(
             component="TaskPlanner",
             input_summary=f"type={classification.task_type.value}",
@@ -288,8 +287,7 @@ class UnifiedIntelligenceLayer:
                    f"{'(TDD)' if use_tdd else ''}",
             score=1.0,
             detail=("Minimal (simple task)" if plan.is_minimal
-                    else f"Full decomposition with dependency graph"
-                         f"{', TDD-first' if use_tdd else ''}"),
+                    else f"Full decomposition. {plan_risk_detail}"),
         ))
 
         # Step 3: Build ExecutionContext with per-step telemetry
@@ -786,6 +784,23 @@ class UnifiedIntelligenceLayer:
             decision=decision,
         )
 
+        # ── v4.1: Feed back to DecisionEngine ──
+        try:
+            from core.intelligence.decision_engine import get_decision_engine
+            de = get_decision_engine()
+            de.record(
+                task_type=classification.task_type.value,
+                mode=decision.plan.mode.value,
+                features=list(getattr(classification, 'detected_features', {})),
+                success=getattr(result, 'success', False),
+                quality_score=getattr(result, 'quality_score', 0.5) if hasattr(result, 'quality_score') else 0.5,
+                complexity=len(plan.steps) if plan and plan.steps else 1,
+                cost=getattr(result, 'cost', 0.0),
+                latency=elapsed,
+            )
+        except Exception as e:
+            logger.debug("DecisionEngine record failed: %s", e)
+
         tool_tracer.print_summary()
 
         return result, decision
@@ -823,54 +838,4 @@ class UnifiedIntelligenceLayer:
         )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Engine Arbiter helpers (v4.0 — wired but non-disruptive)
-# ═══════════════════════════════════════════════════════════════════════════════
 
-def _resolve_engine_disagreement(
-    old_classification, new_classification,
-    user_input: str, messages: list | None, cfg: dict | None,
-):
-    """Use Engine Arbiter to resolve disagreement between old and new classifiers.
-
-    When the two engines disagree on task_type, the arbiter executes both paths
-    and picks the winner based on actual quality scores (not just confidence).
-
-    Returns the winning classification, or None to defer to the confidence heuristic.
-    """
-    # Only engage arbiter when we have a real executor (heavyweight mode).
-    # Without one, defer to the confidence-based heuristic below.
-    if _ARBITER_AVAILABLE:
-        try:
-            arbiter = get_arbiter()
-            verdict = arbiter.resolve(
-                old_classification=old_classification,
-                new_classification=new_classification,
-                user_input=user_input,
-                executor=None,      # type: ignore[arg-type]  # lightweight: arbiter records disagreement
-                old_ctx=None,
-                new_ctx=None,
-                messages=messages,
-            )
-            _, classification, arb_verdict = verdict
-            if arb_verdict and arb_verdict.winner == "new":
-                return classification if classification else new_classification
-            if arb_verdict and arb_verdict.winner == "old":
-                return old_classification
-        except Exception:
-            pass  # fall through to confidence heuristic
-    return None  # defer to default heuristic
-
-
-def _record_engine_disagreement(old_classification, new_classification):
-    """Record engine disagreement in the Trust Tracker for future decisions."""
-    try:
-        tracker = get_trust_tracker()
-        tracker.record(
-            engine="intelligence",
-            agreed=False,
-            engine_correct=False,
-            old_correct=True,  # assume analyzer was correct (conservative)
-        )
-    except Exception as e:
-        logger.debug("Trust tracker unavailable: %s", e)

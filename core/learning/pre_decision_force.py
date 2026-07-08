@@ -96,7 +96,8 @@ class PreDecisionForce:
                     constraints["avoided_patterns"].append(p.solution[:100])
 
             return constraints
-        except Exception:
+        except Exception as e:
+            logger.debug("get_planner_constraints failed: %s", e)
             return {"preferred_patterns": [], "avoided_patterns": [], "suggested_steps": []}
 
     # ── Router Weight Modification ─────────────────────────
@@ -142,8 +143,8 @@ class PreDecisionForce:
                     boost = min(0.3, len(success_patterns) * 0.05)
                     weights[mode_key] = min(1.0, weights[mode_key] + boost)
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("get_router_weights failed: %s", e)
 
         return weights
 
@@ -167,7 +168,8 @@ class PreDecisionForce:
             from core.learning.pattern_library import UnifiedPatternStore
             store = UnifiedPatternStore()
             patterns = store.search(query=s[:80], min_confidence=0.2, limit=5)
-        except Exception:
+        except Exception as e:
+            logger.debug("Pattern search in evaluate failed: %s", e)
             patterns = []
 
         if not patterns:
@@ -220,7 +222,8 @@ class PreDecisionForce:
                 if "debugger" in p.solution.lower():
                     preferred.append("debugger")
             return list(dict.fromkeys(preferred))  # unique, preserve order
-        except Exception:
+        except Exception as e:
+            logger.debug("get_preferred_experts failed: %s", e)
             return []
 
 

@@ -28,6 +28,10 @@ class DecisionStats:
     total_quality: float = 0.0  # sum of quality scores
     last_used: str = ""  # ISO timestamp
 
+    # ── v4.1 Cost & latency tracking ──
+    total_cost: float = 0.0       # sum of execution costs
+    total_latency: float = 0.0    # sum of execution latencies (seconds)
+
     @property
     def total(self) -> int:
         return self.successes + self.failures
@@ -43,6 +47,25 @@ class DecisionStats:
         if self.total == 0:
             return 0.0
         return self.total_quality / self.total
+
+    @property
+    def avg_cost(self) -> float:
+        if self.total == 0:
+            return 0.0
+        return self.total_cost / self.total
+
+    @property
+    def avg_latency(self) -> float:
+        if self.total == 0:
+            return 0.0
+        return self.total_latency / self.total
+
+    @property
+    def cost_efficiency(self) -> float:
+        """Quality per dollar — higher is better."""
+        if self.avg_cost <= 0:
+            return self.success_rate
+        return (self.success_rate * self.avg_quality) / max(0.001, self.avg_cost)
 
 
 # Default mode mapping (mirrors router.py static table)
@@ -81,6 +104,13 @@ class DecisionEngine:
         self._knowledge_path = Path(knowledge_path) if knowledge_path else None
         self._stats: dict[str, DecisionStats] = {}
         self._overrides: dict[str, str] = {}  # learned mode overrides
+        self._total_decisions: int = 0  # total routing decisions made
+
+        # ── v4.1 Exploration/Exploitation ──
+        self._exploration_factor: float = 0.5  # UCB exploration constant
+        self._min_trials_for_exploit: int = 3  # minimum trials before exploiting
+        self._ucb_mode: bool = True  # use UCB-based exploration
+
         self._load()
 
     def _load(self):
@@ -96,8 +126,9 @@ class DecisionEngine:
                 self._overrides[key] = override
             for key, stats_dict in data.get("stats", {}).items():
                 self._stats[key] = DecisionStats(**stats_dict)
-            logger.debug("Loaded %d overrides, %d stat entries",
-                         len(self._overrides), len(self._stats))
+            self._total_decisions = data.get("total_decisions", 0)
+            logger.debug("Loaded %d overrides, %d stat entries (%d total decisions)",
+                         len(self._overrides), len(self._stats), self._total_decisions)
         except (json.JSONDecodeError, OSError, TypeError) as e:
             logger.warning("Failed to load decisions: %s", e)
 
@@ -109,12 +140,15 @@ class DecisionEngine:
         decisions_path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "overrides": self._overrides,
+            "total_decisions": self._total_decisions,
             "stats": {k: {
                 "task_type": v.task_type,
                 "mode": v.mode,
                 "successes": v.successes,
                 "failures": v.failures,
                 "total_quality": v.total_quality,
+                "total_cost": v.total_cost,
+                "total_latency": v.total_latency,
                 "last_used": v.last_used,
             } for k, v in self._stats.items()},
         }
@@ -124,14 +158,20 @@ class DecisionEngine:
         )
 
     def route(self, task_type: str, features: list[str] | None = None,
-              confidence: float = 0.5, complexity: int = 1) -> str:
+              confidence: float = 0.5, complexity: int = 1,
+              is_confused: bool = False) -> str:
         """Route a task to the best execution mode.
+
+        v4.1: Uses UCB-based exploration when data is limited.
+        Explores untested modes for a (task_type, features) pair.
+        Exploits known-good modes after sufficient trials.
 
         Args:
             task_type: Task type string ('code_write', 'research', etc.)
             features: Detected features like ['api', 'database', 'web']
             confidence: Classification confidence (0.0-1.0)
             complexity: Task complexity (1=simple, 2=medium, 3=complex)
+            is_confused: Whether the classifier was uncertain
 
         Returns:
             Execution mode string: 'simple_chat', 'autonomous',
@@ -139,8 +179,8 @@ class DecisionEngine:
         """
         features = features or []
 
-        # ── Low confidence → always simple_chat (safety) ──
-        if confidence < 0.4:
+        # ── Low confidence or confused → always simple_chat (safety) ──
+        if confidence < 0.4 or is_confused:
             return "simple_chat"
 
         # ── Check learned overrides ──
@@ -150,13 +190,98 @@ class DecisionEngine:
             logger.debug("Learned override: %s → %s", feature_key, learned_mode)
             return learned_mode
 
-        # ── Check stats for best performing mode ──
+        # ── UCB-based exploration/exploitation ──
+        if self._ucb_mode:
+            mode = self._route_ucb(task_type, features, complexity, confidence)
+            if mode:
+                return mode
+
+        # ── Check stats for best performing mode (without UCB) ──
         best_mode = self._best_mode_by_stats(task_type, features)
         if best_mode and confidence >= 0.5:
             return best_mode
 
         # ── Fallback to default static mapping ──
         return DEFAULT_MODE_MAP.get(task_type, "simple_chat")
+
+    def _route_ucb(self, task_type: str, features: list[str],
+                   complexity: int, confidence: float) -> str | None:
+        """Route using Upper Confidence Bound for explore/exploit.
+
+        For each candidate mode, computes:
+          score = success_rate + exploration_factor * sqrt(ln(N) / n)
+
+        Where:
+          N = total trials across all modes for this (task_type, features)
+          n = trials for this specific mode
+          exploration_factor = how much to favor exploration (0.5 default)
+        """
+        feature_key = self._make_key(task_type, features, complexity)
+
+        # Find all stats that match this task_type
+        task_stats = {k: v for k, v in self._stats.items()
+                      if v.task_type == task_type}
+
+        if not task_stats:
+            return None
+
+        total_trials = sum(s.total for s in task_stats.values())
+        if total_trials == 0:
+            return None
+
+        # Compute UCB score for each mode
+        ucb_scores: list[tuple[float, str]] = []
+        for mode_key in DEFAULT_MODE_MAP.values():
+            # Find stat for this specific (task_type, mode)
+            mode_stat = None
+            for k, s in task_stats.items():
+                if s.mode == mode_key:
+                    mode_stat = s
+                    break
+
+            if mode_stat and mode_stat.total >= self._min_trials_for_exploit:
+                # Exploit: known performance
+                exploitation = mode_stat.success_rate * 0.6 + mode_stat.avg_quality * 0.4
+                # Exploration bonus (UCB1)
+                import math
+                exploration = self._exploration_factor * math.sqrt(
+                    math.log(total_trials + 1) / max(1, mode_stat.total)
+                )
+                score = exploitation + exploration
+            elif mode_stat and mode_stat.total > 0:
+                # Some data but not enough → moderate exploration
+                import math
+                exploration = self._exploration_factor * math.sqrt(
+                    math.log(total_trials + 1) / max(1, mode_stat.total)
+                )
+                score = mode_stat.success_rate * 0.5 + exploration
+            else:
+                # No data for this mode → high exploration bonus
+                import math
+                exploration = self._exploration_factor * 2.0 * math.sqrt(
+                    math.log(total_trials + 1) / 1.0
+                )
+                # Default score from static map
+                default_score = 0.5 if mode_key == DEFAULT_MODE_MAP.get(task_type) else 0.3
+                score = default_score + exploration
+
+            ucb_scores.append((score, mode_key))
+
+        ucb_scores.sort(key=lambda x: x[0], reverse=True)
+
+        # Log top-2 UCB scores for transparency
+        if len(ucb_scores) >= 2:
+            logger.debug(
+                "UCB routing for %s: %s (%.3f) > %s (%.3f)",
+                task_type,
+                ucb_scores[0][1], ucb_scores[0][0],
+                ucb_scores[1][1], ucb_scores[1][0],
+            )
+
+        if ucb_scores and confidence >= 0.5:
+            return ucb_scores[0][1]
+
+        return None
 
     def _make_key(self, task_type: str, features: list[str], complexity: int) -> str:
         """Create a stable key for this task profile."""
@@ -190,8 +315,12 @@ class DecisionEngine:
 
     def record(self, task_type: str, mode: str, features: list[str],
                success: bool, quality_score: float = 0.0,
-               complexity: int = 1):
+               complexity: int = 1,
+               cost: float = 0.0, latency: float = 0.0):
         """Record an execution outcome for learning.
+
+        v4.1: Tracks cost and latency. Uses dynamic thresholds that
+        adapt based on total data volume.
 
         Args:
             task_type: Task type that was used
@@ -200,6 +329,8 @@ class DecisionEngine:
             success: Whether the execution succeeded
             quality_score: Quality score from validation (0.0-1.0)
             complexity: Task complexity level
+            cost: Execution cost in dollars
+            latency: Execution latency in seconds
         """
         from datetime import datetime, timezone
 
@@ -215,11 +346,29 @@ class DecisionEngine:
         else:
             stats.failures += 1
         stats.total_quality += quality_score
+        stats.total_cost += cost
+        stats.total_latency += latency
         stats.last_used = datetime.now(timezone.utc).isoformat()
+        self._total_decisions += 1
+
+        # ── Dynamic thresholds based on data volume ──
+        # With little data: conservative (need more evidence)
+        # With lots of data: more aggressive learning
+        if self._total_decisions < 20:
+            failure_threshold = 4
+            success_threshold = 6
+            rate_threshold = 0.35
+        elif self._total_decisions < 100:
+            failure_threshold = 3
+            success_threshold = 5
+            rate_threshold = 0.4
+        else:
+            failure_threshold = 2
+            success_threshold = 3
+            rate_threshold = 0.45
 
         # ── Automatically learn from failures ──
-        if stats.failures >= 3 and stats.success_rate < 0.4:
-            # This mode is failing too much → try alternatives
+        if stats.failures >= failure_threshold and stats.success_rate < rate_threshold:
             alternatives = {
                 "expert_team": "autonomous",
                 "autonomous": "simple_chat",
@@ -228,22 +377,35 @@ class DecisionEngine:
                 new_mode = alternatives[mode]
                 self._overrides[key] = new_mode
                 logger.info(
-                    "Learned: %s (mode=%s) failed %d/%d times → "
+                    "Learned: %s (mode=%s) failed %d/%d times (rate=%.2f) → "
                     "downgrading to %s",
-                    key, mode, stats.failures, stats.total, new_mode,
+                    key, mode, stats.failures, stats.total,
+                    stats.success_rate, new_mode,
                 )
 
-        # ── Promote good alternatives ──
-        if stats.successes >= 5 and stats.success_rate >= 0.8:
-            # This mode is working well → could try escalating
+        # ── Promote good alternatives (v4.1: auto-escalation) ──
+        if (stats.successes >= success_threshold
+                and stats.success_rate >= 0.8
+                and stats.avg_quality >= 0.7):
             escalations = {
                 "simple_chat": "autonomous",
             }
             if mode in escalations and key not in self._overrides:
-                # Don't auto-escalate; just remove any downgrade override
-                if self._overrides.get(key) == "simple_chat":
-                    del self._overrides[key]
-                    logger.info("Unblocked: %s → restoring default routing", key)
+                self._overrides[key] = escalations[mode]
+                logger.info(
+                    "Promoted: %s (mode=%s) succeeded %d/%d times (rate=%.2f) → "
+                    "escalating to %s",
+                    key, mode, stats.successes, stats.total,
+                    stats.success_rate, escalations[mode],
+                )
+
+        # ── Cost-based optimization ──
+        if stats.total >= 3 and stats.cost_efficiency < 0.3 and mode != "simple_chat":
+            logger.info(
+                "Cost optimization: %s (mode=%s) cost_efficiency=%.2f"
+                " — cost may be too high for this task type",
+                key, mode, stats.cost_efficiency,
+            )
 
         self._save()
 
