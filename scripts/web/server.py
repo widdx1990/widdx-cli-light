@@ -86,7 +86,15 @@ app = FastAPI(title="WIDDX Nexus", version="3.2.0")
 
 # ── CORS + Origin validation ───────────────────────────────
 # ISS-009: CSRF / Origin validation — only allow same-origin requests
-ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8001", "http://127.0.0.1:8001", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8099", "http://127.0.0.1:8099"]
+# Dynamically built; extended at startup with actual listening address.
+_ALLOWED_ORIGINS_BASE = [
+    "http://localhost:8000", "http://127.0.0.1:8000",
+    "http://localhost:8001", "http://127.0.0.1:8001",
+    "http://localhost:8080", "http://127.0.0.1:8080",
+    "http://localhost:8099", "http://127.0.0.1:8099",
+    "http://0.0.0.0:8000",
+]
+ALLOWED_ORIGINS = list(_ALLOWED_ORIGINS_BASE)
 
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
@@ -106,13 +114,8 @@ async def _validate_origin(request: Request, call_next):
     return await call_next(request)
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
+# CORSMiddleware is now added dynamically in run() below
+# so it picks up the actual host:port at startup.
 
 @app.middleware("http")
 async def _add_security_headers(request: Request, call_next):
@@ -1465,10 +1468,38 @@ async def websocket_events(websocket: WebSocket):
 
 # ── Main ────────────────────────────────────────────────────
 
-def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None:
+def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False, open_browser: bool = True) -> None:
     """Run the Web UI server."""
     import uvicorn
-    logger.info("WIDDX Nexus Web UI: http://%s:%d", host, port)
+
+    # ── Ensure listening address is in allowed origins ─────
+    for h in (host, "127.0.0.1", "localhost"):
+        origin = f"http://{h}:{port}"
+        if origin not in ALLOWED_ORIGINS:
+            ALLOWED_ORIGINS.append(origin)
+    # CORSMiddleware wraps self.app only once (guard via module-level flag)
+    if not getattr(run, '_cors_ready', False):
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=ALLOWED_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
+        run._cors_ready = True
+
+    # ── Auto-open browser ──────────────────────────────────
+    browse_url = f"http://127.0.0.1:{port}"
+    logger.info("─" * 40)
+    logger.info("  WIDDX Nexus Mission Control")
+    logger.info("  %s", browse_url)
+    logger.info("─" * 40)
+    if open_browser:
+        try:
+            import webbrowser
+            webbrowser.open(browse_url)
+        except Exception:
+            pass
 
     # ── Start background services ──────────────────────────
     try:
