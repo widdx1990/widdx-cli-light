@@ -5,14 +5,15 @@ import json
 import uuid
 import httpx
 
-from .base import Provider, ToolCall, _clean_surrogates, _DEFAULT_MAX_TOKENS, _TOOL_CAPABLE_PATTERNS, _REASONING_PATTERNS
+from .base import Provider, ToolCall, _clean_surrogates, _TOOL_CAPABLE_PATTERNS, _REASONING_PATTERNS
 
 import logging as _logging
 logger = _logging.getLogger("widdx.providers")
 
 class OllamaProvider(Provider):
     # \u2500\u2500 Class-level capability cache \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    _capabilities: dict[str, dict] = {}  # model_name \u2192 {"tools": bool, "reasoning": bool}
+    _capabilities: dict[str, dict] = {}  # model_name → {"tools": bool, "reasoning": bool}
+    _OLLAMA_MAX_TOKENS = 2048  # model_name \u2192 {"tools": bool, "reasoning": bool}
 
     def _get_capabilities(self) -> dict:
         """Detect model capabilities (tools, reasoning).
@@ -264,7 +265,7 @@ class OllamaProvider(Provider):
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": _DEFAULT_MAX_TOKENS,
+            "max_tokens": self._OLLAMA_MAX_TOKENS,
         }
         if schema:
             body["tools"] = schema
@@ -318,7 +319,7 @@ class OllamaProvider(Provider):
             "model": self.model,
             "messages": remapped,
             "temperature": temperature,
-            "max_tokens": _DEFAULT_MAX_TOKENS,
+            "max_tokens": self._OLLAMA_MAX_TOKENS,
             # No "tools" key \u2014 model doesn't support it
         }
 
@@ -344,13 +345,13 @@ class OllamaProvider(Provider):
             return f"\u26a0\ufe0f  Ollama error {e.response.status_code}: {detail}", []
 
     def _chat_simple(self, messages: list, temperature: float) -> tuple[str, list]:
-        """Path C: no tools at all \u2014 plain chat."""
+        """Path C: no tools at all — plain chat."""
         url = f"{self.base_url}/v1/chat/completions"
         body = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": _DEFAULT_MAX_TOKENS,
+            "max_tokens": self._OLLAMA_MAX_TOKENS,
         }
         try:
             resp = httpx.post(url, json=body, timeout=300)
@@ -362,19 +363,133 @@ class OllamaProvider(Provider):
                 content = f"[thinking]\n{reasoning}\n[/thinking]\n\n{content}"
             return content, []
         except httpx.ConnectError:
-            return f"\u26a0\ufe0f  Cannot connect to Ollama at {self.base_url}\nRun: ollama serve", []
+            return f"⚠️  Cannot connect to Ollama at {self.base_url}\nRun: ollama serve", []
         except httpx.HTTPStatusError as e:
             detail = e.response.text[:300] if e.response.text else str(e)
-            return f"\u26a0\ufe0f  Ollama error {e.response.status_code}: {detail}", []
+            return f"⚠️  Ollama error {e.response.status_code}: {detail}", []
 
-    # \u2500\u2500 Main entry point \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # ── Streaming ───────────────────────────────────────────
+
+    def stream(self, messages: list, tool_defs: list, temperature: float = 0.7):
+        """Generator: yields content chunks + tool calls + done event.
+
+        Uses Ollama's OpenAI-compatible /v1/chat/completions?stream=true
+        endpoint for token-by-token streaming.
+        """
+        caps = self._get_capabilities()
+        url = f"{self.base_url}/v1/chat/completions"
+        schema = self.build_tools_schema(tool_defs)
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": self._OLLAMA_MAX_TOKENS,
+            "stream": True,
+        }
+
+        if tool_defs and caps["tools"] and schema:
+            body["tools"] = schema
+
+        content_chunks: list[str] = []
+        reasoning_chunks: list[str] = []
+        current_tool_calls: dict = {}
+
+        try:
+            with httpx.Client(timeout=300) as client:
+                with client.stream("POST", url, json=body) as resp:
+                    if resp.status_code != 200:
+                        try:
+                            err_body = resp.read().decode("utf-8", errors="replace")
+                        except Exception:
+                            err_body = f"HTTP {resp.status_code}"
+                        yield {"type": "error", "data": f"Ollama returned {resp.status_code}: {err_body[:300]}"}
+                        yield {"type": "done", "data": ("", [])}
+                        return
+
+                    for line in resp.iter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        payload = line[6:].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+
+                        choices = chunk.get("choices", [])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        finish = choices[0].get("finish_reason")
+
+                        # ── Reasoning content (native reasoning_content field) ──
+                        rc = delta.get("reasoning_content")
+                        if rc:
+                            reasoning_chunks.append(rc)
+                            yield {"type": "reasoning", "data": rc}
+                            continue
+
+                        # ── Tool calls (accumulated across chunks) ──
+                        tc_delta = delta.get("tool_calls")
+                        if tc_delta:
+                            for t in tc_delta:
+                                self._accumulate_tool_call(current_tool_calls, t)
+
+                        # ── Content text ──────────────────────────
+                        content = delta.get("content")
+                        if content:
+                            content_chunks.append(content)
+                            yield {"type": "content", "data": _clean_surrogates(content)}
+
+                        # ── Finish ────────────────────────────────
+                        if finish:
+                            full_content = "".join(content_chunks)
+                            full_reasoning = "".join(reasoning_chunks)
+
+                            # Inject thinking block if there was reasoning
+                            if full_reasoning:
+                                full_content = f"[thinking]\n{full_reasoning}\n[/thinking]\n\n{full_content}"
+
+                            # Resolve accumulated tool calls
+                            tool_calls: list[ToolCall] = []
+                            for idx in sorted(current_tool_calls.keys()):
+                                tc = current_tool_calls[idx]
+                                name = tc.get("function", {}).get("name", "")
+                                raw_args = tc.get("function", {}).get("arguments", "{}")
+                                if isinstance(raw_args, str):
+                                    try:
+                                        raw_args = json.loads(raw_args) if raw_args.strip() else {}
+                                    except json.JSONDecodeError:
+                                        raw_args = {}
+                                call_id = tc.get("id", "") or f"call_{uuid.uuid4().hex[:12]}"
+                                tool_calls.append(ToolCall(name=name, args=raw_args, id=call_id))
+
+                            yield {"type": "done", "data": (full_content, tool_calls)}
+                            return
+
+        except httpx.ConnectError:
+            yield {"type": "error", "data": f"⚠️  Cannot connect to Ollama at {self.base_url}\nRun: ollama serve"}
+            yield {"type": "done", "data": ("", [])}
+            return
+        except httpx.TimeoutError:
+            yield {"type": "error", "data": "⚠️  Ollama request timed out. The model may still be loading. Try again."}
+            yield {"type": "done", "data": ("", [])}
+            return
+        except Exception as e:
+            logger.warning("Ollama stream error: %s", e)
+            yield {"type": "error", "data": f"⚠️  Ollama stream error: {e}"}
+            yield {"type": "done", "data": ("", [])}
+            return
+
+    # ── Main entry point ────────────────────────────────────
 
     def chat(self, messages: list, tool_defs: list, temperature: float = 0.7) -> tuple[str, list]:
         """Run a chat completion, auto-selecting the right path.
 
-        - Native tools supported  \u2192 send tools schema, parse tool_calls
-        - No native tools         \u2192 text-based tool instructions + text parsing
-        - No tools needed         \u2192 plain chat
+        - Native tools supported  → send tools schema, parse tool_calls
+        - No native tools         → text-based tool instructions + text parsing
+        - No tools needed         → plain chat
         """
         caps = self._get_capabilities()
 
