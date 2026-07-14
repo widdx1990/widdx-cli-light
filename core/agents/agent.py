@@ -378,6 +378,40 @@ class AutonomousAgent:
         current_model_name = self.state.get("model", "")
         ecp.start_task(current_model=current_model_name)
 
+        # ── Layer 8: Adaptive Policy (evidence-weighted learning) ──
+        from core.runtime.control.adaptive_policy import get_adaptive_policy
+        adaptive_policy = get_adaptive_policy()
+        adaptive_policy.start_task()
+
+        # ── Layer 9: Experiments (counterfactual A/B testing) ──
+        from core.runtime.control.experiments import get_experiment_runner
+        experiment_runner = get_experiment_runner()
+        experiment_runner.start_task()
+
+        # ── Layer 10: Metalearning (Lyapunov convergence) ──
+        from core.runtime.control.metalearning import get_metalearning_monitor
+        metalearning = get_metalearning_monitor()
+        metalearning.start_task()
+
+        # ── Layer 11: Containment (4 mathematical bounds) ──
+        from core.runtime.containment import get_containment
+        containment = get_containment()
+        containment.start()
+
+        # ── Layer 12: MCL (constraint reflexivity) ──
+        from core.runtime.meta_constraint import get_mcl
+        mcl = get_mcl()
+        mcl.start()
+
+        # ── Layer 13: CTI (constraint transparency index) ──
+        from core.runtime.cti import get_cti
+        cti = get_cti()
+        cti.start()
+
+        # ── Layer 14: Dashboard (unified A→F grade) ──
+        from core.runtime.dashboard import get_dashboard
+        dashboard = get_dashboard()
+
         # ── Semantic stability + self-healing (periodic, every 10 steps) ──
         _semantic_interval = 10
         _semantic_enabled = True
@@ -442,6 +476,53 @@ class AutonomousAgent:
                                     source="SemanticHealer", detail="Safe mode from cognitive drift"))
                 except Exception as sem_e:
                     logger.debug("Semantic check skipped: %s", sem_e)
+
+            # ═══════════════════════════════════════════
+            # PHASE 1.6: CONTAINMENT — mathematical bounds check
+            # ═══════════════════════════════════════════
+            try:
+                tools_list = list(set(s.tool_name for s in self.steps)) if self.steps else []
+                drift_score = 0.0
+                if _semantic_enabled and _sem_healer:
+                    sem_report = _sem_healer.semantic.measure(iteration, tools_list)
+                    drift_score = sem_report.drift.drift_score if sem_report.drift else 0.0
+
+                containment_result = containment.check_all(
+                    drift_score=drift_score,
+                    invariance_score=0.8,  # placeholder - would come from invariance layer
+                    lyapunov_drift=0.1,    # placeholder - would come from metalearning
+                    spc_violations=0,
+                )
+                if not containment_result.get("passed", True):
+                    print_system_msg(f"🛡️ Containment: {containment_result.get('violations', [])}")
+                    ecp.collect_signal(ExecutionSignal(
+                        signal_type=SignalType.COMPLEXITY_DRIFT,
+                        value=0.7,
+                        source="Containment",
+                        detail=f"Containment violation: {containment_result.get('violations', [])}"
+                    ))
+            except Exception as cont_e:
+                logger.debug("Containment check skipped: %s", cont_e)
+
+            # ═══════════════════════════════════════════
+            # PHASE 1.7: MCL + CTI — constraint reflexivity & transparency
+            # ═══════════════════════════════════════════
+            try:
+                # Record proposal outcomes for CTI/MCL
+                # This would track parameter proposals and whether they were blocked by constraints
+                pass  # Integration point for adaptive policy proposals
+            except Exception as mcl_e:
+                logger.debug("MCL/CTI update skipped: %s", mcl_e)
+
+            # ═══════════════════════════════════════════
+            # PHASE 1.8: DASHBOARD — periodic snapshot
+            # ═══════════════════════════════════════════
+            if iteration % 20 == 0 and iteration > 0:
+                try:
+                    snapshot = dashboard.snapshot()
+                    logger.debug("Dashboard snapshot: grade=%s score=%.1f", snapshot.get("grade"), snapshot.get("score"))
+                except Exception as dash_e:
+                    logger.debug("Dashboard snapshot skipped: %s", dash_e)
 
             # ═══════════════════════════════════════════
             # PHASE 2: DECIDE — ECP sole authority
@@ -746,6 +827,60 @@ class AutonomousAgent:
                     model = self.state.get("model", "").split("/")[-1] or "unknown"
                     self.state["cost"] += estimate_turn_cost(model, 200, 100)
                     self.state["turns"] = self.state.get("turns", 0) + 1
+
+            # ═══════════════════════════════════════════
+            # PHASE 4: END-OF-ITERATION — layer integration hooks
+            # ═══════════════════════════════════════════
+            try:
+                # Containment check (Layer 11)
+                drift_score = 0.0
+                if _semantic_enabled and _sem_healer:
+                    tools_list = list(set(s.tool_name for s in self.steps)) if self.steps else []
+                    sem_report = _sem_healer.semantic.measure(iteration, tools_list)
+                    drift_score = sem_report.drift.drift_score if sem_report.drift else 0.0
+
+                # Feed drift into containment's drift subsystem
+                containment.drift.register("execution_drift", drift_score)
+
+                # Record tool success/failure for acceptance control
+                step_success = any(s.status == "done" for s in self.steps[-5:]) if self.steps else True
+                containment.acceptance.record(step_success)
+
+                # CTI recording (Layer 13)
+                cti.record(
+                    parameter="ecp_action",
+                    accepted=decision.action == ControlActionType.CONTINUE,
+                    blocked_by=decision.action.name if decision.action != ControlActionType.CONTINUE else "",
+                    would_have_succeeded=decision.confidence > 0.7,
+                    confidence=decision.confidence,
+                )
+
+                # MCL recording (Layer 12)
+                mcl.record_proposal(
+                    parameter="ecp_decision",
+                    accepted=decision.action == ControlActionType.CONTINUE,
+                    blocked_by=decision.action.name if decision.action != ControlActionType.CONTINUE else "",
+                )
+
+                # Experiment tracking via container's acceptance subsystem
+                # Record proposal outcome for metalearning (Layer 10)
+                metalearning.record_proposal(
+                    parameter="tool_execution",
+                    accepted=step_success,
+                    confidence=decision.confidence,
+                )
+
+            except Exception as layer_e:
+                logger.debug("Layer integration hook skipped: %s", layer_e)
+
+            # Dashboard snapshot (Layer 14) - every 20 iterations
+            if iteration % 20 == 0 and iteration > 0:
+                try:
+                    snapshot = dashboard.snapshot()
+                    logger.debug("Dashboard: grade=%s score=%.1f", snapshot.get("grade"), snapshot.get("score"))
+                except Exception as dash_e:
+                    logger.debug("Dashboard snapshot skipped: %s", dash_e)
+
             else:
                 # AI responded without tool calls — task may be complete
                 summary = content or "Task completed."
@@ -816,6 +951,48 @@ class AutonomousAgent:
 
                 self._show_final_result(content)
                 print_agent_done(self.steps, summary)
+
+                # ═══════════════════════════════════════════
+                # TASK COMPLETION: Full layer finalization
+                # ═══════════════════════════════════════════
+                try:
+                    from core.runtime.benchmarks import get_tracer
+                    tracer = get_tracer()
+                    traces = tracer.get_traces()
+                    if traces:
+                        score = score_session(traces)
+                        adaptive_policy.record_score(
+                            stability=score.stability_ratio,
+                            policy_intervention_rate=score.policy_intervention_rate,
+                            switch_effectiveness=score.switch_effectiveness,
+                            escalation_efficiency=score.escalation_efficiency,
+                            overall=score.overall_score,
+                            anomalies=len(score.anomalies),
+                        )
+                        # Record experiment task outcome if any experiment is active
+                        for exp_param in experiment_runner.active_experiments:
+                            experiment_runner.record_task(
+                                parameter=exp_param,
+                                used_candidate=experiment_runner.should_use_candidate(exp_param),
+                                success=score.grade in ("A", "B"),
+                                cost=self.state.get("cost", 0),
+                                steps=iteration,
+                                model_switches=ecp.status.get("model_switches", 0),
+                            )
+                        # Update metalearning KPIs
+                        metalearning.record_proposal(
+                            parameter="task_execution",
+                            accepted=score.grade in ("A", "B"),
+                            confidence=score.overall_score,
+                        )
+                        # Evaluate transparency and reflexivity
+                        cti.evaluate()
+                        mcl.evaluate()
+                        final_snapshot = dashboard.snapshot()
+                        logger.info("Task complete: grade=%s score=%.1f", final_snapshot.get("grade"), final_snapshot.get("score"))
+                except Exception as final_e:
+                    logger.debug("Task finalization skipped: %s", final_e)
+
                 ts.clear()
                 return self.steps, summary
 
@@ -832,6 +1009,45 @@ class AutonomousAgent:
                 self._emit({"type": "text", "data": f"\n[💡 {report.success_reason[:200]}]\n"})
         except Exception as ei_e:
             logger.warning("EI analyze_success failed: %s", ei_e)
+
+        # ═══════════════════════════════════════════
+        # TASK COMPLETION (max iterations): Full layer finalization
+        # ═══════════════════════════════════════════
+        try:
+            from core.runtime.benchmarks import get_tracer
+            tracer = get_tracer()
+            traces = tracer.get_traces()
+            if traces:
+                score = score_session(traces)
+                adaptive_policy.record_score(
+                    stability=score.stability_ratio,
+                    policy_intervention_rate=score.policy_intervention_rate,
+                    switch_effectiveness=score.switch_effectiveness,
+                    escalation_efficiency=score.escalation_efficiency,
+                    overall=score.overall_score,
+                    anomalies=len(score.anomalies),
+                )
+                for exp_param in experiment_runner.active_experiments:
+                    experiment_runner.record_task(
+                        parameter=exp_param,
+                        used_candidate=experiment_runner.should_use_candidate(exp_param),
+                        success=score.grade in ("A", "B"),
+                        cost=self.state.get("cost", 0),
+                        steps=iteration,
+                        model_switches=ecp.status.get("model_switches", 0),
+                    )
+                metalearning.record_proposal(
+                    parameter="task_execution",
+                    accepted=score.grade in ("A", "B"),
+                    confidence=score.overall_score,
+                )
+                cti.evaluate()
+                mcl.evaluate()
+                final_snapshot = dashboard.snapshot()
+                logger.info("Task complete (max iter): grade=%s score=%.1f", final_snapshot.get("grade"), final_snapshot.get("score"))
+        except Exception as final_e:
+            logger.debug("Task finalization skipped: %s", final_e)
+
         ts.clear()
         return self.steps, summary
 
