@@ -233,7 +233,7 @@ async def lifespan(app: FastAPI):
     try:
         state.mcp_mgr.load_from_config(state.cfg)
         state.mcp_mgr.start()
-        logger.info("MCP manager started — %d servers", len(state.mcp_mgr.servers))  # type: ignore[attr-defined,unused-ignore]
+        logger.info("MCP manager started — %d servers", state.mcp_mgr.server_count)  # type: ignore[attr-defined,unused-ignore]
     except Exception as e:
         logger.warning("MCP manager start skipped: %s", e)
     ensure_docs(Path.cwd().resolve())

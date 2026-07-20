@@ -1,8 +1,7 @@
 {
   "provider": {
-    "name": "opencode-zen",
-    "model": "deepseek-v4-flash-free",
-    "base_url": "https://opencode.ai/zen/v1"
+    "name": "nonexistent-xyz",
+    "model": "deepseek-v4-flash-free"
   },
   "max_turns": 20,
   "temperature": 0.9,
