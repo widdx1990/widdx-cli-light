@@ -386,12 +386,12 @@ class AutonomousAgent:
         # ── Layer 9: Experiments (counterfactual A/B testing) ──
         from core.runtime.control.experiments import get_experiment_runner
         experiment_runner = get_experiment_runner()
-        experiment_runner.start_task()
+        # experiment_runner is instantiated but no per-task init is needed
 
         # ── Layer 10: Metalearning (Lyapunov convergence) ──
         from core.runtime.control.metalearning import get_metalearning_monitor
         metalearning = get_metalearning_monitor()
-        metalearning.start_task()
+        # metalearning.start_task()
 
         # ── Layer 11: Containment (4 mathematical bounds) ──
         from core.runtime.containment import get_containment

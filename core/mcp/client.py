@@ -540,7 +540,7 @@ class MCPClientManager:
         self._connected_once = True
         for conn in self._servers.values():
             if not conn.is_connected:
-                conn.connect()
+                conn.connect(retry=False)
                 for td in conn.get_tool_definitions():
                     self._tool_map[td["name"]] = (conn.name, td["_mcp_tool"])
 
