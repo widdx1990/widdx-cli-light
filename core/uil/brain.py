@@ -257,7 +257,7 @@ class UnifiedIntelligenceLayer:
                 input_summary="is_confused=True",
                 output="SIMPLE_CHAT (safety)",
                 score=0.5,
-                detail="Classifier uncertainty triggered conservative routing",
+                detail="Classifier uncertainty caused conservative routing",
             ))
 
         # Correction boundary: low-confidence → never run AUTONOMOUS or EXPERT_TEAM

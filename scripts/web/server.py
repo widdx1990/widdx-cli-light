@@ -98,6 +98,17 @@ ALLOWED_ORIGINS = list(_ALLOWED_ORIGINS_BASE)
 
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
+# ── Direct CORSMiddleware activation (required for tests & production) ──
+# Enabled directly at module load so that TestClient sees CORS headers
+# without needing to call run().
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
 @app.middleware("http")
 async def _validate_origin(request: Request, call_next):
     """Reject requests with disallowed Origin header (CSRF protection).
@@ -1477,8 +1488,14 @@ def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False, open_br
         origin = f"http://{h}:{port}"
         if origin not in ALLOWED_ORIGINS:
             ALLOWED_ORIGINS.append(origin)
-    # CORSMiddleware wraps self.app only once (guard via module-level flag)
-    if not getattr(run, '_cors_ready', False):
+    # CORSMiddleware already enabled directly at module import for tests & prod.
+    # Here we only extend allowed origins; if a middleware already exists,
+    # we avoid adding a duplicate (the existing instance shares ALLOWED_ORIGINS list).
+    _existing_cors = any(
+        getattr(m, "cls", None) == CORSMiddleware
+        for m in getattr(app, "user_middleware", [])
+    )
+    if not _existing_cors and not getattr(run, '_cors_ready', False):
         app.add_middleware(
             CORSMiddleware,
             allow_origins=ALLOWED_ORIGINS,
@@ -1486,6 +1503,9 @@ def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False, open_br
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type"],
         )
+        run._cors_ready = True
+    else:
+        # Mark as ready so future calls also skip
         run._cors_ready = True
 
     # ── Auto-open browser ──────────────────────────────────

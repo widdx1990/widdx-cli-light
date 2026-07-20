@@ -388,7 +388,10 @@ WIDDX Nexus includes automated failover and zero-configuration support:
 WIDDX Nexus maintains full test suite coverage:
 
 ```bash
-# Install development dependencies
+# Install with all dev and API dependencies (recommended comprehensive install)
+pip install '.[dev,api]'
+
+# Or via Makefile
 make install-dev
 
 # Run total test suite (508 test suites)
