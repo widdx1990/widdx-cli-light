@@ -114,20 +114,35 @@ class ConnectionPool:
             self._active_count = 0
 
 
-# ── Global pool instance ────────────────────────────────────
-_pool: Optional[ConnectionPool] = None
+# ── Global pool registry ────────────────────────────────────
+# One pool per database file path so that multi-tenant setups
+# (separate DB file per tenant) never share connections.
+_pools: dict[str, ConnectionPool] = {}
 _pool_lock = threading.Lock()
 
 
 def get_pool(db_path: str | Path | None = None) -> ConnectionPool:
-    """Get or create the global connection pool."""
-    global _pool
-    if _pool is None:
+    """Get or create the connection pool for a specific database file."""
+    path = str(db_path or get_db_path())
+    pool = _pools.get(path)
+    if pool is None:
         with _pool_lock:
-            if _pool is None:
-                path = db_path or get_db_path()
-                _pool = ConnectionPool(path, max_connections=5)
-    return _pool
+            pool = _pools.get(path)
+            if pool is None:
+                pool = ConnectionPool(path, max_connections=5)
+                _pools[path] = pool
+    return pool
+
+
+def close_all_pools() -> None:
+    """Close every registered connection pool (used on shutdown/tests)."""
+    with _pool_lock:
+        for pool in _pools.values():
+            try:
+                pool.close_all()
+            except Exception:
+                pass
+        _pools.clear()
 
 
 class Database:
@@ -151,19 +166,6 @@ class Database:
         self._pool.release(conn)
 
 
-class _PoolConnection:
-    """Context manager wrapper that returns a connection to the pool on exit."""
-    def __init__(self, conn, pool):
-        self.conn = conn
-        self.pool = pool
-
-    def __enter__(self):
-        return self.conn
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.pool.release(self.conn)
-        return False
-    
     # Schema version that the current code expects.
     # Increment this when you add a new migration to _MIGRATIONS.
     CURRENT_SCHEMA_VERSION = 1
@@ -226,8 +228,7 @@ class _PoolConnection:
 
     def _init_db(self):
         """Initialise the database and run any pending migrations."""
-        conn = self._get_conn()
-        try:
+        with self._get_conn() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS schema_version (
                     version INTEGER PRIMARY KEY,
@@ -236,8 +237,6 @@ class _PoolConnection:
             """)
             self._migrate(conn)
             conn.commit()
-        finally:
-            self._return_conn(conn)
 
     def _migrate(self, conn):
         """Run pending migrations in version order."""
@@ -524,7 +523,40 @@ class _PoolConnection:
             rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
 
+    # ── Aggregate counts (Admin Dashboard / Telemetry) ────────
+    def count_sessions(self) -> int:
+        """Total number of sessions in this database."""
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
+            return int(row[0]) if row else 0
 
+    def count_all_messages(self) -> int:
+        """Total number of messages across all sessions."""
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM messages").fetchone()
+            return int(row[0]) if row else 0
+
+    def count_memories(self) -> int:
+        """Total number of stored memories."""
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM memories").fetchone()
+            return int(row[0]) if row else 0
+
+
+
+class _PoolConnection:
+    """Context manager wrapper that returns a connection to the pool on exit."""
+    def __init__(self, conn, pool):
+        self.conn = conn
+        self.pool = pool
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.pool.release(self.conn)
+        return False
+    
 _db = None
 _db_path: str | None = None
 

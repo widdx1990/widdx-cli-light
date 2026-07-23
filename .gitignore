@@ -83,3 +83,6 @@ vscode-extension/*.vsix
 
 # Package lock (tracked incidentally)
 package-lock.json
+
+# Kubernetes — never commit filled secrets (created from secret.example.yaml)
+deploy/k8s/secret.yaml
