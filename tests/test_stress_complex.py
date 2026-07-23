@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-os.environ["WIDDX_API_KEY"] = "complex-test-key"
+os.environ["WIDDX_API_KEY"] = "stress-test-key-007"
 API_KEY = os.environ["WIDDX_API_KEY"]
 
 import pytest

@@ -1,6 +1,6 @@
 {
   "provider": {
-    "name": "nonexistent-xyz",
+    "name": "deepseek",
     "model": "deepseek-v4-flash-free"
   },
   "max_turns": 20,
