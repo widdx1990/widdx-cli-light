@@ -1,16 +1,20 @@
 
-"""
-Durable Session Database for WIDDX
+"""Durable Session Database for WIDDX
+
 SQLite-based persistent storage for sessions, memories, and history
+with connection pooling for production workloads.
 """
 
 import sqlite3
 import json
 import uuid
 import logging
+import threading
+import queue
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 
@@ -24,19 +28,141 @@ def get_db_path(project_dir: str | Path | None = None) -> Path:
     return widdx_dir / "widdx.db"
 
 
+# ── Connection Pool ─────────────────────────────────────────
+# Thread-safe SQLite connection pool for production use.
+# Reuses connections instead of opening/closing per request.
+
+class ConnectionPool:
+    """Simple thread-safe SQLite connection pool.
+
+    Maintains up to ``max_connections`` open connections.
+    Connections are returned to the pool after use.
+    If the pool is exhausted, callers block up to ``timeout`` seconds.
+    """
+
+    def __init__(self, db_path: str | Path, max_connections: int = 5,
+                 timeout: float = 5.0):
+        self.db_path = str(db_path)
+        self.max_connections = max_connections
+        self.timeout = timeout
+        self._pool: queue.Queue[sqlite3.Connection] = queue.Queue(max_connections)
+        self._active_count = 0
+        self._lock = threading.Lock()
+        self._closed = False
+        self._logger = logging.getLogger("widdx.db.pool")
+
+    def acquire(self) -> sqlite3.Connection:
+        """Get a connection from the pool (or create one if available)."""
+        if self._closed:
+            raise RuntimeError("Connection pool is closed")
+
+        # Try to get from pool
+        try:
+            conn = self._pool.get(block=True, timeout=self.timeout)
+            # Verify connection is still alive
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except (sqlite3.OperationalError, sqlite3.DatabaseError):
+                # Connection is dead — create a new one
+                self._logger.debug("Recreating stale database connection")
+                pass
+        except queue.Empty:
+            pass
+
+        # Create new connection
+        with self._lock:
+            if self._active_count < self.max_connections:
+                self._active_count += 1
+            else:
+                # Pool exhausted — retry acquiring
+                conn = self._pool.get(block=True, timeout=self.timeout)
+
+        conn = sqlite3.connect(self.db_path, timeout=5.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
+    def release(self, conn: sqlite3.Connection):
+        """Return a connection to the pool."""
+        if self._closed:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return
+        try:
+            self._pool.put(conn, block=False)
+        except queue.Full:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def close_all(self):
+        """Close all connections in the pool."""
+        self._closed = True
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get(block=False)
+                conn.close()
+            except (queue.Empty, Exception):
+                break
+        with self._lock:
+            self._active_count = 0
+
+
+# ── Global pool instance ────────────────────────────────────
+_pool: Optional[ConnectionPool] = None
+_pool_lock = threading.Lock()
+
+
+def get_pool(db_path: str | Path | None = None) -> ConnectionPool:
+    """Get or create the global connection pool."""
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                path = db_path or get_db_path()
+                _pool = ConnectionPool(path, max_connections=5)
+    return _pool
+
+
 class Database:
     def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
             db_path = get_db_path()
         self.db_path = db_path
+        self._pool = get_pool(db_path)
         self._init_db()
-    
+
     def _get_conn(self):
-        conn = sqlite3.connect(str(self.db_path), timeout=5)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        """Get a connection from the pool.
+        
+        Returns a context manager that releases the connection
+        back to the pool when the context is exited.
+        """
+        return _PoolConnection(self._pool.acquire(), self._pool)
+
+    def _return_conn(self, conn):
+        """Return a connection to the pool."""
+        self._pool.release(conn)
+
+
+class _PoolConnection:
+    """Context manager wrapper that returns a connection to the pool on exit."""
+    def __init__(self, conn, pool):
+        self.conn = conn
+        self.pool = pool
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.pool.release(self.conn)
+        return False
     
     # Schema version that the current code expects.
     # Increment this when you add a new migration to _MIGRATIONS.
@@ -100,8 +226,8 @@ class Database:
 
     def _init_db(self):
         """Initialise the database and run any pending migrations."""
-        with self._get_conn() as conn:
-            # ── Schema version tracking ──
+        conn = self._get_conn()
+        try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS schema_version (
                     version INTEGER PRIMARY KEY,
@@ -110,6 +236,8 @@ class Database:
             """)
             self._migrate(conn)
             conn.commit()
+        finally:
+            self._return_conn(conn)
 
     def _migrate(self, conn):
         """Run pending migrations in version order."""
