@@ -616,11 +616,25 @@ def main():
     except Exception:
         pass
     import uvicorn
+
     port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 8000
     host = os.environ.get("WIDDX_API_HOST", "127.0.0.1")
+    log_level = os.environ.get("WIDDX_LOG_LEVEL", "info").lower()
+
+    # ── Graceful Shutdown ──────────────────────────────
+    # uvicorn handles SIGTERM/SIGINT by default, but we configure
+    # timeout_graceful_shutdown to allow in-flight requests to complete
     print(f"🚀 WIDDX API running at http://{host}:{port}")
     print(f"   Docs: http://{host}:{port}/docs")
-    uvicorn.run(app, host=host, port=port)
+    print(f"   Graceful shutdown timeout: 30s")
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level=log_level,
+        timeout_graceful_shutdown=30,  # max seconds to wait for in-flight requests
+    )
+
 
 if __name__ == "__main__":
     main()

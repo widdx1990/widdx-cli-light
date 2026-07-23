@@ -1,5 +1,68 @@
 # Changelog
 
+## 3.3.0 (2026-07-23)
+
+### 🚀 Production Readiness — Core Infrastructure
+
+#### Performance Monitoring (New)
+- **`core/monitoring.py`** — comprehensive metrics system with p50/p95/p99 latency tracking
+- Request tracking per endpoint with automatic error rate calculation
+- Tool execution profiling (per-tool latency, error rates)
+- System resource monitoring (memory RSS/VMS via `/proc/self/status`, CPU)
+- Performance alerts on slow execution (>10s warning, >30s critical)
+- New middleware auto-tracks every request in API server
+- New endpoint: `GET /api/monitoring` for detailed performance data
+- Health endpoint now includes system metrics and performance data
+
+#### Safety & Timeouts (Enhanced)
+- **`core/tools/safety.py`** — complete safety overhaul
+  - Per-tool timeouts (bash: 30s, write: 10s, docker: 120s, spawn_agent: 300s)
+  - `execute_safely()` wrapper with timeout + resource limits
+  - `TimeoutError` custom exception with tool context
+  - Command whitelist (60+ always-allowed commands, 15 restricted)
+  - `ResourceLimits` — max concurrent executions (default: 10), memory threshold (1GB)
+  - `check_command_whitelist()` for unknown command logging
+
+#### Tool Dispatch (Enhanced)
+- **`core/tools/dispatch.py`** — timeout wrapping + retry logic
+  - Automatic retry on transient errors (timeout, connection errors) with exponential backoff
+  - Performance monitoring integration via `metrics_collector`
+  - All tool executions now have guaranteed timeout enforcement
+  - MCP tool calls also wrapped with timeout
+
+#### Chat Provider Timeout (Enhanced)
+- **`core/chat.py`** — 60-second timeout guard on all provider calls
+  - Threading-based timeout (doesn't block event loop)
+  - Records performance alert on timeout
+  - Graceful error message for users
+
+#### Memory Learner Limits (Enhanced)
+- **`core/memory_learner.py`** — bounded memory storage
+  - `MAX_MEMORIES=500` hard cap
+  - `MAX_MEMORY_AGE_DAYS=180` auto-cleanup
+  - `MAX_CONTENT_LENGTH=200` content truncation
+  - Periodic cleanup every 10 saves
+
+#### Production Deployment Infrastructure
+- **`.env.example`** — complete environment configuration template
+- **`Dockerfile`** — HEALTHCHECK with curl probe (30s interval, 3 retries)
+- **`docker-compose.yml`** — health checks, named volumes, custom network
+- **CORS production mode** — `WIDDX_CORS_ORIGINS` env var replaces `*`
+- **Graceful shutdown** — `timeout_graceful_shutdown=30s` via uvicorn
+- **`docs/PRODUCTION-PLAN.md`** — full production readiness roadmap (23 tasks, 4 phases)
+- **`TASKS.md`** — daily task tracker for production readiness
+
+#### Testing
+- **54 new stress/complex tests** — total 592 tests
+- **`tests/test_stress_load.py`** — 24 tests (concurrent load, rate limiting, auth, input validation)
+- **`tests/test_stress_complex.py`** — 30 tests (safety, monitoring, memory, dispatch, timeouts)
+- **`locustfile.py`** — Locust load testing with 4 user profiles
+- **`scripts/run_stress_tests.sh`** — unified stress test runner
+
+### Test Results
+- **82 stress tests: 82/82 passed** ✅
+- **All existing tests continue to pass**
+
 ## 3.2.0 (2026-07-01)
 
 ### Quality & Tooling

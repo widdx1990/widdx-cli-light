@@ -1,30 +1,68 @@
-# WIDDX Nexus — Docker Image
+# ===========================================================================
+# WIDDX Nexus — Docker Image (Production-Ready)
+# ===========================================================================
+# Build:
+#   docker build -t widdx/nexus:latest .
+#
+# Run:
+#   docker run -d --name widdx-web -p 8000:8000 widdx/nexus:latest
+#   docker run -d --name widdx-api -p 8001:8001 \
+#     -e WIDDX_API_KEY=your-key \
+#     -e WIDDX_PROVIDER_NAME=deepseek \
+#     widdx/nexus:latest widdx-api
+# ===========================================================================
+
 FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="WIDDX Nexus"
-LABEL org.opencontainers.image.description="Terminal AI Workspace with UIL Cognitive Architecture"
+LABEL org.opencontainers.image.description="Terminal AI Workspace with UIL Cognitive Architecture — Production Ready"
 LABEL org.opencontainers.image.authors="MUHAMMAD MUSLIH (WIDDX)"
 LABEL org.opencontainers.image.url="https://github.com/widdx1990/widdx-cli-light"
 LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.version="3.3.0"
 
+# ── System dependencies ──────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     nodejs \
     npm \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir --upgrade pip
-
-COPY . .
-RUN pip install --no-cache-dir -e .
-
+# ── Create widdx user (non-root) ─────────────────────────
 RUN useradd --create-home --shell /bin/bash widdx \
-    && chown -R widdx:widdx /workspace 2>/dev/null || true
+    && mkdir -p /workspace /workspace/.widdx/data \
+    && chown -R widdx:widdx /workspace
+
+# ── Install Python package ───────────────────────────────
+COPY pyproject.toml requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -e ".[api]"
+
+# ── Copy application files ───────────────────────────────
+COPY --chown=widdx:widdx . .
+
+RUN pip install --no-cache-dir -e ".[api]"
+
+# ── Health check ─────────────────────────────────────────
+# يتأكد من أن الخادم مستجيب كل 30 ثانية
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:8000/api/health \
+    -H "Authorization: Bearer ${WIDDX_API_KEY:-healthcheck}" \
+    || exit 1
+
+# ── Switch to non-root user ──────────────────────────────
 USER widdx
 
+# ── Environment ──────────────────────────────────────────
 ENV WIDDX_HOME=/workspace
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
 WORKDIR /workspace
-ENTRYPOINT ["widdx"]
-CMD ["--help"]
+
+# ── Entry point ──────────────────────────────────────────
+# widdx-web (افتراضي) أو widdx-api أو widdx أو widdx-tui
+ENTRYPOINT ["widdx-web"]
+CMD ["--host", "0.0.0.0", "--port", "8000"]

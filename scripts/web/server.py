@@ -96,6 +96,17 @@ _ALLOWED_ORIGINS_BASE = [
 ]
 ALLOWED_ORIGINS = list(_ALLOWED_ORIGINS_BASE)
 
+# ── Production CORS: allow env-var origins ────────────────
+# Override via WIDDX_CORS_ORIGINS (comma-separated URLs)
+# Example: WIDDX_CORS_ORIGINS="https://app.widdx.com,https://admin.widdx.com"
+_env_cors = os.environ.get("WIDDX_CORS_ORIGINS", "")
+if _env_cors:
+    for origin in _env_cors.split(","):
+        origin = origin.strip()
+        if origin and origin not in ALLOWED_ORIGINS:
+            ALLOWED_ORIGINS.append(origin)
+            logger.info("CORS: added origin '%s' from WIDDX_CORS_ORIGINS env", origin)
+
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 # ── Direct CORSMiddleware activation (required for tests & production) ──
