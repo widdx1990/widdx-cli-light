@@ -2,12 +2,19 @@
 
 Display functions are organized in ``DisplayManager`` class.
 Module-level aliases kept for backward compatibility.
+
+Timeout notes:
+  - Each tool execution has a per-tool timeout enforced by tools.safety
+  - Provider chat calls are wrapped with a 60-second timeout
+  - The full conversation loop is bounded by max_turns
+  - Performance monitoring is active via metrics_collector
 """
 
 import json
 import uuid
+import signal
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
@@ -16,6 +23,7 @@ from rich.live import Live
 from core import tools
 from core.skills import skill_manager
 from core.providers.providers import estimate_turn_cost
+from core.monitoring import metrics_collector
 
 
 # ── Console helpers ──────────────────────────────────────
@@ -169,10 +177,6 @@ def print_ai_stream():
 
 
 # ── Tool-call ID validation ────────────────────────────────
-# Some API backends (OpenCode Zen proxy, strict OpenAI-compatible
-# servers) reject empty, null, or malformed tool_call_id values.
-# We guarantee every tool_call_id is a valid non-empty string.
-
 def _valid_tool_call_id(tc_id: str | None) -> str:
     """Return a guaranteed-valid tool_call_id."""
     if not tc_id or not isinstance(tc_id, str) or not tc_id.strip():
@@ -183,15 +187,11 @@ def _valid_tool_call_id(tc_id: str | None) -> str:
 def _sanitize_tool_call_ids(messages: list[dict]) -> list[dict]:
     """Remove ``tool_call_id`` from any message whose role is NOT ``tool``,
     and ensure every ``tool``-role message has a valid non-empty ``tool_call_id``.
-
-    Also strips ``tool_calls`` from assistant messages when they contain
-    IDs that look like UUID placeholders (leftover from text-based parsing).
     """
     for m in messages:
         if m.get("role") == "tool":
             m["tool_call_id"] = _valid_tool_call_id(m.get("tool_call_id", ""))
         elif "tool_call_id" in m:
-            # Non-tool messages should never carry tool_call_id
             del m["tool_call_id"]
     return messages
 
@@ -236,9 +236,7 @@ def _handle_tool_calls(tool_calls: list[Any], content: str, messages: list[dict]
 
 def process_tool_calls(tool_calls: list[Any], messages: list[dict], state: dict) -> list[dict]:
     """Execute each tool call and append results to messages.
-
     Shares tool-dispatch logic with agents via tools.execute_with_skills().
-    Tracks tools_used in state for ExecutionResult telemetry.
     """
     if "tools_used" not in state:
         state["tools_used"] = []
@@ -247,11 +245,9 @@ def process_tool_calls(tool_calls: list[Any], messages: list[dict], state: dict)
     for tc in tool_calls:
         state["turns"] += 1
 
-        # Track tool usage (skip use_skill — it's meta)
         if tc.name != "use_skill" and tc.name not in state["tools_used"]:
             state["tools_used"].append(tc.name)
 
-        # ── Special: use_skill tool (AI activates skills autonomously) ──
         if tc.name == "use_skill":
             result = tools.execute_with_skills(tc.name, tc.args)
             if "activated" in result and skill_manager.active:
@@ -268,22 +264,89 @@ def process_tool_calls(tool_calls: list[Any], messages: list[dict], state: dict)
         result = tools.execute_with_skills(tc.name, tc.args)
         messages.append({"role": "tool", "tool_call_id": _valid_tool_call_id(tc.id),
                          "name": tc.name, "content": result})
-        # Tool call: ~200 input tokens for context, ~100 output tokens for result
         state["cost"] += estimate_turn_cost(model, 200, 100)
     return messages
 
 
-def run_chat_turn(provider: Any, messages: list[dict], state: dict, tool_defs: list[dict], cfg: dict) -> tuple[list[dict], dict]:
+# ── Timeout-safe provider call wrapper ────────────────────
+
+_PROVIDER_TIMEOUT = 60.0  # max seconds for a single provider chat call
+
+
+def _provider_chat_with_timeout(provider, messages: list, tool_defs: list,
+                                 temperature: float) -> tuple[str, list]:
+    """Call provider.chat() with a timeout guard.
+
+    Uses a threading-based timeout so the event loop is not blocked
+    even if the provider hangs indefinitely.
+
+    Returns:
+        (content, tool_calls) tuple.
+
+    Raises:
+        TimeoutError: If the provider takes longer than _PROVIDER_TIMEOUT.
+    """
+    import threading as _threading
+
+    result: list = []
+    error: list = []
+    done = _threading.Event()
+
+    def _call():
+        try:
+            r = provider.chat(messages, tool_defs, temperature)
+            result.append(r)
+        except Exception as e:
+            error.append(e)
+        finally:
+            done.set()
+
+    t = _threading.Thread(target=_call, daemon=True)
+    t.start()
+
+    if not done.wait(timeout=_PROVIDER_TIMEOUT):
+        metrics_collector.record_alert(
+            category="provider_timeout",
+            message=f"Provider {getattr(provider, 'name', 'unknown')} "
+                    f"timed out after {_PROVIDER_TIMEOUT}s",
+            severity="critical",
+            value=_PROVIDER_TIMEOUT,
+        )
+        raise TimeoutError(
+            f"Provider {getattr(provider, 'name', 'unknown')} "
+            f"did not respond within {_PROVIDER_TIMEOUT}s"
+        )
+
+    if error:
+        raise error[0]
+
+    return result[0]
+
+
+def run_chat_turn(provider: Any, messages: list[dict], state: dict,
+                  tool_defs: list[dict], cfg: dict) -> tuple[list[dict], dict]:
     """Run the inner AI conversation loop (max_turns iterations).
-    Returns (messages, state)."""
+
+    Each provider call is guarded by a 60-second timeout.
+    All tool executions are wrapped with per-tool timeouts.
+    Returns (messages, state).
+    """
     max_turns = cfg.get("max_turns", 10)
     last_error: str | None = None
     for turn in range(max_turns):
-        _sanitize_tool_call_ids(messages)  # ensure valid tool_call_ids before API call
+        _sanitize_tool_call_ids(messages)
         try:
-            content, tool_calls = provider.chat(
-                messages, tool_defs, cfg.get("temperature", 0.7)
-            )
+            with metrics_collector.track_provider(
+                getattr(provider, "name", "unknown")
+            ):
+                content, tool_calls = _provider_chat_with_timeout(
+                    provider, messages, tool_defs,
+                    cfg.get("temperature", 0.7),
+                )
+        except TimeoutError as e:
+            print_system_msg(f"⏱ Provider timeout: {e}")
+            last_error = str(e)
+            break
         except Exception as e:
             print_system_msg(f"Error: {e}")
             last_error = str(e)
@@ -320,7 +383,8 @@ def run_chat_turn(provider: Any, messages: list[dict], state: dict, tool_defs: l
     return messages, state
 
 
-def run_stream_turn(provider: Any, messages: list[dict], state: dict, tool_defs: list[dict], cfg: dict) -> tuple[list[dict], dict]:
+def run_stream_turn(provider: Any, messages: list[dict], state: dict,
+                    tool_defs: list[dict], cfg: dict) -> tuple[list[dict], dict]:
     """Run one conversation turn with live streaming display.
     Falls back to run_chat_turn() if provider does not support streaming."""
     if not hasattr(provider, "stream"):
@@ -328,7 +392,7 @@ def run_stream_turn(provider: Any, messages: list[dict], state: dict, tool_defs:
 
     max_turns = cfg.get("max_turns", 10)
     for turn in range(max_turns):
-        _sanitize_tool_call_ids(messages)  # ensure valid tool_call_ids before API call
+        _sanitize_tool_call_ids(messages)
         live, update, done = print_ai_stream()
         content_chunks = []
         reasoning_chunks = []
@@ -348,10 +412,7 @@ def run_stream_turn(provider: Any, messages: list[dict], state: dict, tool_defs:
                     break
                 elif event["type"] == "done":
                     final_content, tool_calls = event["data"]
-                    # Provider may have packed reasoning into content — use it
-                    # when no content was streamed as separate deltas
                     if not content_chunks and final_content:
-                        # Strip [thinking] tags for cleaner live display
                         clean = final_content
                         if clean.startswith("[thinking]"):
                             end = clean.find("[/thinking]")
@@ -361,7 +422,6 @@ def run_stream_turn(provider: Any, messages: list[dict], state: dict, tool_defs:
                         content_chunks.append(final_content)
                     stream_done = True
                     break
-            # Ensure Live panel has *something* so it doesn't commit as empty
             if not content_chunks and not tool_calls:
                 update("[done]")
             if not err_msg and not stream_done:
@@ -378,32 +438,31 @@ def run_stream_turn(provider: Any, messages: list[dict], state: dict, tool_defs:
             state["_last_reasoning"] = full_reasoning
             print_reasoning(full_reasoning)
 
-        # Strip [thinking]…[/thinking] tags that some providers prepend
         if content and content.startswith("[thinking]"):
             end_idx = content.find("[/thinking]")
             if end_idx > 0:
                 reasoning = content[len("[thinking]"):end_idx].strip()
                 rest = content[end_idx + len("[/thinking]"):].strip()
-                content = rest or reasoning or "[done]"  # keep something!
+                content = rest or reasoning or "[done]"
 
         if tool_calls:
-            done()  # commit the streamed text before showing tool calls
+            done()
             messages = _handle_tool_calls(tool_calls, content, messages, state)
         else:
             messages.append({"role": "assistant", "content": content})
-            done()  # always commit — prevents empty panel when content is only reasoning
+            done()
             break
     else:
         print_system_msg("Max turns reached")
     return messages, state
 
 
-def run_agent_turn(provider: Any, messages: list[dict], state: dict, tool_defs: list[dict], cfg: dict, user_input: str) -> tuple[list[dict], dict]:
+def run_agent_turn(provider: Any, messages: list[dict], state: dict,
+                   tool_defs: list[dict], cfg: dict, user_input: str) -> tuple[list[dict], dict]:
     """Run one turn using the autonomous agent (real-time tool-calling loop)."""
     from core.agents.agent import AutonomousAgent
     agent = AutonomousAgent(provider, tool_defs, cfg, state)
     steps, summary = agent.run(user_input)
-    # Build a rich result with step log + AI summary
     step_log = "\n".join(
         f"  Step {s.step_num}: {s.tool_name} - {'done' if s.status == 'done' else 'failed'}"
         for s in steps

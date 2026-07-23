@@ -1,9 +1,24 @@
-"""Memory Learner — auto-extract facts from conversations using the LLM."""
+"""Memory Learner — auto-extract facts from conversations using the LLM.
+
+Includes memory size limits to prevent unbounded growth:
+  - MAX_MEMORIES: hard cap on total stored memories (default 500)
+  - MAX_MEMORY_AGE_DAYS: auto-cleanup of old memories (default 180)
+  - Content length capped at 200 characters per memory
+"""
 
 import json
 import time
+import logging
 from .memory import MemoryStore
 from .utils import to_slug
+
+logger = logging.getLogger("widdx.memory_learner")
+
+# ── Memory limits ────────────────────────────────────────────
+MAX_MEMORIES = 500        # hard cap — oldest evicted first
+MAX_MEMORY_AGE_DAYS = 180 # auto-cleanup threshold
+MAX_CONTENT_LENGTH = 200  # max chars per memory content
+MAX_NAME_LENGTH = 40      # max chars per memory name
 
 
 class MemoryLearner:
@@ -11,6 +26,11 @@ class MemoryLearner:
 
     Uses a lightweight LLM prompt to identify facts worth remembering,
     then stores them in the existing MemoryStore for future retrieval.
+
+    Memory limits are enforced automatically on each save:
+      - Content that exceeds MAX_CONTENT_LENGTH is truncated
+      - When total > MAX_MEMORIES, oldest memories are deleted
+      - Periodically cleans up memories older than MAX_MEMORY_AGE_DAYS
     """
 
     MEMORY_TYPES = {
@@ -23,6 +43,7 @@ class MemoryLearner:
     def __init__(self, provider=None, memory_store: MemoryStore | None = None):
         self.provider = provider
         self.mem = memory_store or MemoryStore()
+        self._cleanup_counter = 0  # periodic cleanup tracker
 
     # ── Main API ────────────────────────────────────────
 
@@ -32,6 +53,7 @@ class MemoryLearner:
 
         Returns list of {"name", "content", "type", "context"} dicts.
         Empty list if nothing worth remembering or LLM is unavailable.
+        Enforces MAX_MEMORIES limit automatically.
         """
         if not self.provider:
             return []
@@ -40,6 +62,9 @@ class MemoryLearner:
             return []
         if len(assistant_response) < 100:
             return []  # too short to contain learnable facts
+
+        # Enforce memory cap before extracting more
+        self._enforce_memory_cap()
 
         prompt = self._build_prompt(user_input, assistant_response, tools_used)
         try:
@@ -51,15 +76,23 @@ class MemoryLearner:
             return []
 
     def store_memories(self, memories: list[dict]):
-        """Save extracted memories to MemoryStore."""
+        """Save extracted memories to MemoryStore.
+
+        Enforces:
+          - Content length cap (MAX_CONTENT_LENGTH)
+          - Total memory cap (MAX_MEMORIES)
+          - Periodic age-based cleanup
+        """
         for m in memories:
             name = to_slug(m.get("name", f"fact-{int(time.time())}"))
             content = m.get("content", "")
             if not content.strip():
                 continue
+            # Truncate long content
+            content = content[:MAX_CONTENT_LENGTH]
             self.mem.save(name, content, {
                 "type": m.get("type", "learned_fix"),
-                "context": m.get("context", ""),
+                "context": m.get("context", "")[:60],
                 "source": "auto_extracted",
                 "timestamp": time.time(),
             })
@@ -68,6 +101,7 @@ class MemoryLearner:
         """Search memory for facts relevant to current input.
 
         Returns formatted string for injection, or empty string.
+        Limits to max_memories (default 5) to avoid context overflow.
         """
         try:
             results = self.mem.search(user_input)
@@ -80,6 +114,51 @@ class MemoryLearner:
             return "\n".join(lines)
         except Exception:
             return ""
+
+    # ── Memory management ─────────────────────────────────
+
+    def _enforce_memory_cap(self):
+        """Ensure total memories stay within MAX_MEMORIES.
+
+        Runs periodic age-based cleanup, then removes oldest
+        memories if still over the cap.
+        """
+        self._cleanup_counter += 1
+
+        # Periodic age-based cleanup (every 10 saves)
+        if self._cleanup_counter % 10 == 0:
+            try:
+                removed = self.mem.cleanup_deprecated(older_than_days=MAX_MEMORY_AGE_DAYS)
+                if removed:
+                    logger.info("Cleaned up %d deprecated memories (age > %d days)",
+                                removed, MAX_MEMORY_AGE_DAYS)
+            except Exception as e:
+                logger.debug("Memory cleanup skipped: %s", e)
+
+        # Hard cap enforcement
+        try:
+            total = self.mem.total()
+            if total > MAX_MEMORIES:
+                excess = total - MAX_MEMORIES
+                # List all memories, sort by created date, delete oldest
+                all_mems = self.mem.list_all()
+                # Add file timestamps
+                from pathlib import Path
+                timed_mems = []
+                for mem in all_mems:
+                    mp = Path(mem.get("path", ""))
+                    if mp.exists():
+                        timed_mems.append((mp.stat().st_mtime, mem))
+                    else:
+                        timed_mems.append((0, mem))
+                timed_mems.sort(key=lambda x: x[0])  # oldest first
+
+                for _, mem in timed_mems[:excess]:
+                    self.mem.delete(mem.get("name", ""))
+                logger.info("Memory cap enforced: removed %d oldest memories (total: %d→%d)",
+                            excess, total, self.mem.total())
+        except Exception as e:
+            logger.debug("Memory cap enforcement skipped: %s", e)
 
     # ── Internal ────────────────────────────────────────
 

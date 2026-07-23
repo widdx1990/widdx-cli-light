@@ -102,6 +102,7 @@ from core.auto_setup import detect_project_deps  # noqa: E402
 from core.skills import skill_manager  # noqa: E402
 from core.mcp.client import get_mcp_manager  # noqa: E402
 from core.chat import run_stream_turn  # noqa: E402
+from core.monitoring import metrics_collector, system_monitor  # noqa: E402
 
 # ── App State ────────────────────────────────────────────────
 class AppState:
@@ -262,6 +263,27 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+# ── Monitoring Middleware (performance tracking on every request) ──
+
+from starlette.middleware.base import BaseHTTPMiddleware as _BaseHTTPMiddleware
+from starlette.requests import Request as _Request
+
+class _MonitoringMiddleware(_BaseHTTPMiddleware):
+    """Tracks request latency and error rates via metrics_collector."""
+    async def dispatch(self, request: _Request, call_next):
+        endpoint = request.url.path
+        with metrics_collector.track_request(endpoint) as tracker:
+            try:
+                response = await call_next(request)
+                if response.status_code >= 400:
+                    tracker.error = True
+                return response
+            except Exception as e:
+                tracker.error = True
+                raise
+
+app.add_middleware(_MonitoringMiddleware)
+
 # ── Request size limit (ISS-004) ──────────────────────────────
 _MAX_BODY_BYTES = int(os.environ.get("WIDDX_MAX_BODY_BYTES", 1_048_576))  # 1 MB default
 
@@ -284,6 +306,9 @@ app.add_middleware(_BodySizeMiddleware)
 # ─── Health ──────────────────────────────────────────────────
 @app.get("/api/health")
 async def health(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    mem = system_monitor.get_memory_usage()
+    cpu = system_monitor.get_cpu_usage()
+    metrics = metrics_collector.report(detailed=False)
     return {
         "status": "ok",
         "version": "3.0.0",
@@ -291,6 +316,32 @@ async def health(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
         "model": state.provider.model,
         "turns": state.state.get("turns", 0),
         "cost": state.state.get("cost", 0.0),
+        "system": {
+            "memory_rss_mb": round(mem.get("rss_mb", 0), 1),
+            "memory_vms_mb": round(mem.get("vms_mb", 0), 1),
+            "cpu_count": cpu.get("count", 0),
+        },
+        "performance": {
+            "total_requests": metrics.get("total_requests", 0),
+            "error_rate": metrics.get("error_rate", 0.0),
+            "requests_per_second": metrics.get("requests_per_second", 0.0),
+            "uptime_seconds": metrics.get("uptime_seconds", 0),
+        },
+    }
+
+# ─── Performance Monitoring ──────────────────────────────────
+@app.get("/api/monitoring")
+async def get_monitoring(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
+    """Return detailed performance metrics and system health."""
+    perf = metrics_collector.report(detailed=True)
+    mem = system_monitor.get_memory_usage()
+    cpu = system_monitor.get_cpu_usage()
+    return {
+        "performance": perf,
+        "system": {
+            "memory": mem,
+            "cpu": cpu,
+        },
     }
 
 # ─── Chat ────────────────────────────────────────────────────
