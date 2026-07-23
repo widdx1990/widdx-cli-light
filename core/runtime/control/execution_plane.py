@@ -12,15 +12,19 @@ All sensors (Guard, EI, ESC) feed signals here. Only ECP produces actions.
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from typing import Any
 
-from .types import (
-    ControlAction, ControlActionType, ExecutionSignal, SignalType,
-)
 from .evaluation import evaluate_signals
-from .policy import apply_stabilizers, MAX_TOTAL_CONTROL_ACTIONS, set_task_scope as _set_policy_scope
-import sys
+from .policy import MAX_TOTAL_CONTROL_ACTIONS, apply_stabilizers
+from .policy import set_task_scope as _set_policy_scope
+from .types import (
+    ControlAction,
+    ControlActionType,
+    ExecutionSignal,
+    SignalType,
+)
 
 logger = logging.getLogger("widdx.ecp")
 

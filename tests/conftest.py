@@ -12,6 +12,8 @@ import pytest
 
 def pytest_configure(config):
     """Register asyncio markers for Textual-based TUI tests."""
+    import os
+    os.environ["WIDDX_API_KEY"] = "test-key-for-api-tests"
     config.addinivalue_line(
         "markers", "asyncio: mark test as an async test (Textual, etc.)"
     )

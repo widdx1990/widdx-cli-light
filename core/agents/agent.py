@@ -7,10 +7,10 @@ that create/modify known source files.
 
 import json
 import logging
-import uuid
 import time
+import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +18,17 @@ from rich.panel import Panel
 from rich.text import Text
 
 from .. import tools as core_tools
-from ..skills import skill_manager as _skill_manager
 from ..chat import (
-    console, print_system_msg, print_tool_call, print_tool_msg,
-    print_reasoning, print_ai_stream, print_agent_done,
+    console,
+    print_agent_done,
+    print_ai_stream,
+    print_reasoning,
+    print_system_msg,
+    print_tool_call,
+    print_tool_msg,
 )
 from ..providers.providers import estimate_turn_cost
+from ..skills import skill_manager as _skill_manager
 from ..tool_tracer import t as tool_tracer
 
 
@@ -134,8 +139,8 @@ class AutonomousAgent:
     """
 
     def __init__(self, provider, tool_defs: list, cfg: dict, state: dict,
-                 custom_prompt: Optional[str] = None,
-                 on_event: Optional[Any] = None):
+                 custom_prompt: str | None = None,
+                 on_event: Any | None = None):
         self.provider = provider
         self.tool_defs = tool_defs
         self.cfg = cfg
@@ -183,10 +188,13 @@ class AutonomousAgent:
         retries with exponential backoff. On auth failure, skips provider.
         Saves TaskState checkpoint before each retry.
         """
-        from core.provider_reliability import (
-            ReliableProvider, RateLimitError, ProviderAuthError,
-        )
         import time as _time
+
+        from core.provider_reliability import (
+            ProviderAuthError,
+            RateLimitError,
+            ReliableProvider,
+        )
 
         rp = ReliableProvider()
         rp._pool._providers = []  # Clear defaults — we rebuild from our provider
@@ -372,7 +380,10 @@ class AutonomousAgent:
 
         # ── ECP: SOLE DECISION AUTHORITY ──
         from core.runtime.execution_control_plane import (
-            get_control_plane, ControlActionType, ExecutionSignal, SignalType,
+            ControlActionType,
+            ExecutionSignal,
+            SignalType,
+            get_control_plane,
         )
         ecp = get_control_plane()
         current_model_name = self.state.get("model", "")
@@ -541,7 +552,9 @@ class AutonomousAgent:
                 print_system_msg(f"🔄 ECP: switching model {current_model_name} → {target_model}: {decision.reason}")
                 self._emit({"type": "ecp", "data": {"action": "SWITCH_MODEL", "target": target_model, "reason": decision.reason}})
                 try:
-                    from core.providers.factory import create_provider as _create_provider
+                    from core.providers.factory import (
+                        create_provider as _create_provider,
+                    )
                     new_cfg = dict(self.cfg)
                     new_cfg["provider"] = {"model": target_model}
                     self.provider = _create_provider(new_cfg, raw=True)
@@ -711,7 +724,9 @@ class AutonomousAgent:
                         target = after_decision.model or "deepseek-v4-pro"
                         print_system_msg(f"🔄 ECP mid-step: switching model → {target}: {after_decision.reason}")
                         try:
-                            from core.providers.factory import create_provider as _create_provider
+                            from core.providers.factory import (
+                                create_provider as _create_provider,
+                            )
                             new_cfg = dict(self.cfg)
                             new_cfg["provider"] = {"model": target}
                             self.provider = _create_provider(new_cfg, raw=True)
@@ -773,9 +788,7 @@ class AutonomousAgent:
                         return self.steps, f"Aborted: repeated {tc.name} with same arguments."
 
                     # ── Progress tracking: count files written + bash successes ──
-                    if tc.name in {"write", "edit"} and step.status == "done":
-                        _progress_markers += 1
-                    elif tc.name == "bash" and step.status == "done":
+                    if tc.name in {"write", "edit"} and step.status == "done" or tc.name == "bash" and step.status == "done":
                         _progress_markers += 1
                     if iteration > 4 and _progress_markers == 0:
                         print_system_msg("⏳ No files written or successful bash commands after 5 iterations — agent may be stuck.")
@@ -1209,8 +1222,8 @@ class AutonomousAgent:
             A concatenated error string if any JS syntax check failed,
             or ``None`` if everything passed.
         """
-        from pathlib import Path
         import subprocess as _sp
+        from pathlib import Path
 
         root = Path(".").resolve()
         errors = []
@@ -1298,7 +1311,7 @@ class AutonomousAgent:
     def _build_project_docs_block(self) -> str:
         """Read and return project docs content."""
         try:
-            from core.project_tracker import load_docs, _DOC_NAMES
+            from core.project_tracker import _DOC_NAMES, load_docs
             docs = load_docs(Path.cwd().resolve())
             if not docs:
                 return "(No project docs found — create them with update_project_doc)"
@@ -1315,7 +1328,7 @@ class AutonomousAgent:
         except Exception as e:
             return f"(Could not read project docs: {e})"
 
-    def _show_final_result(self, content: Optional[str]):
+    def _show_final_result(self, content: str | None):
         """Show the AI's final response panel if there's content."""
         if not content:
             return
@@ -1352,8 +1365,8 @@ _agent_results: dict[str, dict] = {}
 def spawn_sub_agent(task: str, role: str = "worker", provider=None, tool_defs=None,
                     cfg=None, parent_id: str = "", depth: int = 0) -> dict:
     """Spawn a sub-agent that runs autonomously. Sub-agents can spawn further sub-agents."""
-    import uuid
     import threading
+    import uuid
 
     if depth >= _MAX_DEPTH:
         return {"agent_id": "", "role": role, "summary": "Max depth reached", "success": False}
@@ -1370,8 +1383,8 @@ def spawn_sub_agent(task: str, role: str = "worker", provider=None, tool_defs=No
 TASK: {task}
 Focus only on your task. Use tools. You can spawn sub-agents via spawn_agent tool for subtasks."""
 
-    from core.providers.providers import create_provider as _cp
     from core.config.settings import load as _load
+    from core.providers.providers import create_provider as _cp
 
     if provider is None:
         provider = _cp(_load())

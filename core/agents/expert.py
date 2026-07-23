@@ -1,16 +1,16 @@
 """Expert Agents Team — specialized agents that work together like a tech company."""
 
 import re
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from .agent import run_agent_with_prompt
-from ..chat import console, print_system_msg
 from rich.panel import Panel
-from rich.text import Text
 from rich.table import Table
-import traceback
+from rich.text import Text
 
+from ..chat import console, print_system_msg
+from .agent import run_agent_with_prompt
 
 # ---------------------------------------------------------------------------
 # Expert Profiles

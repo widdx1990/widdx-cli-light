@@ -18,8 +18,13 @@ from fastapi.testclient import TestClient
 def client():
     """Create a TestClient for the WIDDX API with auth headers."""
     from scripts.api_server import app
+    import os
+    # Read whatever key the app was initialized with or the current environ
+    # In case scripts.api_server was already loaded with a different key
+    from scripts.api_server import _API_KEY
+    auth_key = _API_KEY if _API_KEY else os.environ.get("WIDDX_API_KEY", "test-key-for-api-tests")
     with TestClient(app) as c:
-        c.headers.update({"Authorization": "Bearer test-key-for-api-tests"})
+        c.headers.update({"Authorization": f"Bearer {auth_key}"})
         yield c
 
 

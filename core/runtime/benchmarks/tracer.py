@@ -77,6 +77,9 @@ class DecisionTracer:
             oscillation_guard_fired=oscillation,
         ))
 
+    def get_traces(self) -> list[DecisionTrace]:
+        return self._traces
+        
     def to_dicts(self) -> list[dict]:
         return [
             {

@@ -151,17 +151,14 @@ class MetaLearningMonitor:
         # Recommendations
         recs: list[str] = []
         if kpi.is_overconfident:
-            recs.append("LEARNING_OVERCONFIDENT: accept_rate={:.0%} + false_accepts={}. "
-                       "Consider raising MIN_CONFIDENCE.".format(
-                           kpi.accept_rate, kpi.estimated_false_accepts))
+            recs.append(f"LEARNING_OVERCONFIDENT: accept_rate={kpi.accept_rate:.0%} + false_accepts={kpi.estimated_false_accepts}. "
+                       "Consider raising MIN_CONFIDENCE.")
         if kpi.is_underconfident:
-            recs.append("LEARNING_UNDERCONFIDENT: accept_rate={:.0%} with {} proposals. "
-                       "Consider lowering MIN_CONFIDENCE.".format(
-                           kpi.accept_rate, kpi.total_proposals))
+            recs.append(f"LEARNING_UNDERCONFIDENT: accept_rate={kpi.accept_rate:.0%} with {kpi.total_proposals} proposals. "
+                       "Consider lowering MIN_CONFIDENCE.")
         if kpi.is_stale:
-            recs.append("LEARNING_STALE: velocity={:.3f}/h. "
-                       "Consider reducing half-life or increasing sample rate.".format(
-                           kpi.learning_velocity))
+            recs.append(f"LEARNING_STALE: velocity={kpi.learning_velocity:.3f}/h. "
+                       "Consider reducing half-life or increasing sample rate.")
 
         # Per-parameter health
         param_health: dict[str, dict] = {}

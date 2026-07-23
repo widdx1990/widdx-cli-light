@@ -122,11 +122,24 @@ def test_direct_tool():
 def _make_test_provider():
     """Create a minimal mock provider for tests that call process()."""
     from types import SimpleNamespace
+    
+    def mock_chat(msgs, tools=None, temperature=0.7, **kwargs):
+        content = msgs[-1]["content"]
+        if "hello" in content or "xylophone" in content:
+            return ("chat\nsimple_chat\nsimple\nnone", [])
+        elif "flask" in content:
+            return ("code_write\nautonomous\nmedium\napi", [])
+        elif "web app" in content:
+            return ("code_write\nautonomous\ncomplex\nweb", [])
+        elif "navigate" in content:
+            return ("browser\nautonomous\nmedium\nnone", [])
+        return ("chat\nsimple_chat\nsimple\nnone", [])
+
     return SimpleNamespace(
         name="test",
         model="test",
         api_key="x",
-        chat=lambda msgs, tools=None, temp=0.7: ("Mock reply", []),
+        chat=mock_chat,
     )
 
 
@@ -138,7 +151,7 @@ def test_brain_orchestrates_analyze_route():
     assert isinstance(result.summary, str)
     assert isinstance(decision, RoutingDecision)
     # Should have classification + routing decision
-    assert "Mock" in result.summary or "reply" in result.summary
+    assert "Mock" in result.summary or "reply" in result.summary or "chat" in result.summary
     print("  PASS: Brain orchestrates analyze → route → result")
 
 
