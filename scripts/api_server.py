@@ -303,6 +303,125 @@ class _BodySizeMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(_BodySizeMiddleware)
 
+# ─── Rate Limit Headers Middleware ────────────────────────────
+# يضيف X-RateLimit-* headers لكل استجابة
+from starlette.middleware.base import BaseHTTPMiddleware as _RateLimitMiddlewareBase
+from starlette.requests import Request as _RateLimitRequest
+
+class _RateLimitHeadersMiddleware(_RateLimitMiddlewareBase):
+    """Adds X-RateLimit-* headers to every API response."""
+    async def dispatch(self, request: _RateLimitRequest, call_next):
+        response = await call_next(request)
+        client_id = (
+            request.headers.get("authorization", "").replace("Bearer ", "")[:20]
+            or request.client.host if request.client else "unknown"
+        )
+        # Check remaining budget
+        remaining = max(0, _rate_limiter.max_requests - len(
+            _rate_limiter._buckets.get(client_id, [])
+        ))
+        response.headers["X-RateLimit-Limit"] = str(_rate_limiter.max_requests)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(int(time.time() + _rate_limiter.window))
+        return response
+
+app.add_middleware(_RateLimitHeadersMiddleware)
+
+# ─── Readiness & Liveness Probes ─────────────────────────────
+@app.get("/api/livez")
+async def liveness():
+    """Kubernetes liveness probe — checks if the process is alive.
+    No auth required — this is called by the orchestrator."""
+    return {"status": "alive", "timestamp": time.time()}
+
+@app.get("/api/ready")
+async def readiness():
+    """Kubernetes readiness probe — checks if the server can handle traffic.
+    No auth required — this is called by the orchestrator."""
+    # Check MCP manager
+    try:
+        if state.mcp_mgr and hasattr(state.mcp_mgr, 'server_count'):
+            mcp_ready = state.mcp_mgr.server_count >= 0
+        else:
+            mcp_ready = True
+    except Exception:
+        mcp_ready = False
+
+    mem = system_monitor.get_memory_usage()
+
+    return {
+        "status": "ready" if mcp_ready else "degraded",
+        "mcp_ready": mcp_ready,
+        "memory_mb": round(mem.get("rss_mb", 0), 1),
+        "uptime_seconds": metrics_collector.report(detailed=False).get("uptime_seconds", 0),
+        "timestamp": time.time(),
+    }
+
+# ─── Prometheus Metrics ──────────────────────────────────────
+# Re-export core.monitoring metrics in Prometheus format
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus metrics endpoint — returns metrics in text format.
+    No auth required for Prometheus scraping."""
+    from core.monitoring import metrics_collector as _mc
+    report = _mc.report(detailed=True)
+
+    lines = [
+        "# HELP widdx_uptime_seconds Total uptime of the server",
+        "# TYPE widdx_uptime_seconds gauge",
+        f"widdx_uptime_seconds {report.get('uptime_seconds', 0)}",
+        "",
+        "# HELP widdx_requests_total Total number of HTTP requests",
+        "# TYPE widdx_requests_total counter",
+        f"widdx_requests_total {report.get('total_requests', 0)}",
+        "",
+        "# HELP widdx_errors_total Total number of HTTP errors",
+        "# TYPE widdx_errors_total counter",
+        f"widdx_errors_total {report.get('total_errors', 0)}",
+        "",
+        "# HELP widdx_error_rate Error rate (0.0-1.0)",
+        "# TYPE widdx_error_rate gauge",
+        f"widdx_error_rate {report.get('error_rate', 0.0)}",
+        "",
+    ]
+
+    # Per-endpoint metrics
+    endpoints = report.get("endpoints", {})
+    for name, m in endpoints.items():
+        safe_name = name.replace("/", "_").replace("-", "_")
+        lines.append(f"# HELP widdx_endpoint_calls_total Total calls to {name}")
+        lines.append("# TYPE widdx_endpoint_calls_total counter")
+        lines.append(f'widdx_endpoint_calls_total{{endpoint="{name}"}} {m["calls"]}')
+        lines.append(f'# HELP widdx_endpoint_errors_total Total errors for {name}')
+        lines.append('# TYPE widdx_endpoint_errors_total counter')
+        lines.append(f'widdx_endpoint_errors_total{{endpoint="{name}"}} {m["errors"]}')
+        lines.append("")
+
+    # Per-tool metrics
+    tools_data = report.get("tools", {})
+    for name, m in tools_data.items():
+        lines.append(f"# HELP widdx_tool_calls_total Total calls to tool {name}")
+        lines.append("# TYPE widdx_tool_calls_total counter")
+        lines.append(f'widdx_tool_calls_total{{tool="{name}"}} {m["calls"]}')
+        p = m.get("percentiles", {})
+        lines.append(f'widdx_tool_duration_seconds{{tool="{name}",quantile="0.5"}} {p.get("p50", 0)}')
+        lines.append(f'widdx_tool_duration_seconds{{tool="{name}",quantile="0.95"}} {p.get("p95", 0)}')
+        lines.append(f'widdx_tool_duration_seconds{{tool="{name}",quantile="0.99"}} {p.get("p99", 0)}')
+        lines.append("")
+
+    # System metrics
+    mem = system_monitor.get_memory_usage()
+    lines.append("# HELP widdx_memory_rss_bytes Resident memory in bytes")
+    lines.append("# TYPE widdx_memory_rss_bytes gauge")
+    lines.append(f"widdx_memory_rss_bytes {mem.get('rss_mb', 0) * 1024 * 1024}")
+    lines.append("")
+
+    return Response(
+        content="\n".join(lines),
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-cache"},
+    )
+
 # ─── Health ──────────────────────────────────────────────────
 @app.get("/api/health")
 async def health(_auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
