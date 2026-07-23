@@ -76,7 +76,6 @@ def _save_persisted_keys(keys: dict[str, str]) -> None:
 
 def _get_providers() -> dict[str, str]:
     """Lazy-load provider list from config on first access."""
-    global _KEY_PROVIDERS
     if not _KEY_PROVIDERS:
         try:
             from .settings import load as _load_cfg

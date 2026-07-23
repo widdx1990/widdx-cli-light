@@ -47,7 +47,6 @@ try:
     from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
     from fastapi.staticfiles import StaticFiles
 except ImportError as e:
-    import sys
     print(f"\n❌ FastAPI not installed: {e}")
     print("   Install: pip install widdx-nexus[api]")
     print("   Or:      pip install fastapi uvicorn\n")

@@ -8,7 +8,6 @@ Provides:
   - Graceful timeout handling with error context
 """
 
-import signal
 import threading
 import time
 from pathlib import Path

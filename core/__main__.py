@@ -3,7 +3,6 @@ import sys
 try:
     from core._path import ensure_project_root  # noqa: F401
 except ImportError:
-    import sys
     from pathlib import Path
     _root = str(Path(__file__).resolve().parent.parent)
     if _root not in sys.path:
