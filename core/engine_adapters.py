@@ -214,8 +214,6 @@ def unified_classify(user_input: str, analyzer=None) -> object | None:
     
     Returns UIL ClassificationResult or None if both fail.
     """
-    from core.uil.contract import ClassificationResult as UilCR
-    
     tfidf_is_confused = False
     
     # Step 1: TF-IDF first (always works, zero cost)

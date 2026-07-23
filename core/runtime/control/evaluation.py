@@ -6,12 +6,8 @@ Pure function: signals → raw decision. No stabilization, no policy.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .types import ControlAction, ExecutionSignal, SignalType
-
-from .types import ControlAction, ControlActionType, SignalType
+from .types import ControlAction, ControlActionType, ExecutionSignal, SignalType
 
 logger = logging.getLogger("widdx.ecp.evaluation")
 

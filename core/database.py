@@ -11,10 +11,9 @@ import uuid
 import logging
 import threading
 import queue
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 
