@@ -56,17 +56,19 @@
 
 ---
 
-## 📅 الأسبوع 3 — التحسينات النهائية
+## 📅 الأسبوع 3 — التحسينات النهائية ✅ (5/5 مهام مكتملة)
 
-### الأيام 5-8
+### الأيام 5-8 (2026-07-23)
 
 | # | المهمة | الحالة | الوقت | الملاحظات |
 |---|--------|--------|-------|-----------|
-| 4.1 | **Load Testing Baseline Report** | ⏳ | - | |
-| 4.2 | **Multi-tenant Isolation** | ⏳ | - | |
-| 4.3 | **Admin Dashboard** | ⏳ | - | |
-| 4.4 | **Kubernetes Manifests** | ⏳ | - | |
-| 4.5 | **Telemetry / Usage Analytics** | ⏳ | - | |
+| 4.1 | **Load Testing Baseline Report** | ✅ | 45د | `scripts/benchmark_baseline.py` + `docs/reports/LOAD-TEST-BASELINE.md` — ~450 RPS reads, p99 < 5ms، SLOs + CI gate |
+| 4.2 | **Multi-tenant Isolation** | ✅ | 90د | `core/tenancy.py` — عزل فيزيائي: DB منفصل لكل tenant تحت `.widdx/data/tenants/<id>/`، أوضاع keymap/header، 19 اختبار عزل |
+| 4.3 | **Admin Dashboard** | ✅ | 60د | `scripts/web/admin.py` + `scripts/static/admin.html` — محمي بـ `WIDDX_ADMIN_KEY` (معطّل افتراضيًا)، overview/tenants/telemetry |
+| 4.4 | **Kubernetes Manifests** | ✅ | 60د | `deploy/k8s/` — deployment + service + ingress + hpa + pvc + configmap + kustomization، probes عبر `/api/livez` + `/api/ready` |
+| 4.5 | **Telemetry / Usage Analytics** | ✅ | 60د | `core/telemetry.py` — مجهولة 100%، opt-out بـ `WIDDX_TELEMETRY_DISABLED=1`، scrubber للمفاتيح الحساسة، middleware + `/api/telemetry` |
+
+> 🐛 إصلاحات حرجة اكتُشفت أثناء التنفيذ: `scripts/web/server.py` كان يفشل عند الاستيراد (`import os` مفقود)، و`core/database.py` كان جسم `Database` بالكامل متداخلًا خطأً داخل `_PoolConnection` — أُصلح الاثنان.
 
 ---
 
@@ -74,7 +76,8 @@
 
 | التاريخ | الإنجازات | الإجمالي | النسبة |
 |---------|----------|---------|--------|
-| 2026-07-23 | **15 مهمة** 🎉 | **18/23** | **≈78%** |
+| 2026-07-23 | **15 مهمة** | **18/23** | **≈78%** |
+| 2026-07-23 | **+5 مهام (الأسبوع 3)** 🎉 | **23/23** | **100%** ✅ |
 
 ---
 
@@ -87,3 +90,8 @@
 - **Nginx**: `deploy/nginx.conf`
 - **Monitoring**: `deploy/docker-compose.monitoring.yml`
 - **Config**: `config.production.json`
+- **Kubernetes**: `deploy/k8s/` (README + manifests)
+- **Multi-tenant**: `core/tenancy.py`
+- **Admin Dashboard**: `/admin/` (محمي بـ `WIDDX_ADMIN_KEY`)
+- **Telemetry**: `core/telemetry.py` + `/api/telemetry`
+- **Baseline Benchmark**: `scripts/benchmark_baseline.py` + `docs/reports/LOAD-TEST-BASELINE.md`

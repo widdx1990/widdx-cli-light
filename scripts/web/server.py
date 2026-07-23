@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -158,8 +159,54 @@ async def _add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     return response
 
+
+# ── Telemetry middleware (anonymous usage analytics — Task 4.5) ──
+# Opt out with WIDDX_TELEMETRY_DISABLED=1. Records only route templates,
+# HTTP method and status class — never paths, bodies, or identifiers.
+from core.telemetry import TelemetryMiddleware  # noqa: E402
+app.add_middleware(TelemetryMiddleware)
+
+
+# ── Multi-tenant resolution (Task 4.2) ─────────────────────
+# Resolves the active tenant per request. Disabled by default — see
+# core/tenancy.py for WIDDX_TENANT_MODE / WIDDX_TENANT_KEYS.
+from core.tenancy import (  # noqa: E402
+    DEFAULT_TENANT, resolve_tenant_id, get_tenant_db, is_enabled as tenancy_enabled,
+)
+
+
+def get_tenant(request: Request) -> str:
+    """FastAPI dependency — current tenant id for the request."""
+    if not tenancy_enabled():
+        return DEFAULT_TENANT
+    auth = request.headers.get("authorization", "")
+    bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else None
+    return resolve_tenant_id(
+        bearer_key=bearer,
+        header_value=request.headers.get("x-tenant-id"),
+    )
+
+
+@app.middleware("http")
+async def _add_tenant_header(request: Request, call_next):
+    """Echo the resolved tenant so clients can verify isolation."""
+    response = await call_next(request)
+    try:
+        response.headers["X-Tenant-ID"] = get_tenant(request)
+    except Exception:
+        response.headers["X-Tenant-ID"] = DEFAULT_TENANT
+    return response
+
 # ── Mount static files ──────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# ── Admin Dashboard (Task 4.3) ──────────────────────────────
+# Key-protected (/admin). Disabled entirely unless WIDDX_ADMIN_KEY is set.
+try:
+    from scripts.web.admin import router as _admin_router
+    app.include_router(_admin_router)
+except Exception as _admin_exc:  # pragma: no cover — defensive
+    logger.warning("Admin dashboard unavailable: %s", _admin_exc)
 
 
 # ── Favicon ─────────────────────────────────────────────────
@@ -226,6 +273,58 @@ async def health() -> dict:
     return {"status": "ok", "version": "3.2.0"}
 
 
+@app.get("/api/livez", include_in_schema=False)
+async def liveness() -> dict:
+    """Kubernetes liveness probe — is the process alive? (no auth, no I/O)."""
+    return {"status": "alive", "timestamp": time.time()}
+
+
+@app.get("/api/ready", include_in_schema=False)
+async def readiness() -> dict:
+    """Kubernetes readiness probe — can the server handle traffic?
+
+    Verifies the database layer is reachable. No auth required so
+    orchestrators (Kubernetes, Docker, Nginx) can call it.
+    """
+    try:
+        from core.database import get_db
+        get_db().count_sessions()
+        db_ready = True
+    except Exception:
+        db_ready = False
+    return {
+        "status": "ready" if db_ready else "degraded",
+        "database": db_ready,
+        "timestamp": time.time(),
+    }
+
+
+@app.get("/api/tenant")
+async def api_tenant_info(request: Request) -> dict:
+    """Return the tenant resolved for this request (Task 4.2).
+
+    Lets clients verify isolation is active. Exposes no secrets.
+    """
+    tenant = get_tenant(request)
+    return {
+        "tenant": tenant,
+        "multi_tenant_enabled": tenancy_enabled(),
+        "is_default": tenant == DEFAULT_TENANT,
+    }
+
+
+@app.get("/api/telemetry")
+async def api_telemetry_summary(days: int = 14) -> dict:
+    """Public anonymous usage summary (Task 4.5).
+
+    Returns only aggregates — no personal data. Opt out with
+    WIDDX_TELEMETRY_DISABLED=1.
+    """
+    from core.telemetry import summary as telemetry_summary
+    days = max(1, min(int(days), 90))
+    return telemetry_summary(days=days)
+
+
 @app.get("/api/status")
 async def status() -> dict:
     """System status endpoint."""
@@ -267,11 +366,14 @@ class ToolExecPayload(BaseModel):
 @app.post("/api/tools/execute")
 async def api_tool_execute(payload: ToolExecPayload) -> dict:
     """Execute a registered tool directly (bypasses LLM)."""
+    from core.telemetry import record as _tel_record
     try:
         from core.tools import dispatch
         result = dispatch.execute_with_skills(payload.name, payload.args)
+        _tel_record("tool_exec", dims={"tool": payload.name[:64], "status": "ok"})
         return {"status": "ok", "name": payload.name, "result": result}
     except Exception as e:
+        _tel_record("tool_exec", dims={"tool": payload.name[:64], "status": "error"})
         return {"status": "error", "name": payload.name, "error": str(e)}
 
 
@@ -650,13 +752,16 @@ async def chat_message(payload: ChatPayload, request: Request):
 
     chat = get_chat()
     loop = asyncio.get_running_loop()
+    from core.telemetry import record as _tel_record
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(None, chat.chat, message, history),
             timeout=600.0
         )
+        _tel_record("chat_turn", dims={"source": "web", "status": "ok"})
         return result
     except asyncio.TimeoutError:
+        _tel_record("chat_turn", dims={"source": "web", "status": "timeout"})
         return {"content": "", "error": "Request timed out after 10 minutes. Please try a simpler request."}
 
 
@@ -1013,47 +1118,141 @@ async def api_skills():
     return get_dashboard().skills()
 
 
-# ── NEW: Session Save / Load / Export ─────────────────────
+# ── Session Save / Load / Export (multi-tenant aware — Task 4.2) ──
+# When multi-tenancy is enabled (WIDDX_TENANT_MODE), sessions live in
+# the tenant's isolated database file; otherwise legacy behavior
+# (shared dashboard store) is preserved for backward compatibility.
+
+def _tenant_session_save(tenant: str, name: str, messages: list) -> dict:
+    try:
+        db = get_tenant_db(tenant)
+        session_id = db.create_session(name)
+        for msg in messages or []:
+            role = str(msg.get("role", "user"))
+            content = str(msg.get("content", ""))
+            if content:
+                db.add_message(session_id, role, content, msg.get("tool_calls"))
+        from core.telemetry import record
+        record("session_save", dims={"source": "web", "kind": "tenant"})
+        return {"id": session_id, "status": "saved", "tenant": tenant}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _tenant_sessions_list(tenant: str) -> list[dict]:
+    try:
+        return get_tenant_db(tenant).list_sessions(limit=50)
+    except Exception:
+        return []
+
+
+def _tenant_session_load(tenant: str, session_id: str) -> dict:
+    db = get_tenant_db(tenant)
+    session = db.get_session(session_id)
+    if not session:
+        return {"error": "Session not found", "tenant": tenant}
+    messages = db.get_messages(session_id)
+    return {"session": session, "messages": messages, "tenant": tenant}
+
+
+def _tenant_session_delete(tenant: str, session_id: str) -> dict:
+    try:
+        get_tenant_db(tenant).delete_session(session_id)
+        return {"status": "deleted", "tenant": tenant}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @app.post("/api/sessions")
-async def api_session_save(payload: SessionPayload):
+async def api_session_save(payload: SessionPayload, request: Request):
+    if tenancy_enabled():
+        return _tenant_session_save(get_tenant(request), payload.name, payload.messages)
     return get_dashboard().session_save(payload.name, payload.messages)
 
 
 @app.get("/api/sessions")
-async def api_sessions_list():
+async def api_sessions_list(request: Request):
+    if tenancy_enabled():
+        return _tenant_sessions_list(get_tenant(request))
     return get_dashboard().sessions()
 
 
 @app.get("/api/sessions/{session_id}")
-async def api_session_load(session_id: str):
+async def api_session_load(session_id: str, request: Request):
+    if tenancy_enabled():
+        return _tenant_session_load(get_tenant(request), session_id)
     return get_dashboard().session_load(session_id)
 
 
 @app.delete("/api/sessions/{session_id}")
-async def api_session_delete(session_id: str):
+async def api_session_delete(session_id: str, request: Request):
+    if tenancy_enabled():
+        return _tenant_session_delete(get_tenant(request), session_id)
     return get_dashboard().session_delete(session_id)
 
 
 @app.get("/api/sessions/{session_id}/export")
-async def api_session_export(session_id: str):
+async def api_session_export(session_id: str, request: Request):
+    if tenancy_enabled():
+        return _tenant_session_load(get_tenant(request), session_id)
     return get_dashboard().session_export(session_id)
 
 
-# ── NEW: Memory CRUD ──────────────────────────────────────
+# ── Memory CRUD (multi-tenant aware — Task 4.2) ───────────
+
+def _tenant_memory_create(tenant: str, content: str, tags: str) -> dict:
+    try:
+        db = get_tenant_db(tenant)
+        tag_list = [t.strip() for t in (tags or "").split(",") if t.strip()]
+        memory_id = db.add_memory(
+            name=(content[:60] or "memory"),
+            content=content,
+            memory_type="general",
+            tags=tag_list,
+        )
+        from core.telemetry import record
+        record("memory_create", dims={"source": "web", "kind": "tenant"})
+        return {"id": memory_id, "status": "created", "tenant": tenant}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _tenant_memory_search(tenant: str, query: str) -> list[dict]:
+    try:
+        db = get_tenant_db(tenant)
+        if not query:
+            return db.list_memories(limit=50)
+        return db.search_memories(query, limit=20)
+    except Exception:
+        return []
+
+
+def _tenant_memory_delete(tenant: str, memory_id: str) -> dict:
+    try:
+        get_tenant_db(tenant).delete_memory(memory_id)
+        return {"status": "deleted", "tenant": tenant}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @app.post("/api/memories")
-async def api_memory_create(payload: MemoryPayload):
+async def api_memory_create(payload: MemoryPayload, request: Request):
+    if tenancy_enabled():
+        return _tenant_memory_create(get_tenant(request), payload.content, payload.tags)
     return get_dashboard().memory_create(payload.content, payload.tags)
 
 
 @app.get("/api/memories/search")
-async def api_memory_search(q: str = ""):
+async def api_memory_search(request: Request, q: str = ""):
+    if tenancy_enabled():
+        return _tenant_memory_search(get_tenant(request), q)
     return get_dashboard().memory_search(q)
 
 
 @app.delete("/api/memories/{memory_id}")
-async def api_memory_delete(memory_id: str):
+async def api_memory_delete(memory_id: str, request: Request):
+    if tenancy_enabled():
+        return _tenant_memory_delete(get_tenant(request), memory_id)
     return get_dashboard().memory_delete(memory_id)
 
 

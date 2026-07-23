@@ -1,5 +1,47 @@
 # Changelog
 
+## 3.4.0 (2026-07-23)
+
+### 🏁 Production Readiness — Phase 4 (Final Enhancements)
+
+#### Kubernetes Manifests (New — Task 4.4)
+- **`deploy/k8s/`** — production Kubernetes bundle with Kustomize
+  - `deployment.yaml` — 2-replica Deployment with startup/liveness/readiness probes, resource limits, non-root security context
+  - `service.yaml` — ClusterIP service (80 → 8000)
+  - `ingress.yaml` — nginx ingress + cert-manager TLS + WebSocket timeouts + edge rate limiting
+  - `hpa.yaml` — HorizontalPodAutoscaler (2–10 replicas, CPU 70% / memory 80%)
+  - `pvc.yaml`, `configmap.yaml`, `namespace.yaml`, `secret.example.yaml`, `kustomization.yaml`, `README.md`
+- Web server now exposes unauthenticated `GET /api/livez` and `GET /api/ready` probes for orchestrators
+
+#### Multi-Tenant Isolation (New — Task 4.2)
+- **`core/tenancy.py`** — physical data isolation per tenant
+  - Each tenant gets its own SQLite database under `.widdx/data/tenants/<id>/widdx.db`
+  - Resolution modes: `keymap` (`WIDDX_TENANT_KEYS="acme:key-1,globex:key-2"` + Bearer key) or `header` (`X-Tenant-ID`)
+  - Strict tenant-id sanitization (blocks path traversal), constant-time key comparison
+  - Session & memory REST routes are tenant-scoped when tenancy is enabled; legacy single-tenant behavior preserved when off
+  - `GET /api/tenant` + `X-Tenant-ID` response header for client-side verification
+
+#### Admin Dashboard (New — Task 4.3)
+- **`scripts/web/admin.py`** + **`scripts/static/admin.html`** — key-protected ops panel at `/admin/`
+  - System overview, tenant registry, telemetry summary, telemetry reset
+  - Guarded by `WIDDX_ADMIN_KEY` (timing-safe); fully disabled (403) when unset
+
+#### Telemetry / Usage Analytics (New — Task 4.5)
+- **`core/telemetry.py`** — anonymous, opt-out usage analytics
+  - Opt out with `WIDDX_TELEMETRY_DISABLED=1`; stores only aggregates + safe labels
+  - Sensitive-key scrubber (never stores content, IPs, tokens, paths); pseudonymous instance fingerprint
+  - ASGI middleware counts requests by route template; `GET /api/telemetry` public summary
+
+#### Load Testing Baseline (New — Task 4.1)
+- **`scripts/benchmark_baseline.py`** — reproducible in-process latency/RPS baseline (CI-gateable)
+- **`docs/reports/LOAD-TEST-BASELINE.md`** — measured baseline (~450 RPS reads, p99 < 5ms), SLOs, regression workflow
+
+### 🐛 Critical Fixes
+- `scripts/web/server.py` failed to import (`NameError: os`) — added missing `import os`
+- `core/database.py` — the entire `Database` class body was accidentally nested inside `_PoolConnection`, so `Database()` always crashed; restructured so all methods live on `Database`
+- `core/database.py` — connection pools are now keyed per database file (fixes multi-tenant isolation) and `_PoolConnection.__exit__` releases the correct connection
+- `core/database.py` — added `count_sessions` / `count_all_messages` / `count_memories` aggregate helpers
+
 ## 3.3.0 (2026-07-23)
 
 ### 🚀 Production Readiness — Core Infrastructure
