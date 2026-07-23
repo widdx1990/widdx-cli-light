@@ -14,7 +14,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-os.environ["WIDDX_API_KEY"] = "stress-test-key-007"
+# Use WIDDX_API_KEY from environment if set, otherwise use a test default.
+# Must be set before importing scripts.api_server (which reads it at import time).
+if "WIDDX_API_KEY" not in os.environ:
+    os.environ["WIDDX_API_KEY"] = "stress-test-key-007"
 
 import pytest
 from fastapi.testclient import TestClient
