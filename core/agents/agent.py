@@ -956,7 +956,7 @@ class AutonomousAgent:
                 # TASK COMPLETION: Full layer finalization
                 # ═══════════════════════════════════════════
                 try:
-                    from core.runtime.benchmarks import get_tracer
+                    from core.runtime.benchmarks import get_tracer, score_session
                     tracer = get_tracer()
                     traces = tracer.get_traces()
                     if traces:
@@ -1014,7 +1014,7 @@ class AutonomousAgent:
         # TASK COMPLETION (max iterations): Full layer finalization
         # ═══════════════════════════════════════════
         try:
-            from core.runtime.benchmarks import get_tracer
+            from core.runtime.benchmarks import get_tracer, score_session
             tracer = get_tracer()
             traces = tracer.get_traces()
             if traces:

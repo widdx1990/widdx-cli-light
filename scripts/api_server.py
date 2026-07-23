@@ -278,7 +278,7 @@ class _MonitoringMiddleware(_BaseHTTPMiddleware):
                 if response.status_code >= 400:
                     tracker.error = True
                 return response
-            except Exception as e:
+            except Exception:
                 tracker.error = True
                 raise
 
@@ -288,7 +288,7 @@ app.add_middleware(_MonitoringMiddleware)
 _MAX_BODY_BYTES = int(os.environ.get("WIDDX_MAX_BODY_BYTES", 1_048_576))  # 1 MB default
 
 from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
-from starlette.responses import JSONResponse  # noqa: E402
+from starlette.responses import JSONResponse, Response  # noqa: E402
 
 class _BodySizeMiddleware(BaseHTTPMiddleware):
     """Reject requests whose body exceeds _MAX_BODY_BYTES."""
@@ -388,7 +388,6 @@ async def prometheus_metrics():
     # Per-endpoint metrics
     endpoints = report.get("endpoints", {})
     for name, m in endpoints.items():
-        safe_name = name.replace("/", "_").replace("-", "_")
         lines.append(f"# HELP widdx_endpoint_calls_total Total calls to {name}")
         lines.append("# TYPE widdx_endpoint_calls_total counter")
         lines.append(f'widdx_endpoint_calls_total{{endpoint="{name}"}} {m["calls"]}')
@@ -549,7 +548,6 @@ async def list_providers(_auth=Depends(verify_api_key), _rl=Depends(rate_limit))
 
 @app.post("/api/providers/switch")
 async def switch_provider(req: ProviderSwitch, _auth=Depends(verify_api_key), _rl=Depends(rate_limit)):
-    global state
     try:
         new_provider = create_provider({
             "provider": {
@@ -745,7 +743,7 @@ def main():
     # timeout_graceful_shutdown to allow in-flight requests to complete
     print(f"🚀 WIDDX API running at http://{host}:{port}")
     print(f"   Docs: http://{host}:{port}/docs")
-    print(f"   Graceful shutdown timeout: 30s")
+    print("   Graceful shutdown timeout: 30s")
     uvicorn.run(
         app,
         host=host,

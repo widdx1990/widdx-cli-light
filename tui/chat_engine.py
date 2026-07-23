@@ -170,13 +170,13 @@ class ChatEngine:
         ]
         if any(kw in text.lower() for kw in cron_keywords):
             from core.cron.parser import parse_schedule
+            from core.cron.scheduler import CronScheduler
             try:
                 for line in text.split("\n"):
                     line = line.strip()
                     if not line:
                         continue
                     cron_expr, dt = parse_schedule(line)
-                    from core.cron.scheduler import CronScheduler
                     sched = CronScheduler()
                     job_id = sched.create_job(cron_expr, text)
                     msg = f"✅ Cron job created: `{job_id[:8]}` — will execute `{cron_expr}`"

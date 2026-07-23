@@ -49,7 +49,7 @@ def execute(name: str, args: dict[str, Any]) -> str:
 
     try:
         return execute_safely(name, _run, timeout=get_tool_timeout(name))
-    except TimeoutError as e:
+    except TimeoutError:
         logger.warning("Tool '%s' timed out after %.1fs", name, get_tool_timeout(name))
         return f"❌ Tool '{name}' timed out after {get_tool_timeout(name):.1f}s. Try a simpler command."
     except Exception as e:
@@ -129,7 +129,7 @@ def _execute_with_tracking(name: str, args: dict, func: callable) -> str:
         Tool result string.
     """
     # Track in performance monitoring
-    with metrics_collector.track_tool(name) as tracker:
+    with metrics_collector.track_tool(name):
         last_error: Optional[str] = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
@@ -144,7 +144,6 @@ def _execute_with_tracking(name: str, args: dict, func: callable) -> str:
             except _TRANSIENT_ERRORS as e:
                 last_error = str(e)
                 if attempt < _MAX_RETRIES:
-                    import asyncio
                     wait = 1.0 * (2 ** attempt)  # exponential backoff
                     logger.info(
                         "Tool '%s' transient error, retrying in %.1fs "

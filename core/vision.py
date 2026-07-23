@@ -664,8 +664,6 @@ def update_config(key: str, value: str) -> str:
 
     Returns a user-friendly status message.
     """
-    global _vision_config
-
     if key == "mode":
         valid_modes = [VisionMode.PIPELINE, VisionMode.OLLAMA, VisionMode.DEEPSEEK]
         if value in valid_modes:

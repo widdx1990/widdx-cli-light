@@ -25,7 +25,6 @@ Usage:
 import time
 import threading
 import os
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -441,7 +440,6 @@ class SystemMonitor:
         """Return CPU usage info."""
         cpu = {"percent": 0.0, "count": 0}
         try:
-            import os
             cpu["count"] = os.cpu_count() or 1
 
             # Try /proc/self/stat (Linux)

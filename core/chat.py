@@ -12,9 +12,8 @@ Timeout notes:
 
 import json
 import uuid
-import signal
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel

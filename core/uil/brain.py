@@ -36,7 +36,7 @@ from .verifier import get_verifier  # noqa: E402
 try:
     from core.engine_adapters import (
         engine_enabled, unified_classify,
-        adapt_classification, adapt_validation,
+        adapt_validation,
     )
     _ENGINES_AVAILABLE = True
 except ImportError:
