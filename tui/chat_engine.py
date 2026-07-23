@@ -6,16 +6,19 @@ Synchronous core logic.  The UI layer (MainScreen) wraps calls in
 
 from pathlib import Path
 from typing import Any
+
 from textual.message import Message
 from textual.screen import Screen
+
 from core import tools as core_tools
-from core.chat import _valid_tool_call_id, _build_tc_list, _sanitize_tool_call_ids
-from core.providers.providers import estimate_turn_cost
+from core.chat import _build_tc_list, _sanitize_tool_call_ids, _valid_tool_call_id
 from core.memory_learner import MemoryLearner
-from core.skills import skill_manager
-from core.uil import UnifiedIntelligenceLayer, ExecutionMode
-from core.uil.contract import RoutingDecision
 from core.project_tracker import build_context_block
+from core.providers.providers import estimate_turn_cost
+from core.skills import skill_manager
+from core.uil import ExecutionMode, UnifiedIntelligenceLayer
+from core.uil.contract import RoutingDecision
+
 from .state import TUIState
 
 
@@ -108,7 +111,7 @@ class ChatEngine:
             llm_cls = LLMClassifier(provider=state.provider)
             cls_result = llm_cls.classify(text)
             if cls_result:
-                result, steps = cls_result
+                result, _steps = cls_result
                 # execution_mode is in keywords[1], complexity in keywords[2]
                 kw = result.keywords or []
                 execution_mode = kw[1] if len(kw) > 1 else "direct"
@@ -118,7 +121,7 @@ class ChatEngine:
                 if execution_mode == "cron":
                     from core.cron.parser import parse_schedule
                     try:
-                        cron_expr, dt = parse_schedule(text)
+                        cron_expr, _dt = parse_schedule(text)
                         from core.cron.scheduler import CronScheduler
                         sched = CronScheduler()
                         job_id = sched.create_job(cron_expr, text)
@@ -176,7 +179,7 @@ class ChatEngine:
                     line = line.strip()
                     if not line:
                         continue
-                    cron_expr, dt = parse_schedule(line)
+                    cron_expr, _dt = parse_schedule(line)
                     sched = CronScheduler()
                     job_id = sched.create_job(cron_expr, text)
                     msg = f"✅ Cron job created: `{job_id[:8]}` — will execute `{cron_expr}`"
@@ -400,7 +403,7 @@ class ChatEngine:
             agent = AutonomousAgent(state.provider, state.tool_defs, state.cfg, {
                 "model": state.model, "cost": state.cost, "turns": state.turns,
             })
-            steps, summary = agent.run(task)
+            _steps, summary = agent.run(task)
             state.cost = agent.state.get("cost", state.cost)
             state.turns = agent.state.get("turns", state.turns)
             state.messages.append({"role": "assistant", "content": summary})
@@ -437,10 +440,13 @@ class ChatEngine:
     def _verify_output(self, summary: str, state) -> None:
         """Run UIL verification on agent/expert output and post warnings."""
         try:
-            from core.uil.verifier import get_verifier
             from core.uil.contract import (
-                ClassificationResult, ExecutionResult, TaskType, Domain,
+                ClassificationResult,
+                Domain,
+                ExecutionResult,
+                TaskType,
             )
+            from core.uil.verifier import get_verifier
             # Use a generic classification for verification
             cls = ClassificationResult(
                 task_type=TaskType.CODE_WRITE,
